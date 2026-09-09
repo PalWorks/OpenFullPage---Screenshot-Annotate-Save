@@ -1539,6 +1539,15 @@ async function exerciseMultiSelect(cdp, session, check, p) {
     `a selection of a 7px and an 11px shape showed ${mixedWidth}px instead of falling back to the pending 2px`,
     'a selection whose members disagree falls back to the pending style');
 
+  // Cmd+A selects everything on the canvas, not only what is in this corner,
+  // so it is checked by counting rather than by comparing the whole picture.
+  await escape();
+  await evaluate(cdp, session, `document.dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'a', metaKey: true, bubbles: true }))`);
+  await sleep(140);
+  check(await anySelected(), 'Cmd+A selected nothing', 'Cmd+A selects every shape on the canvas');
+  await escape();
+
   // Leave the corner as it was found.
   await escape();
   await sweep();
@@ -1650,6 +1659,30 @@ async function exerciseShapes(cdp, session, check, p) {
   check(offered === 12,
     `the shapes popover offered ${offered} shapes, expected 12`,
     'the shapes popover offers all twelve shapes');
+
+  // Pruning, from the options page's side of the wire. Hiding every shape in a
+  // group has to take the group's heading with it, or a label sits above an
+  // empty row.
+  await evaluate(cdp, session, `chrome.storage.local.set({
+    hiddenShapes: ['rhombus', 'hexagon', 'parallelogram', 'triangle', 'cylinder'],
+  })`);
+  await sleep(260);
+  const pruned = JSON.parse(await evaluate(cdp, session, `JSON.stringify({
+    visible: [...document.querySelectorAll('#pop-shapes [data-shape]')].filter((b) => !b.hidden).length,
+    flowchartShown: !document.querySelector('#pop-shapes .grp-block[data-group="flowchart"]').hidden,
+    boxesShown: !document.querySelector('#pop-shapes .grp-block[data-group="boxes"]').hidden,
+  })`));
+  check(pruned.visible === 7 && !pruned.flowchartShown && pruned.boxesShown,
+    `hiding the flowchart shapes left ${pruned.visible} visible, flowchart heading shown ${pruned.flowchartShown}`,
+    'hiding every shape in a group removes the group and its heading, and leaves the others alone');
+
+  await evaluate(cdp, session, 'chrome.storage.local.set({ hiddenShapes: [] })');
+  await sleep(260);
+  const restored = Number(await evaluate(cdp, session,
+    '[...document.querySelectorAll("#pop-shapes [data-shape]")].filter((b) => !b.hidden).length'));
+  check(restored === 12,
+    `turning the shapes back on left ${restored} of 12 visible`,
+    'turning them back on restores all twelve');
 }
 
 /**
@@ -2577,11 +2610,23 @@ async function main() {
             indexLinks: document.querySelectorAll('#tocList a').length,
             sections: document.querySelectorAll('main section[id]').length,
             hasTheme: !!document.getElementById('theme'),
+            shapeBoxes: document.querySelectorAll('#shapeButtons input').length,
+            shapesAllOn: [...document.querySelectorAll('#shapeButtons input')].every((b) => b.checked),
           })`));
           if (wired.toolbarBoxes !== 17) optionProblems.push(`the toolbar list shows ${wired.toolbarBoxes} controls, expected 17`);
           if (!wired.allChecked) optionProblems.push('a toolbar control starts switched off');
           if (!wired.hasExport || !wired.hasImport || !wired.hasCompose) optionProblems.push('a settings or feedback control is missing');
           if (!wired.hasTheme) optionProblems.push('the theme control is missing from the options page');
+          // The README promises every control can be switched off individually.
+          // At five shapes behind one switch that was close enough to true; at
+          // twelve it would have been false for the densest surface here.
+          if (wired.shapeBoxes !== 12) {
+            optionProblems.push(`the shapes list shows ${wired.shapeBoxes} switches, expected 12`);
+          } else if (!wired.shapesAllOn) {
+            optionProblems.push('a shape starts switched off, and all twelve ship on');
+          } else {
+            console.log('  ok   the options page lists all 12 shapes, every one switched on');
+          }
           // The index is built from the sections, so a mismatch means a section
           // was added without one, which is the failure the building loop exists
           // to prevent.

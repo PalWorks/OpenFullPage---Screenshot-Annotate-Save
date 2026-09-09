@@ -801,24 +801,6 @@ export function moveShapes(present, ids, dx, dy) {
   };
 }
 
-/**
- * The union of several shapes' boxes, or null when there are none.
- *
- * Not drawn as chrome: a multi-selection gets a dashed outline on each member
- * instead, because a union box has no handles and so is not a drag target, and
- * its extents are readable from the members anyway. It exists for callers that
- * need to know where the selection is.
- */
-export function unionBounds(shapes) {
-  if (shapes.length === 0) return null;
-  const boxes = shapes.map(boundsOf);
-  const x = Math.min(...boxes.map((b) => b.x));
-  const y = Math.min(...boxes.map((b) => b.y));
-  const right = Math.max(...boxes.map((b) => b.x + b.w));
-  const bottom = Math.max(...boxes.map((b) => b.y + b.h));
-  return { x, y, w: right - x, h: bottom - y };
-}
-
 /** Counters number themselves in the order they were placed. */
 export function nextCounterNumber(shapes) {
   return shapes.filter((s) => s.kind === 'counter').length + 1;

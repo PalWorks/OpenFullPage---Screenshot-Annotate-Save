@@ -8,6 +8,15 @@ Expires when: the work below ships and its decisions are written into DECISIONS.
 Read [README.md](README.md) in this directory for what a review record is and
 what to do when this one expires.
 
+> **The expiry event has happened.** The work below shipped on 2026-09-10 and its
+> decisions are written into [DECISIONS.md](../DECISIONS.md) as D43 through D47.
+> By this directory's own convention that makes this record redundant and the
+> honest answer is to fold it in and delete it. It is left here for one reason:
+> the argument it carries about HOW the work was reviewed, including the single
+> voice caveat and the claims that did not survive, is not a decision and has no
+> home in DECISIONS.md. Delete it, or keep it as a record of method, but do not
+> quietly extend the date.
+
 ## What was reviewed
 
 A plan to take the editor from five shapes and one selected object to fourteen

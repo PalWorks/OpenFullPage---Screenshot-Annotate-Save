@@ -243,6 +243,7 @@ async function finish() {
   buildPalettes();
   editor.render();
   applyHiddenButtons(settings.hiddenButtons ?? []);
+  applyHiddenShapes(settings.hiddenShapes ?? []);
 
   ui.canvas.hidden = false;
   // The bar has served its purpose; leaving it full reads as unfinished work.
@@ -925,9 +926,41 @@ function applyHiddenButtons(hidden) {
   }
 }
 
+/**
+ * Hide individual shapes from the Shapes popover.
+ *
+ * The README promises every control can be switched off individually. At five
+ * shapes behind one switch that was close enough to true; at twelve it would
+ * have been false for the densest surface in the product.
+ *
+ * A group whose shapes are all hidden loses its heading with them, so a label
+ * never sits above an empty row.
+ */
+function applyHiddenShapes(hidden) {
+  for (const cell of ui.toolbar.querySelectorAll('[data-shape]')) {
+    cell.hidden = hidden.includes(cell.dataset.shape);
+  }
+  for (const block of ui.toolbar.querySelectorAll('#pop-shapes .grp-block')) {
+    const visible = [...block.querySelectorAll('[data-shape]')].some((cell) => !cell.hidden);
+    block.hidden = !visible;
+  }
+  // The combo glyph shows the last shape used, so it must not go on offering a
+  // shape that is no longer reachable: clicking it would draw something the
+  // popover says is not there.
+  if (hidden.includes(lastShape)) {
+    const next = SHAPE_TOOLS.find((kind) => !hidden.includes(kind));
+    if (next) {
+      rememberShape(next);
+      if (SHAPE_TOOLS.includes(editor?.state.tool)) selectTool(next);
+      else showStyle(editor?.state, editor?.state?.tool);
+    }
+  }
+}
+
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area !== 'local' || !changes.hiddenButtons) return;
-  applyHiddenButtons(changes.hiddenButtons.newValue ?? []);
+  if (area !== 'local') return;
+  if (changes.hiddenButtons) applyHiddenButtons(changes.hiddenButtons.newValue ?? []);
+  if (changes.hiddenShapes) applyHiddenShapes(changes.hiddenShapes.newValue ?? []);
 });
 
 ui.undo.addEventListener('click', () => editor?.undo());

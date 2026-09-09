@@ -60,7 +60,6 @@ import {
   selectedShapes,
   shapesInMarquee,
   toggleSelected,
-  unionBounds,
   shapeAt,
   undo,
 } from '../src/lib/edit.js';
@@ -117,8 +116,8 @@ test('selection changes do not pile up in the undo history', () => {
   // Clicking around must not fill undo with nothing; only real edits do.
   let d = withShapes(box('a', 10, 10));
   const depth = d.past.length;
-  d = amend(d, { ...d.present, selected: 'a' });
-  d = amend(d, { ...d.present, selected: null });
+  d = amend(d, { ...d.present, selection: ['a'] });
+  d = amend(d, { ...d.present, selection: [] });
   assert.equal(d.past.length, depth);
 });
 
@@ -467,14 +466,6 @@ test('deleting a set is one step and leaves nothing selected', () => {
   assert.deepEqual(undo(d).present.shapes.map((s) => s.id), ['a', 'b', 'c']);
 });
 
-test('the union of a selection is the box around all of it', () => {
-  assert.equal(unionBounds([]), null);
-  const box1 = box('a', 0, 0, 100, 60);
-  const box2 = box('b', 300, 200, 100, 60);
-  assert.deepEqual(unionBounds([box1, box2]), { x: 0, y: 0, w: 400, h: 260 });
-  assert.deepEqual(unionBounds([box1]), boundsOf(box1));
-});
-
 // GEOMETRY
 
 test('Shift makes boxes square and lines snap to 45 degrees', () => {
@@ -705,7 +696,7 @@ test('a text shape with no measured box is left alone by a resize', () => {
 test('undo puts back the size a text shape had before it was scaled', () => {
   let doc = createDocument(800, 600);
   const shape = someText({ w: 100, h: 25 });
-  doc = commit(doc, { ...doc.present, shapes: [shape], selected: shape.id });
+  doc = commit(doc, { ...doc.present, shapes: [shape], selection: [shape.id] });
   doc = commit(doc, replaceShape(doc.present, resizeShape(shape, 'se', { x: 300, y: 75 })));
   assert.equal(doc.present.shapes[0].size, 40);
   assert.equal(undo(doc).present.shapes[0].size, 20);

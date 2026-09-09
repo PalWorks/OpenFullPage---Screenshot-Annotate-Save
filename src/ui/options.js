@@ -8,6 +8,7 @@
 
 import {
   DEEP_FRAMES,
+  SHAPE_GROUPS,
   TOOLBAR_GROUPS,
   loadSettings,
   parseSettingsFile,
@@ -38,8 +39,59 @@ const saved = el('saved');
 const toolbarButtons = el('toolbarButtons');
 
 
+/** The names the options page shows for each shape, in the popover's own order. */
+const SHAPE_LABELS = {
+  arrow: 'Arrow', line: 'Line', rect: 'Box', ellipse: 'Ellipse', callout: 'Callout',
+  loupe: 'Loupe', highlight: 'Highlighter', rhombus: 'Rhombus', hexagon: 'Hexagon',
+  parallelogram: 'Parallelogram', triangle: 'Triangle', cylinder: 'Cylinder',
+};
+
 /** Off by default. Everything else ships on, which is the curated set. */
 const HIDDEN_BY_DEFAULT = [];
+
+const shapeButtons = document.getElementById('shapeButtons');
+
+/** The twelve shapes, grouped exactly as the popover groups them. */
+function buildShapeList() {
+  for (const [title, kinds] of SHAPE_GROUPS) {
+    const heading = document.createElement('p');
+    heading.className = 'group';
+    heading.textContent = title;
+    shapeButtons.append(heading);
+
+    for (const kind of kinds) {
+      const row = document.createElement('label');
+      const box = document.createElement('input');
+      box.type = 'checkbox';
+      box.dataset.shape = kind;
+      row.append(box, document.createTextNode(SHAPE_LABELS[kind] ?? kind));
+      shapeButtons.append(row);
+    }
+  }
+
+  shapeButtons.addEventListener('change', (event) => {
+    if (event.target instanceof HTMLInputElement) saveShapes();
+  });
+}
+
+async function saveShapes() {
+  const hidden = [...shapeButtons.querySelectorAll('input')]
+    .filter((box) => !box.checked)
+    .map((box) => box.dataset.shape);
+  const settings = await saveSettings({ hiddenShapes: hidden });
+  showShapes(settings.hiddenShapes);
+  note(
+    settings.hiddenShapes.length === 0
+      ? 'Every shape is showing.'
+      : `${settings.hiddenShapes.length} shape${settings.hiddenShapes.length === 1 ? '' : 's'} hidden.`,
+  );
+}
+
+function showShapes(hidden) {
+  for (const box of shapeButtons.querySelectorAll('input')) {
+    box.checked = !hidden.includes(box.dataset.shape);
+  }
+}
 
 function buildToolbarList() {
   for (const [title, buttons] of TOOLBAR_GROUPS) {
@@ -99,6 +151,7 @@ async function refresh() {
   directDownload.checked = settings.directDownload && (await chrome.permissions.contains(DOWNLOADS));
   deepFrames.checked = await chrome.permissions.contains(DEEP_FRAMES);
   showToolbar(settings.hiddenButtons);
+  showShapes(settings.hiddenShapes ?? []);
 }
 
 deepFrames.addEventListener('change', async () => {
@@ -197,6 +250,12 @@ el('resetToolbar').addEventListener('click', async () => {
   note('Toolbar back to the default set.');
 });
 
+el('showEveryShape').addEventListener('click', async () => {
+  await saveSettings({ hiddenShapes: [] });
+  showShapes([]);
+  note('Every shape is showing.');
+});
+
 // THE INDEX
 //
 // Built from the sections themselves rather than written out beside them, so a
@@ -245,6 +304,7 @@ function buildIndex() {
 
 buildIndex();
 buildToolbarList();
+buildShapeList();
 
 chrome.permissions.onAdded.addListener(refresh);
 chrome.permissions.onRemoved.addListener(refresh);

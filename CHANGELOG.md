@@ -13,6 +13,85 @@ a clean checkout with `./tools/pack.sh`, not merely checkable against one downlo
 Everything below is on `main` and not yet packaged. It covers the toolbar rework
 and the capture reliability work of 2026-09-08 and 2026-09-09.
 
+### Added: twelve shapes, drawn from one description each
+The Shapes popover carries twelve tools: arrow, line, box, ellipse, callout,
+loupe, highlighter, rhombus, hexagon, parallelogram, triangle and cylinder. The
+last five are a flowchart vocabulary. Corner radius is a property of the Box,
+sitting in the stroke popover beside width, dash and arrowheads, rather than
+being a second and third rectangle tool.
+
+The popover is 216px wide, the same as the two colour popovers, laid out as five
+columns under three headings. That makes each cell 35 by 28, wider than the 30 by
+28 of a toolbar button rather than narrower. A heading says what is on each side
+of a boundary where a divider only says that one exists.
+
+Each shape is described once, in `src/lib/geometry.js`, as a list of path
+operations. The canvas replays that list and the hit tester flattens it into a
+polygon, so a shape can no longer be drawn as one thing and clicked as another.
+Selection is now point in polygon: clicking inside an unfilled outline picks it
+up, and the empty corner of a rhombus does not.
+
+### Added: several shapes at once
+Shift click adds and removes. A marquee on empty canvas selects everything it
+touches, not only what it fully encloses. Dragging any member moves the whole
+selection, Delete removes all of it in one undo step, and restyling reaches every
+member that has the property. Where the members of a selection agree on a value
+the toolbar shows it; where they differ it falls back to the pending style.
+
+### Added: a frame and a plate for text
+A caption can carry a border and a background, built out of controls that already
+existed: the border colour is the frame, the fill colour and opacity are the
+plate, and the stroke width and dash reach both. There is no new switch. The
+frame is on when it has a colour and off when it does not, exactly as a fill
+already works. Padding and corner radius come from the type size, so a framed
+label looks right at 12pt and at 96pt without a second control.
+
+### Added: eight resize handles, and the keyboard
+Box shapes carry the four edge midpoints as well as the four corners, so one edge
+can move without the other three. They drop out on a shape too small to hold them
+without the targets overlapping. Shift constrains a resize the way it already
+constrained a drag. Arrow keys nudge the selection a pixel at a time, ten with
+Shift, one undo step per burst rather than per key repeat. Alt drag duplicates.
+Cmd+A selects all.
+
+### Added: every shape can be switched off individually
+Twelve switches on the options page, all on by default. A group whose shapes are
+all hidden loses its heading with them. Hiding all twelve is refused, because a
+chevron that opens an empty panel is a dead end and the Shapes button already has
+its own switch one section above.
+
+### Changed: a selected line no longer gets a dashed rectangle
+It connected the two endpoints as though the line were a box. On a diagonal arrow
+that box is almost entirely space the shape does not occupy. The two endpoint
+handles already say where the line is and what can be dragged.
+
+### Fixed: a magnifier could have undone a redaction
+The loupe magnifies what is under it. Sampling the original capture would have
+reproduced the hidden pixels inside the ring, at twice the size, in the exported
+file. It reads a cached redacted base instead. The check for it is verified by
+mutation: pointing the loupe at the unredacted capture fails the suite, and so
+does drawing no loupe at all.
+
+### Fixed: a stored tool name of more than twelve letters was thrown away
+`sanitise` validated the remembered tool against `/^[a-z]{2,12}$/`.
+"parallelogram" is thirteen characters, so it would have been discarded on every
+reload and the editor would have opened on the default with no way to tell why.
+It now checks membership of the real list, which is both correct and stricter.
+
+### Fixed: choosing a border colour recoloured text
+`colour` was the stroke on every shape and the glyphs on a text shape, while the
+Border palette wrote `colour` on whatever was selected. Selecting a caption and
+picking a border colour silently changed the text colour. `colour` is now the
+stroke everywhere and the glyph colour has moved to `ink`.
+
+### Fixed: the last tool and the arrowheads were never remembered
+`editor.state` is flat, and two call sites read `editor.state.style.ends`, which
+is undefined. Both sit on the path that saves what you were last drawing, so the
+save threw and the preference was never written. The end to end suite watched
+this happen thirty three times per run and reported success, because an uncaught
+exception in the page printed a warning and never touched the exit code. It now
+fails the run.
+
 ### Fixed: the hover outline could be baked into an exported file
 `flatten()` hides the editing chrome by dropping the selection before it renders,
 which covered the dashed box and the resize handles. Nothing cleared the hover

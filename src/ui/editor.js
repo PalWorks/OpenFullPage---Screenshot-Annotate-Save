@@ -28,12 +28,9 @@ import {
   selectedShapes,
   shapesInMarquee,
   toggleSelected,
-  unionBounds,
-  glyphBoxOf,
   inkOf,
   isFramedText,
   strokeOf,
-  textPadding,
   textRadius,
   FILLABLE_TOOLS,
   POINT_TOOLS,
@@ -242,7 +239,6 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
       const code = op[0];
       if (code === 'M') ctx.moveTo(op[1] + dx, op[2] + dy);
       else if (code === 'L') ctx.lineTo(op[1] + dx, op[2] + dy);
-      else if (code === 'Q') ctx.quadraticCurveTo(op[1] + dx, op[2] + dy, op[3] + dx, op[4] + dy);
       else if (code === 'A') {
         ctx.ellipse(op[1] + dx, op[2] + dy, Math.max(op[3], 0), Math.max(op[4], 0), 0, op[5], op[6], op[7]);
       } else if (code === 'Z') ctx.closePath();
@@ -1480,7 +1476,14 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
         dash: agreed(many, (sh) => (sh.dash === undefined ? undefined : dashOf(sh))) ?? dash,
         ends: agreed(many, (sh) => (sh.ends === undefined ? undefined : endsOf(sh))) ?? ends,
         corner: agreed(many, (sh) => sh.corner) ?? corner,
-        fill: many.length > 0 ? agreed(many, (sh) => fillOf(sh)) ?? null : fill,
+        // Fill is the exception to `agreed` skipping empty values: null here
+        // means "no fill", which is a choice rather than an absence, so a set
+        // of one filled and one unfilled shape DISAGREES and must fall back.
+        // Letting `agreed` skip the null would have reported the filled one's
+        // colour and put it in a swatch that also sets the value.
+        fill: many.length > 0
+          ? (many.every((sh) => fillOf(sh) === fillOf(many[0])) ? fillOf(many[0]) : fill)
+          : fill,
         fillOpacity: agreed(many, (sh) => sh.fillOpacity) ?? fillOpacity,
         selectedKind: agreed(many, (sh) => sh.kind) ?? null,
         text: { ...text },

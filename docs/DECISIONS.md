@@ -1063,3 +1063,142 @@ an outline left behind would claim something is under a pointer that has gone.
 order, arrow key nudging (which is also the first step of L14), and shortcut keys
 in every tooltip. They are separate pieces of work rather than part of this one.
 
+
+## D43: A shape is described once, as path operations, and read twice
+
+**A shape has to be drawn on a canvas, hit tested against a pointer, and outlined
+when it is selected.** Write those three separately and they drift. That is not a
+hypothetical: it is how a rhombus ends up selectable by a click in the empty
+corner of its bounding box, which is a corner the shape does not occupy and the
+user can see it does not occupy.
+
+So each shape is described once, in `src/lib/geometry.js`, as a list of path
+operations: move, line, elliptical arc, close. Exactly two things read
+that list. `src/ui/editor.js` replays it onto a 2D context, so a curve is a real
+curve on screen and in the exported file. `flatten()` turns it into a polygon, so
+containment is point in polygon and slack is distance to polygon, with no canvas
+anywhere near it, which is what makes the file unit testable.
+
+**The alternative was sampling everything into polygons and drawing those too.**
+It is simpler and it is wrong: an ellipse drawn as sixty four segments is visibly
+faceted at a large size, and the export is a file someone keeps.
+
+**Decorations are separate from the outline.** The seam across a cylinder's lid
+and the handle on a loupe are drawn and never hit tested, because a pointer beside
+a loupe's handle is not inside the loupe.
+
+**Canvas angles run clockwise with y pointing down**, so PI/2 is the bottom of an
+ellipse and 3PI/2 is the top. Getting that backwards draws a cylinder with no lid.
+This file has made that mistake once and there is a test for it.
+
+## D44: Hit testing takes a required tolerance, and it has no default
+
+`hits(shape, point, tolerance)` will not supply a tolerance for you. Passing
+`undefined` compares against NaN, which is false everywhere, so a caller that
+forgets selects nothing.
+
+**That is deliberate, and it is the safer failure.** Selecting nothing is obvious
+and gets fixed. Selecting slightly wrongly is not obvious and does not.
+
+The reason there is no safe default is D19. Chrome is divided by the screen scale
+because a fixed count of image pixels is a different distance under the pointer at
+every display scale. Four image pixels of slack is comfortable at 100% and less
+than half a screen pixel on a capture shown at 12%, which is the zoom a long page
+is actually viewed at, and which is the case this extension exists for. A default
+would be correct in the one situation nobody has trouble with.
+
+`handlesFor(shape, minEdge)` takes its threshold the same way and for the same
+reason: whether a shape is too small to carry eight handles is a fact about the
+screen, not about the image.
+
+## D45: A selection is a list, and the single case is a convenience over it
+
+`present.selection` is a list of ids. A selection of one is the common case of a
+selection of several, not a different kind of thing.
+
+`selectedShape(doc)` returns the one selected shape and null when it is not
+exactly one. Most callers genuinely mean "the one thing being edited": the resize
+handles, the text box, the style swatches. Returning null for a set is what let
+those keep working unchanged instead of each growing a length check, and it kept
+the diff proportional to the behaviour change.
+
+**A marquee selects what it touches, not what it encloses.** Requiring full
+enclosure means that clipping the edge of the thing you dragged around selects
+nothing, and people reliably clip the edge.
+
+**A marquee with no area selects nothing at all.** A click is not a sweep. Without
+that guard, a click anywhere inside a rhombus's bounding box selects it through
+the marquee, which is bounding box selection returning through the back door the
+day after D43 removed it.
+
+**No union box.** A multi-selection is a dashed outline on each member, with
+handles only when exactly one is selected. A union box would have no handles, so
+it is not a drag target, and its extents are readable from the members anyway.
+Dashed means "in the selection" whether that is one shape or nine, so a
+multi-selection needs nothing new to be read.
+
+**No group resize.** Scaling a mixed set means scaling type, stroke widths and
+counter radii at once, and a group scale that silently changes a stroke width is a
+different feature with its own decisions.
+
+**For a mixed selection the toolbar shows the value every member agrees on, and
+falls back to the pending style where they differ.** Never blank and never an
+indeterminate state, because the swatch is also the control that sets the value,
+and a control showing nothing is a control whose effect you cannot predict.
+
+## D46: `colour` is the stroke on every shape, and `ink` is the glyphs
+
+For every shape `colour` is the stroke. For text it used to be the glyphs, while
+the Border palette wrote `colour` on whatever was selected. Selecting a caption
+and picking a border colour silently changed the text colour, which nobody asked
+for and which had no undo that made sense.
+
+Giving text a frame made that untenable, so `colour` now means the stroke without
+exception and the glyph colour has moved to `ink`.
+
+**Not `textColour`.** That is already a settings key, and the same name meaning a
+stored setting at one layer and a shape property at another is exactly how a
+silent seeding bug gets written. This repository already carries that trap once:
+`TEXT_FAMILIES` is an array in `settings.js` and an object in `edit.js`.
+
+**A frame is a colour, not a switch.** It is on when it has one and off when it
+does not, which is how a fill already works, and the button already carries a
+slash glyph for the off state. Padding and corner radius are derived from the type
+size, because a framed label has to look right at 12pt and at 96pt and a padding
+slider is a control almost nobody moves.
+
+**Bounds had to split.** A framed caption is visibly larger than its words, and
+the selection outline, the hover outline, hit testing and the export all read
+`boundsOf`, so `boundsOf` includes the padding. But `resizeText` solves for a new
+type size from the ratio between two boxes, and the padding is a function of the
+size being solved for, so it reads `glyphBoxOf` instead. Feeding it the padded box
+makes the first frame of a drag wrong.
+
+## D47: A magnifier may not undo a redaction
+
+The loupe magnifies what is under it. Sampling the original capture would
+reproduce the hidden pixels inside the ring, at twice the size, in the exported
+file, and hand back exactly the thing the person was trying to destroy.
+
+It samples a cached redacted base: the capture with every redaction already burned
+in. Cached because it is rebuilt from the full size capture and a loupe is redrawn
+on every frame of a drag; keyed on the redaction rectangles, so moving, resizing,
+adding, deleting or undoing a redaction invalidates it and nothing else does. The
+redaction is burned in through the same code path that draws it on screen, so the
+two can never be computed slightly differently.
+
+**The test for this took seven attempts before it could fail.** Every earlier
+version passed against a loupe deliberately wired to the raw capture: one measured
+the selection chrome around the new shape, one measured the hover outline under
+the resting pointer, one derived the loupe's radius from a changed-pixel box twice
+the size of the loupe so most samples fell outside it, and one sampled blank page,
+which pixelates to itself and makes both candidate sources identical.
+
+The version that ships places the loupe where the redaction actually changed
+pixels, samples only inside the ring, and scores only the points where the two
+candidate sources disagree. It is verified by mutation in both directions.
+
+**The general lesson, which is bigger than the loupe.** A check that has never
+been observed to fail is not a check. Every guarantee in this repository that
+would be expensive to break should be broken on purpose once, to watch the suite
+catch it.

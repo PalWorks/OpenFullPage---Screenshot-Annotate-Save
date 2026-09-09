@@ -20,7 +20,6 @@
 // Operations, each a plain array so they are trivially comparable in a test:
 //   ['M', x, y]                                  move
 //   ['L', x, y]                                  line
-//   ['Q', cx, cy, x, y]                          quadratic curve
 //   ['A', cx, cy, rx, ry, from, to, anticlock]   elliptical arc, radians
 //   ['Z']                                        close
 //
@@ -46,7 +45,6 @@ export function cornerOf(shape) {
 
 /** How many segments a full circle is flattened into. */
 const ARC_SEGMENTS = 64;
-const CURVE_SEGMENTS = 12;
 
 const clampRadius = (r, w, h) => Math.max(0, Math.min(r, w / 2, h / 2));
 
@@ -258,27 +256,17 @@ const pointOnArc = (cx, cy, rx, ry, angle) => [cx + Math.cos(angle) * rx, cy + M
 export function flatten(ops) {
   if (!Array.isArray(ops)) return [];
   const points = [];
-  let cursor = null;
   const push = (x, y) => {
     if (!Number.isFinite(x) || !Number.isFinite(y)) return;
     const last = points.at(-1);
     if (last && Math.abs(last[0] - x) < 1e-9 && Math.abs(last[1] - y) < 1e-9) return;
     points.push([x, y]);
-    cursor = [x, y];
   };
 
   for (const op of ops) {
     const [code] = op;
     if (code === 'M' || code === 'L') {
       push(op[1], op[2]);
-    } else if (code === 'Q') {
-      const [, cx, cy, x, y] = op;
-      const from = cursor ?? [x, y];
-      for (let i = 1; i <= CURVE_SEGMENTS; i += 1) {
-        const t = i / CURVE_SEGMENTS;
-        const u = 1 - t;
-        push(u * u * from[0] + 2 * u * t * cx + t * t * x, u * u * from[1] + 2 * u * t * cy + t * t * y);
-      }
     } else if (code === 'A') {
       const [, cx, cy, rx, ry, from, to, anticlock] = op;
       let sweep = to - from;

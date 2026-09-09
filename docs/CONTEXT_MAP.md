@@ -27,6 +27,8 @@ fifteen.
 | Why did my CSS rule not apply? | Specificity. [../AGENTS.md](../AGENTS.md), coding conventions |
 | How does the grouped toolbar work? | [ARCHITECTURE.md](ARCHITECTURE.md), "The toolbar is groups of controls" |
 | Why does cropping not crop straight away? | [DECISIONS.md](DECISIONS.md) D30 |
+| Why does clicking the corner of a rhombus not select it? | [`../src/lib/geometry.js`](../src/lib/geometry.js), and D43 |
+| Why does hit testing refuse to guess a tolerance? | DECISIONS D44, and D19 for the reason behind it |
 | How is a PDF written with no dependencies? | [`../src/lib/pdf.js`](../src/lib/pdf.js), and D31 |
 | Why is "system" not just light? | [`../src/lib/theme.js`](../src/lib/theme.js), and D32 |
 | May I name another product, in code or in a document? | No. [DECISIONS.md](DECISIONS.md) D34, enforced by `scanBrands` over `src/`, `docs/`, `store/`, `tools/` and the root Markdown |
@@ -48,7 +50,8 @@ fifteen.
 |---|---|---|
 | `src/background.js` | Capture orchestration, the tile walk, progress, the result tab port | ARCHITECTURE, DOMAIN |
 | `src/lib/plan.js` | Tile arithmetic, canvas limits, scale, filenames. Pure, heavily tested | DOMAIN |
-| `src/lib/edit.js` | The editing model: shapes, history, geometry, hit testing. Pure | DOMAIN, DECISIONS |
+| `src/lib/edit.js` | The editing model: shapes, selection, history, hit testing. Pure | DOMAIN, DECISIONS |
+| `src/lib/geometry.js` | One description of each shape, as path operations. The canvas replays it, the hit tester flattens it. Pure | DECISIONS D43 |
 | `src/lib/settings.js` | Settings, defaults, sanitising, the style Reset restores, the optional permission set | AGENTS (the `sanitise` trap) |
 | `src/lib/pdf.js` | PDF writing, by hand. Page planning, deflate, the file structure. Pure | DECISIONS D31 |
 | `src/lib/theme.js` | The three theme states and how they are stamped on a document | DECISIONS D32 |

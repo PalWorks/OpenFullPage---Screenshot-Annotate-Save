@@ -44,10 +44,15 @@ implements them twice. Every one has tests.
 | **T27** | Picking Arrow could still draw a line. The tool and the arrowheads are reconciled in both directions | `src/ui/editor.js`, D41 |
 | **F41** | Hover cursors, a hover outline, and Escape to abandon a drag. Part of F27 | `src/ui/editor.js`, D42 |
 | **T28** | The hover outline could be baked into an exported PNG or PDF. `flatten()` dropped the selection but never the hover, and only a pointer-driven export cleared it on the way to the button | `src/ui/editor.js` |
+| **F29** | Twelve shapes behind the Shapes chevron, each described once as path operations that the canvas and the hit tester both read. Corner radius is a property of the Box, not two more tools | `src/lib/geometry.js`, D43 |
+| **F27** | Shift constrains a resize, arrow keys nudge the selection, Alt drag duplicates. With F41 this completes F27 apart from the right click z-order menu | `src/ui/editor.js`, D44 |
+| | Multi-select: shift click, marquee, group move, group delete as one step, group restyle, Cmd+A | `src/lib/edit.js`, `src/ui/editor.js`, D45 |
+| | A frame and a plate for text, out of the border colour, the fill and the stroke width. `colour` is the stroke on every shape and `ink` is the glyphs | `src/lib/edit.js`, D46 |
+| | Every shape can be switched off individually on the options page | `src/lib/settings.js`, `src/ui/options.js` |
 | **T19** | The content security policy names every directive. `connect-src 'none'` never covered a remote subresource, and an absent directive with no `default-src` is unrestricted | `manifest.json`, `test/lib/scan.js`, D15 |
 
 **Still open from the 1.7.0 list below:** T2, T11, F1, F21, F2, F26.
-**Still open from 1.8.0:** F6, F4, F27.
+**Still open from 1.8.0:** F6, F4, and the two remaining pieces of F27 (the right click z-order menu, and shortcut keys in every tooltip).
 
 # Release 1.7.0: the repairs, and the free wins
 

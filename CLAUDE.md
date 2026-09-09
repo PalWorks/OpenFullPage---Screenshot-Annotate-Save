@@ -57,7 +57,7 @@ wrong, not the rule. Say so and stop.
 ## Commands
 
 ```bash
-node --test 'test/**/*.test.js'     # 120 unit tests plus the security invariants
+node --test 'test/**/*.test.js'     # 174 unit tests plus the security invariants
 node test/e2e/run.mjs               # real Chrome, drives a capture over CDP
 node tools/make-icons.mjs --check   # icons still match their design source
 ./tools/pack.sh                     # build dist/openfullpage-<version>.zip

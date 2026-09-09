@@ -18,9 +18,9 @@
 // which is tolerable for four short lists that never change. The tools are now
 // seventeen entries and grow every time a shape is added, and a second copy is
 // how "parallelogram" ends up valid in one file and rejected in the other.
-import { TOOLS } from './edit.js';
+import { SHAPE_GROUPS, SHAPE_TOOLS, TOOLS } from './edit.js';
 
-export { TOOLS };
+export { SHAPE_GROUPS, SHAPE_TOOLS, TOOLS };
 
 export const CAPTURE_MODES = ['full', 'visible', 'element'];
 export const DOWNLOAD_FORMATS = ['png', 'jpeg', 'pdf'];
@@ -136,6 +136,15 @@ export const DEFAULTS = {
   textColour: '#ef4444',
   // Toolbar controls the user has switched off. Empty means the curated set.
   hiddenButtons: [],
+  // Which shapes are hidden from the Shapes popover.
+  //
+  // A denylist, not an allowlist, and separate from hiddenButtons. Separate
+  // because the guard below un-hides the FIRST entry when everything is
+  // hidden, and with shape names in the same list that first entry would be
+  // Select. A denylist because every shape ships on, so an empty list is the
+  // default and a shape added in a later version appears for everyone rather
+  // than staying invisible until they reset their settings.
+  hiddenShapes: [],
   // Seconds to wait before capturing, for menus and hover states.
   captureDelay: 0,
   // Follows the operating system until the user says otherwise.
@@ -236,6 +245,13 @@ export function sanitise(raw) {
   if (Array.isArray(raw.hiddenButtons)) {
     const wanted = [...new Set(raw.hiddenButtons)].filter((n) => TOOLBAR_BUTTONS.includes(n));
     clean.hiddenButtons = wanted.length === TOOLBAR_BUTTONS.length ? wanted.slice(1) : wanted;
+  }
+  if (Array.isArray(raw.hiddenShapes)) {
+    const wanted = [...new Set(raw.hiddenShapes)].filter((n) => SHAPE_TOOLS.includes(n));
+    // Never all of them. An empty popover behind a chevron that still opens is
+    // a dead end; hiding the whole Shapes group is what the toolbar switch is
+    // for, and it is one section above this one on the same page.
+    clean.hiddenShapes = wanted.length === SHAPE_TOOLS.length ? wanted.slice(1) : wanted;
   }
   if (Number.isFinite(raw.captureDelay)) {
     clean.captureDelay = Math.min(10, Math.max(0, Math.round(raw.captureDelay)));

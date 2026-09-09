@@ -14,6 +14,7 @@ import {
   TEXT_ALIGNS,
   THEMES,
   TOOLBAR_BUTTONS,
+  SHAPE_TOOLS,
   TOOLBAR_GROUPS,
   TOOLS,
   defaultStyle,
@@ -129,7 +130,7 @@ test('every key sanitise knows about is one DEFAULTS declares', () => {
     dash: 'dashed', lineEnds: 'none', corner: 12, fill: '#abcdef', fillOpacity: 0.5,
     textSize: 40, textFamily: 'serif', textBold: false, textItalic: true,
     textUnderline: true, textAlign: 'justify', textColour: '#00ff88',
-    hiddenButtons: ['crop'],
+    hiddenButtons: ['crop'], hiddenShapes: ['cylinder'],
   };
   const clean = sanitise(sample);
   assert.deepEqual(Object.keys(clean).sort(), Object.keys(DEFAULTS).sort());
@@ -209,6 +210,26 @@ test('unknown keys in storage are dropped rather than carried through', () => {
 // TOOLBAR_BUTTONS. They used to be two hand-written lists in two files, which
 // meant a control could exist in one and not the other: a checkbox that hid
 // nothing, or a button with no way to switch it off.
+test('shapes are hidden by their own list, not by the toolbar one', () => {
+  // Separate from hiddenButtons on purpose. The guard on that list un-hides the
+  // FIRST entry when everything is hidden, and with shape names in the same
+  // list that first entry would be Select.
+  assert.deepEqual(sanitise({}).hiddenShapes, []);
+  assert.deepEqual(sanitise({ hiddenShapes: ['rhombus', 'banana'] }).hiddenShapes, ['rhombus']);
+  assert.deepEqual(sanitise({ hiddenShapes: 'cylinder' }).hiddenShapes, []);
+  // Hiding a shape must not touch the toolbar list, and the reverse.
+  assert.deepEqual(sanitise({ hiddenShapes: ['rhombus'] }).hiddenButtons, []);
+  assert.deepEqual(sanitise({ hiddenButtons: ['crop'] }).hiddenShapes, []);
+});
+
+test('the shapes popover can never be emptied completely', () => {
+  // A chevron that opens an empty panel is a dead end. Hiding the whole Shapes
+  // group is what the toolbar switch is for, one section above on the same page.
+  const all = sanitise({ hiddenShapes: SHAPE_TOOLS });
+  assert.equal(all.hiddenShapes.length, SHAPE_TOOLS.length - 1);
+  assert.ok(SHAPE_TOOLS.some((kind) => !all.hiddenShapes.includes(kind)));
+});
+
 test('the flat button list is exactly what the grouped one contains', () => {
   const fromGroups = TOOLBAR_GROUPS.flatMap(([, buttons]) => Object.keys(buttons));
   assert.deepEqual(TOOLBAR_BUTTONS, fromGroups);

@@ -105,22 +105,24 @@ The capture opens in a tab with a real editor. Shapes stay **live objects**: sel
 
 | | |
 |---|---|
-| Tools | Select `V`, Arrow `A`, Line `L`, Box `R`, Ellipse `O`, Highlight `H`, Redact `P`, Text `T`, Numbered step `N`, Crop `C` |
-| Editing | Finishing a shape selects it and returns to the selection tool, drag to move, corner handles to resize, `Backspace` to delete, `Esc` to cancel a drag or drop the selection. The shape under the pointer is outlined, and the cursor says whether a click would move it or resize it |
-| Stroke | Five weights plus an exact pixel box, solid, dashed and dotted, arrowheads on either end, both ends or neither |
+| Tools | Select `V`, Text `T`, Numbered step `N`, Redact `P`, Crop `C`, and twelve shapes behind one chevron: Arrow `A`, Line `L`, Box `R`, Ellipse `O`, Callout, Loupe, Highlighter `H`, Rhombus `D`, Hexagon `G`, Parallelogram, Triangle, Cylinder |
+| Editing | Finishing a shape selects it and returns to the selection tool, drag to move, eight handles to resize, `Backspace` to delete, `Esc` to cancel a drag or drop the selection. The shape under the pointer is outlined, and the cursor says whether a click would move it or resize it. Clicking picks up the shape you can see, not its bounding box: the empty corner of a rhombus is not part of the rhombus |
+| Stroke | Five weights plus an exact pixel box, solid, dashed and dotted, arrowheads on either end, both ends or neither, and square, rounded or pill corners for the Box |
 | Colour | Border and fill are separate controls. Ten quick colours, a sixty step grid, and any colour through the system picker or a hex field. Fill carries an opacity |
-| Text | Multi-line. Family, size in points, bold, italic, underline, four alignments including justify, and its own colour, all stored on the shape, so text drawn ten minutes ago can be restyled. Enter starts a new line; Escape or clicking away finishes. Double click a text shape to change its words, and drag a corner to scale the type |
+| Text | Multi-line. Family, size in points, bold, italic, underline, four alignments including justify, and its own colour, all stored on the shape, so text drawn ten minutes ago can be restyled. A caption can carry a frame and a background plate, made from the border colour, the fill and the stroke width you already have. Enter starts a new line; Escape or clicking away finishes. Double click a text shape to change its words, and drag a corner to scale the type |
 | Crop | Dragging **proposes** a region. The surround dims, the region carries eight handles and can be slid whole, and a tick and cross confirm or abandon it. `Enter` and `Esc` do the same. The bar is fixed to the viewport, so it stays reachable on a capture ten screens tall |
+| Several at once | Shift click to add, or sweep a marquee over empty canvas. A marquee catches everything it touches, not only what it swallows whole. Drag any member to move all of them, `Backspace` to delete all of them in one step, and restyling reaches every member the property applies to. `Cmd`/`Ctrl`+`A` selects everything |
+| Keyboard | Arrow keys nudge the selection a pixel at a time, ten with `Shift`, and holding a key is one undo step rather than one per repeat. `Alt` drag duplicates |
 | History | `Cmd`/`Ctrl`+`Z`, add `Shift` to redo. Covers moves and resizes, not only drawing |
 | Reset | Removes your edits when there are some, and restores the default tools and colours when there are none |
 | Theme | System, light or dark, cycled from the toolbar. System is the default and follows the operating system. The capture is laid on a solarized mat rather than on white or black, so a white screenshot still has a visible edge |
 | Output | `Cmd`/`Ctrl`+`C` to copy, or Download as PNG, JPEG or PDF with a filename you can edit |
 | Upload | Copies the image and opens an image host so you can paste it there. The extension performs no upload and cannot |
-| Constrain | Hold `Shift` for squares, circles and 45 degree lines |
+| Constrain | Hold `Shift` for squares, circles and 45 degree lines, while drawing and while resizing |
 
-**The toolbar is yours.** Related controls sit behind one button with a chevron: the button shows the current value, the chevron opens the whole set. Seventeen buttons carry what twenty six flat controls used to, and every one of them can be switched off individually on the settings page. Hiding a button never disables its keyboard shortcut.
+**The toolbar is yours.** Related controls sit behind one button with a chevron: the button shows the current value, the chevron opens the whole set. Seventeen buttons carry what twenty six flat controls used to, and every one of them can be switched off individually on the settings page, as can each of the twelve shapes. Hiding a button never disables its keyboard shortcut.
 
-**Redact resamples the pixels underneath** rather than drawing a blur over them, and the export is flat, so a saved image has no original hiding under the redaction.
+**Redact resamples the pixels underneath** rather than drawing a blur over them, and the export is flat, so a saved image has no original hiding under the redaction. **The loupe magnifies a redacted copy of the capture**, never the original, so magnifying a redacted region shows the redaction larger and never the pixels beneath it.
 
 **The stitched capture is kept untouched** on its own canvas and every edit re-renders from it. Undo is therefore exact, repeated edits never degrade the image, and what the canvas shows is exactly what gets saved.
 
@@ -232,7 +234,7 @@ All settings live on the options page (right click the toolbar icon, or `chrome:
 | Save straight to your downloads | off | Skips the editor entirely. Needs the `downloads` permission, requested when you switch it on |
 | Download format | PNG | Remembered from the last save |
 | Theme | system | System, light or dark |
-| Toolbar controls | curated set | Each of the 17 buttons can be switched off individually |
+| Toolbar controls | curated set | Each of the 17 buttons can be switched off individually, and so can each of the 12 shapes |
 | Drawing style | red, 4px, arrow | Tool, colour, stroke, dash, arrowheads, fill, opacity, text family, size and weight are all remembered between captures |
 | Advanced access | off | `webNavigation` and `<all_urls>`, for cross origin frames |
 
@@ -273,7 +275,8 @@ Three processes, one message port, no shared state.
  │                                                          │
  │  stitch screenfuls -> immutable base canvas              │
  │  src/ui/editor.js  -> render loop, pointer input         │
- │  src/lib/edit.js   -> shapes, selection, undo, geometry  │
+ │  src/lib/edit.js   -> shapes, selection, undo, history    │
+ │  src/lib/geometry  -> one outline per shape, hit testing  │
  │  src/lib/pdf.js    -> export                             │
  └──────────────────────────────────────────────────────────┘
 ```
@@ -406,7 +409,8 @@ src/
   background.js            capture orchestration: measure, prepare, walk, stream, restore
   lib/
     plan.js                tile arithmetic, canvas limits, scale, filenames. Pure
-    edit.js                shapes, selection, history, geometry, crop maths. Pure
+    edit.js                shapes, selection, history, crop maths. Pure
+    geometry.js            one description per shape, read by the canvas and the hit tester. Pure
     pdf.js                 PDF 1.4 writing and page planning. Pure
     settings.js            defaults, sanitising, serialised writes, optional permissions
     theme.js               the three theme states and how they are stamped
@@ -454,7 +458,7 @@ Two layers, no framework.
 
 ```bash
 ./tools/check.sh                 # everything CI runs: pack, unit tests, icons, verifier
-node --test 'test/**/*.test.js'  # 120 unit tests, including the security invariants
+node --test 'test/**/*.test.js'  # 174 unit tests, including the security invariants
 node tools/make-icons.mjs --check
 node test/e2e/run.mjs            # real Chrome, drives a capture over CDP
 ```
