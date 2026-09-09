@@ -125,6 +125,110 @@ which is the precedent.
 logged with its kind and rect; the frame still renders. Zero silent failures is
 a rule in this repository and the render path was quietly exempt from it.
 
+## Two defects the review found in code that already ships
+
+Neither is in the plan. Both were found by voices reading the plan against the
+source.
+
+**The export leaks chrome.** `hideChrome` in `src/ui/editor.js` is used at four
+lines: declared at 123, checked at 491 for the crop overlay only, set and unset
+at 1281 and 1284. `flatten()` suppresses the selection outline by nulling
+`selected`, which works. It never clears `hoverId`, and `drawHover` at `:501` is
+guarded only by `hoverId && !preview && !pendingCrop`. So a keyboard Cmd+C or
+Cmd+S, with the pointer resting on an unselected shape, bakes a 1.5px indigo
+rectangle into the exported PNG and PDF. `pointerleave` masks it for mouse driven
+exports, because you move off the canvas to reach the button, which is why it was
+never seen. This shipped in F41 on 2026-09-09. One line: `if (hideChrome) return;`
+at the top of `drawHover` and `drawSelection`.
+
+**A loupe would have un-redacted a redaction.** This one is about the plan, but
+the mechanism is in shipped code. `drawPixelated` samples the immutable base, and
+its comment at `editor.js:341` promises "the export is flat, so what is saved
+genuinely has no original underneath". The loupe was going to sample the base
+too, for good reasons (D5, exact undo), and `render()` draws shapes in array
+order. A loupe placed over a redaction would therefore sample the original pixels
+underneath it and paint them back, magnified, into the exported file. Redact a
+password, drop a loupe on it, export, and the PNG contains the password larger
+than it was, under a comment promising otherwise.
+
+**Decision: loupes sample a redacted base.** When a document holds both a loupe
+and a redaction, the redactions are rendered once into a scratch copy of the base
+and loupes sample that, cached against the redaction shapes' serialisation
+because a scratch canvas per frame at 16,000px is not affordable. The acceptance
+test is hostile and gates the shape: redaction over a known colour, loupe on top,
+flatten, assert zero pixels of that colour survive.
+
+## What the design voice changed
+
+- **Corner radius is a property, not three tools.** Rect, rounded rect and
+  stadium differ only in radius, and this repository already treats that kind of
+  thing as a property: dash and fill live in popovers, not as separate tools. One
+  Box tool plus a radius row in stroke style. At 19px a 0px and a 1.5px radius
+  are the same picture, so three tools would have meant two illegible icons.
+- **The proposed grid did not fit.** Buttons are 30x28 (`result.html:135`), `.pop`
+  padding is 7px, `.opts` gap is 6px. Seven columns inside 216px gives 23.7px per
+  cell, a 21 percent shrink, below the size L15 already records as under the
+  touch target guideline. Five columns, with section headings rather than
+  hairline dividers, because a divider separates things you already understand
+  and a label teaches a vocabulary you do not.
+- **All shapes default on.** The first draft had most of them off, reasoning from
+  D17. That was a misreading: D17 governs what is always visible, and the shapes
+  popover is behind a chevron and costs no visible space. Defaulting them off
+  would have built the flowchart set where nobody would find it.
+- **Selection chrome went from six states to three.** Counted properly there were
+  six, and two pairs collided: the marquee rectangle and the multi-selection box
+  are both dashed indigo rectangles around several shapes, so "still dragging"
+  and "these are selected" look identical; and the per-member outline was
+  pixel-identical to the existing hover outline. The union box is cut. Three
+  marks remain, one meaning each.
+- **Every chrome stroke gets a white casing.** A 55 percent indigo hairline over
+  a screenshot of a blue themed page is invisible, and this product's subject
+  matter is web pages.
+- **The plan made L14 worse and did not say so.** Nine new shapes with no
+  keyboard creation path, a pointer only marquee, pointer only shift click.
+  Arrow key nudge moves one denominator while the numerator grows. Accepted fix,
+  cheaper than the marquee: Tab cycles the selection through z order, Space
+  toggles membership, Enter places a default sized shape.
+
+## What the engineering voice changed
+
+- **The plan's central claim about multi-select was false.** It said keeping
+  `selectedShape` "keeps the diff proportional to the behaviour change rather
+  than rewriting every call site". `restyleSelection` (`editor.js:1036`) returns
+  false on a multi-selection, and all six style setters route through it, so
+  "setting a colour applies to every member" was unreachable and would have
+  failed silently: the swatch updates, the shapes do not. `deleteSelection`
+  returns false too, and the toolbar Delete greys out. Six setters have to be
+  rewritten regardless, and the workstream was re-priced.
+- **`pointerdown` collapses the selection before the drag starts** (`:730`), so
+  group move would never have fired. The rule needed stating: if the pressed
+  shape is already a member, do not touch the selection on pointerdown, and
+  collapse on pointerup only if the pointer never moved.
+- **The geometry table had two switches where the old code had one.** Returning a
+  point list for some shapes and a discriminated object for others needs a switch
+  to draw and a second switch to hit test, and the two can disagree, which is the
+  bug that makes a shape draw here and select there. Replaced with one outline
+  vocabulary: arcs flattened to polygons at construction, one point in polygon
+  for all fourteen.
+- **The tolerance fix contained the bug it was fixing.**
+  `hits(shape, point, tolerance = 4)` defaults to the exact hardcoded value that
+  is the defect, so any future call site inherits it silently and the tests stay
+  green. The parameter is required.
+- **`boundsOf` must stay the authored rect.** Once geometry returns points
+  somebody will derive bounds from them. A callout tail and a cylinder cap can
+  exceed `shape.rect`, and `resizeShape` reconstructs the rect from `boundsOf`,
+  so a drawn extent would grow the shape on every drag frame.
+- **The text rename touches thirteen sites, not four**, three of them in
+  `result.js`, which the plan never mentioned. Two bite: assigning null to a
+  canvas colour is ignored, so a frameless text would inherit the previous
+  shape's colour (silent, order dependent, invisible to a unit test); and
+  `result.js:650` calls `.toUpperCase()`, so a half-done rename does not degrade,
+  it takes the editor out at first paint.
+- **`hiddenButtons` is a denylist** (`settings.js:126`), so anything appended
+  appears for every existing user regardless of defaults, and `sanitise` drops
+  the first button when all are hidden, which with shape keys appended would be
+  Select.
+
 ## Findings verified, smaller
 
 - `sanitise` at `src/lib/settings.js:183` validates a stored tool name with
@@ -180,14 +284,23 @@ is why they were taken: they live in handlers this work rewrites anyway.
 
 ## What the review cost and what it changed
 
-The plan went from 504 lines to 715. It gained a stated premise, a security
+The plan went from 504 lines to 964. It gained a stated premise, a security
 prerequisite ahead of all of it, two restored shapes, a corrected hit testing
 model, an error handling section, six previously unlisted edge cases, six
 previously unlisted tests, an effort estimate in the roadmap's own two scale
 format, and a section naming what this work displaces.
 
-Two of those (the CSP hole and the tolerance defect) were shipping defects. One
-(F29) was a documented decision about to be overwritten without anyone noticing.
+Three of those were shipping defects: the CSP hole, the tolerance defect, and the
+hover outline baked into exported files. One (F29) was a documented decision
+about to be overwritten without anyone noticing. One (the loupe over a redaction)
+would have broken a guarantee the code comments state explicitly.
+
+The clearest signal in the whole review came from two voices that never saw each
+other's work reaching the same place from opposite ends: the design voice, from
+counting visual states, and the engineering voice, from reading `flatten()`, both
+concluded that chrome leaks into the export and nothing tests otherwise. Neither
+had the other's context. That agreement is worth more than either finding alone,
+and it is the closest this single-model review came to cross-model evidence.
 
 ## Still open at the time of writing
 
