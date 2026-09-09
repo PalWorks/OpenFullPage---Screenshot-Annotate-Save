@@ -11,6 +11,7 @@ fifteen.
 | How does a capture actually work? | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | What does `outputScale` mean? | [DOMAIN.md](DOMAIN.md) |
 | Why is it built this way? | [DECISIONS.md](DECISIONS.md) |
+| What was the argument behind a recent change? | [reviews/](reviews/), while it is still live. It expires |
 | What is known to be broken or missing? | [LIMITATIONS.md](LIMITATIONS.md) |
 | What should I work on? | [../TASKS.md](../TASKS.md) |
 | What was deliberately deferred? | [../TODOS.md](../TODOS.md) |
@@ -29,6 +30,7 @@ fifteen.
 | How is a PDF written with no dependencies? | [`../src/lib/pdf.js`](../src/lib/pdf.js), and D31 |
 | Why is "system" not just light? | [`../src/lib/theme.js`](../src/lib/theme.js), and D32 |
 | May I name another product, in code or in a document? | No. [DECISIONS.md](DECISIONS.md) D34, enforced by `scanBrands` over `src/`, `docs/`, `store/`, `tools/` and the root Markdown |
+| Why did my review document fail the test suite? | It expired. [reviews/README.md](reviews/README.md) |
 | Why does git history start at one commit? | [DECISIONS.md](DECISIONS.md) D35 |
 | Why is the page behind the capture not white? | [DECISIONS.md](DECISIONS.md) D36 |
 | Why will my SVG not hide? | It is not an HTML element. [DECISIONS.md](DECISIONS.md) D37 |
