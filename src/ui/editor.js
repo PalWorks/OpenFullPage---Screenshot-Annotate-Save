@@ -19,7 +19,16 @@ import {
 
 import {
   BOX_TOOLS,
+  CORNER_HANDLES,
   CORNERED_KINDS,
+  isSelected,
+  moveShapes,
+  removeShapes,
+  selectedIds,
+  selectedShapes,
+  shapesInMarquee,
+  toggleSelected,
+  unionBounds,
   glyphBoxOf,
   inkOf,
   isFramedText,
@@ -122,6 +131,9 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
   };
 
   let drag = null;
+  // The document as it was when the current arrow key burst began, so the
+  // whole burst collapses into one undo step. Null when no burst is open.
+  let nudging = null;
   let editing = null;
   // The shape currently open in the text box, hidden from the canvas while its
   // own words sit over it. Null while a new box is being typed into.
@@ -167,6 +179,7 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
       crop: effectiveCrop(doc),
       edited: isEdited(doc),
       selected: selectedShape(doc),
+      selectedCount: selectedIds(doc).length,
       pendingCrop: pendingCrop ? { ...pendingCrop } : null,
       tool,
       style: currentStyle(),
@@ -586,7 +599,7 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
     ctx.restore();
   }
 
-  function drawSelection(shape, crop) {
+  function drawSelection(shape, crop, withHandles) {
     // Belt and braces: `flatten()` also nulls the selection, so this is
     // unreachable today. It stays because "the selection is empty" and "chrome is
     // suppressed" are two different facts, and only one of them is what this
@@ -613,6 +626,17 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
       ctx.setLineDash([]);
     }
 
+    // Handles only when exactly one shape is selected. There are none for a set
+    // because scaling a mixed selection means scaling type, stroke widths and
+    // counter radii at once, and a group scale that silently changes a stroke
+    // width is a different feature with its own decisions. Dashed means "in the
+    // selection" whether that is one shape or nine, so nothing new has to be
+    // learned to read a multi-selection.
+    if (!withHandles) {
+      ctx.restore();
+      return;
+    }
+
     for (const handle of handlesFor(shape, minEdgeForHandles())) {
       ctx.fillStyle = '#ffffff';
       ctx.strokeStyle = '#6366f1';
@@ -622,6 +646,27 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
       ctx.fill();
       ctx.stroke();
     }
+    ctx.restore();
+  }
+
+  /**
+   * The marquee, alive only while the button is down.
+   *
+   * The one piece of chrome with a fill. That is deliberate: it is the only mark
+   * that describes a region being swept rather than an object that exists, and
+   * the translucent wash is what makes it read as a gesture instead of as a
+   * rectangle someone drew.
+   */
+  function drawMarquee(from, to, crop) {
+    const rect = normalizeRect(from, to);
+    const scale = screenScale();
+    ctx.save();
+    ctx.fillStyle = 'rgba(99, 102, 241, 0.14)';
+    ctx.strokeStyle = '#6366f1';
+    ctx.lineWidth = 1 * scale;
+    ctx.setLineDash([]);
+    ctx.fillRect(rect.x - crop.x, rect.y - crop.y, rect.w, rect.h);
+    ctx.strokeRect(rect.x - crop.x, rect.y - crop.y, rect.w, rect.h);
     ctx.restore();
   }
 
@@ -701,13 +746,16 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
       drawCropOverlay(pendingCrop, crop, true);
     }
 
-    const chosen = selectedShape(doc);
-    if (chosen && !preview && !pendingCrop) drawSelection(chosen, crop);
+    if (!preview && !pendingCrop) {
+      const chosen = selectedShapes(doc);
+      for (const shape of chosen) drawSelection(shape, crop, chosen.length === 1);
+    }
+    if (drag?.mode === 'marquee' && !hideChrome) drawMarquee(drag.from, drag.to, crop);
 
     // What a click would pick up, shown before the click. Never on the selected
     // shape, which already has an outline and handles of its own, and never
     // while something is being drawn or a crop is waiting to be answered.
-    if (hoverId && hoverId !== chosen?.id && !preview && !pendingCrop) {
+    if (hoverId && !isSelected(doc, hoverId) && !preview && !pendingCrop) {
       const under = doc.present.shapes.find((shape) => shape.id === hoverId);
       if (under) drawHover(under, crop);
     }
@@ -781,7 +829,7 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
     tool = next;
     // Leaving the selection tool drops the selection: the handles belong to it,
     // and leaving them drawn under a drawing tool invites clicking them.
-    if (next !== 'select') doc = amend(doc, { ...doc.present, selected: null });
+    if (next !== 'select') doc = amend(doc, { ...doc.present, selection: [] });
     canvas.style.cursor = next === 'select' ? 'default' : next === 'text' ? 'text' : 'crosshair';
     render();
   }
@@ -951,8 +999,52 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
       }
 
       const hit = shapeAt(doc.present.shapes, point, pickTolerance());
-      doc = amend(doc, { ...doc.present, selected: hit ? hit.id : null });
-      drag = hit ? { mode: 'move', shape: hit, last: point, before: doc.present } : null;
+
+      if (!hit) {
+        // Empty canvas with the select tool starts a marquee. Shift keeps what
+        // is already selected, so a set can be built up in several sweeps.
+        if (!event.shiftKey) doc = amend(doc, { ...doc.present, selection: [] });
+        drag = {
+          mode: 'marquee',
+          from: point,
+          to: point,
+          base: event.shiftKey ? selectedIds(doc) : [],
+          before: doc.present,
+        };
+        render();
+        return;
+      }
+
+      if (event.shiftKey) {
+        // Shift click adds or removes, and never starts a drag: a click that
+        // both changed the set and moved it would be very hard to undo.
+        doc = amend(doc, {
+          ...doc.present,
+          selection: toggleSelected(selectedIds(doc), hit.id),
+        });
+        drag = null;
+        render();
+        return;
+      }
+
+      // Clicking a shape that is already part of a multi-selection keeps the
+      // set and moves all of it. Clicking outside the set replaces it. Without
+      // that first rule, dragging a group by one of its members would collapse
+      // the selection to that member on pointerdown and move only it.
+      if (!isSelected(doc, hit.id)) {
+        doc = amend(doc, { ...doc.present, selection: [hit.id] });
+      }
+
+      const moving = selectedIds(doc);
+      drag = {
+        mode: 'move',
+        shape: hit,
+        ids: moving,
+        last: point,
+        origin: point,
+        duplicated: false,
+        before: doc.present,
+      };
       render();
       return;
     }
@@ -973,7 +1065,7 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
         doc = commit(doc, {
           ...doc.present,
           shapes: [...doc.present.shapes, shape],
-          selected: shape.id,
+          selection: [shape.id],
         });
         render();
       }
@@ -1014,16 +1106,55 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
     }
 
     if (drag.mode === 'move') {
-      const moved = moveShape(drag.shape, point.x - drag.last.x, point.y - drag.last.y);
-      drag.shape = moved;
+      // Alt duplicates. The copy is made on the first move rather than on the
+      // press, so an Alt click that never travels does not litter the document
+      // with a shape sitting exactly on top of another one.
+      if (event.altKey && !drag.duplicated) {
+        const copies = selectedShapes(doc).map((shape) => ({ ...shape, id: newId() }));
+        doc = amend(doc, {
+          ...doc.present,
+          shapes: [...doc.present.shapes, ...copies],
+          selection: copies.map((c) => c.id),
+        });
+        drag.ids = copies.map((c) => c.id);
+        drag.duplicated = true;
+        // Carry on dragging the copy, leaving the original where it was, which
+        // is what every editor that offers this does.
+        drag.shape = copies.find((c) => c.kind === drag.shape.kind) ?? copies[0];
+      }
+      const dx = point.x - drag.last.x;
+      const dy = point.y - drag.last.y;
       drag.last = point;
-      doc = amend(doc, replaceShape(doc.present, moved));
+      doc = amend(doc, moveShapes(doc.present, drag.ids, dx, dy));
+      drag.shape = doc.present.shapes.find((sh) => sh.id === drag.shape.id) ?? drag.shape;
+      render();
+      return;
+    }
+
+    if (drag.mode === 'marquee') {
+      drag.to = point;
+      const rect = normalizeRect(drag.from, drag.to);
+      const caught = shapesInMarquee(doc.present.shapes, rect);
+      doc = amend(doc, {
+        ...doc.present,
+        selection: [...new Set([...drag.base, ...caught])],
+      });
       render();
       return;
     }
 
     if (drag.mode === 'resize') {
-      const resized = resizeShape(drag.shape, drag.handle, point);
+      // Shift constrains, exactly as it already does while drawing. The helper
+      // for it has existed since the beginning and was wired only to buildShape,
+      // so the resize path never saw the modifier at all.
+      //
+      // A corner handle squares a box and steps a line to 45 degrees. An edge
+      // handle moves one edge along one axis, which is already constrained, and
+      // a text corner drag is proportional by construction, so both ignore it.
+      const target = event.shiftKey && CORNER_HANDLES.includes(drag.handle) && drag.shape.kind !== 'text'
+        ? constrain(anchorFor(drag.shape, drag.handle), point, drag.shape.kind)
+        : point;
+      const resized = resizeShape(drag.shape, drag.handle, target);
       // Scaling text changes the point size, and only the canvas knows how wide
       // the words are at the new size. `resizeShape` scales the old box as an
       // estimate; this replaces the estimate with the measurement, so the
@@ -1036,6 +1167,17 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
       render();
     }
   });
+
+  /** The corner a resize pivots about, which is the one opposite the handle. */
+  function anchorFor(shape, handleId) {
+    const b = boundsOf(shape);
+    return {
+      nw: { x: b.x + b.w, y: b.y + b.h },
+      ne: { x: b.x, y: b.y + b.h },
+      se: { x: b.x, y: b.y },
+      sw: { x: b.x + b.w, y: b.y },
+    }[handleId] ?? { x: b.x, y: b.y };
+  }
 
   function endDrag(event) {
     if (!drag) return;
@@ -1064,7 +1206,7 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
       doc = commit(doc, {
         ...doc.present,
         shapes: [...doc.present.shapes, shape],
-        selected: shape.id,
+        selection: [shape.id],
       });
       handBackToSelection();
       render();
@@ -1077,6 +1219,13 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
       return;
     }
 
+    // Nor is changing what is selected. A marquee moved nothing and drew
+    // nothing; it only decided what the next command will act on.
+    if (finished.mode === 'marquee') {
+      render();
+      return;
+    }
+
     // A move or resize became final: make the state before it undoable.
     //
     // Unless nothing actually moved. Selecting a shape is a press and a release
@@ -1084,7 +1233,7 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
     // was pushing an undo step that undid nothing visible. Click three shapes and
     // the next three presses of Cmd+Z appear to do nothing at all, which reads as
     // undo being broken rather than as the history being full of no-ops.
-    if (!shapeChanged(finished.before, doc.present, finished.shape?.id)) {
+    if (!selectionChanged(finished.before, doc.present, finished.ids ?? [finished.shape?.id])) {
       render();
       return;
     }
@@ -1099,10 +1248,14 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
    * obvious. It runs once per pointerup on one small object, which is nowhere
    * near often enough to be worth anything cleverer.
    */
-  function shapeChanged(before, after, id) {
-    if (!id) return true;
-    const find = (present) => present.shapes.find((shape) => shape.id === id);
-    return JSON.stringify(find(before)) !== JSON.stringify(find(after));
+  function selectionChanged(before, after, ids) {
+    const wanted = (ids ?? []).filter(Boolean);
+    if (wanted.length === 0) return true;
+    // Alt duplicating adds shapes, which is a change however little anything
+    // moved, so a difference in the count settles it before any comparison.
+    if (before.shapes.length !== after.shapes.length) return true;
+    const find = (present, id) => present.shapes.find((shape) => shape.id === id);
+    return wanted.some((id) => JSON.stringify(find(before, id)) !== JSON.stringify(find(after, id)));
   }
 
   canvas.addEventListener('pointerup', endDrag);
@@ -1239,8 +1392,8 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
       });
 
       doc = commit(doc, existing
-        ? { ...replaceShape(doc.present, shape), selected: shape.id }
-        : { ...doc.present, shapes: [...doc.present.shapes, shape], selected: shape.id });
+        ? { ...replaceShape(doc.present, shape), selection: [shape.id] }
+        : { ...doc.present, shapes: [...doc.present.shapes, shape], selection: [shape.id] });
       handBackToSelection();
       render();
     };
@@ -1264,10 +1417,22 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
 
   // API
 
-  function restyleSelection(patch) {
-    const chosen = selectedShape(doc);
-    if (!chosen) return false;
-    doc = commit(doc, replaceShape(doc.present, { ...chosen, ...patch }));
+  /**
+   * Apply a style patch to everything selected.
+   *
+   * `applies` decides, per shape, whether the patch means anything for it. A
+   * counter has no dash and a highlighter has no stroke width, and a mixed
+   * selection should leave those members alone rather than giving them a
+   * property they never read. Callers that already know the patch is universal,
+   * such as a colour, pass nothing.
+   */
+  function restyleSelection(patch, applies = null) {
+    const chosen = selectedShapes(doc);
+    const targets = applies ? chosen.filter(applies) : chosen;
+    if (targets.length === 0) return false;
+    let present = doc.present;
+    for (const shape of targets) present = replaceShape(present, { ...shape, ...patch });
+    doc = commit(doc, present);
     render();
     return true;
   }
@@ -1277,12 +1442,47 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
    * style, because the buttons act on it. It is the usual rule in an inspector:
    * the border swatch shows the selected object's border, not the last one set.
    */
+  /**
+   * The value every shape in a set agrees on, or undefined when they differ.
+   *
+   * Members that do not carry the property at all are skipped rather than
+   * counted as disagreeing: a highlighter has no dash, and a set containing one
+   * should still show the dash the other members share.
+   */
+  function agreed(shapes, read) {
+    let found;
+    let seen = false;
+    for (const shape of shapes) {
+      const value = read(shape);
+      if (value === undefined || value === null) continue;
+      if (!seen) {
+        found = value;
+        seen = true;
+      } else if (value !== found) {
+        return undefined;
+      }
+    }
+    return seen ? found : undefined;
+  }
+
   function currentStyle() {
     const chosen = selectedShape(doc);
     if (!chosen) {
+      const many = selectedShapes(doc);
+      // With several selected there is no single answer, so the rule is: show
+      // the value where every member agrees, and fall back to the pending style
+      // where they do not. Never blank and never an indeterminate state,
+      // because the swatch is also the control that SETS the value, and a
+      // control showing nothing is a control you cannot predict.
       return {
-        colour, width, dash, ends, corner, fill, fillOpacity,
-        selectedKind: null,
+        colour: agreed(many, (sh) => sh.colour) ?? colour,
+        width: agreed(many, (sh) => sh.width) ?? width,
+        dash: agreed(many, (sh) => (sh.dash === undefined ? undefined : dashOf(sh))) ?? dash,
+        ends: agreed(many, (sh) => (sh.ends === undefined ? undefined : endsOf(sh))) ?? ends,
+        corner: agreed(many, (sh) => sh.corner) ?? corner,
+        fill: many.length > 0 ? agreed(many, (sh) => fillOf(sh)) ?? null : fill,
+        fillOpacity: agreed(many, (sh) => sh.fillOpacity) ?? fillOpacity,
+        selectedKind: agreed(many, (sh) => sh.kind) ?? null,
         text: { ...text },
       };
     }
@@ -1330,7 +1530,7 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
       const finished = drag;
       drag = null;
       hoverId = null;
-      if (finished.mode === 'move' || finished.mode === 'resize') {
+      if (finished.mode === 'move' || finished.mode === 'resize' || finished.mode === 'marquee') {
         doc = amend(doc, finished.before);
       }
       render();
@@ -1368,10 +1568,7 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
 
       // Only a line carries ends. Setting it with a box selected changes what
       // the next line will look like and leaves the box alone.
-      const chosen = selectedShape(doc);
-      if (chosen && (chosen.kind === 'arrow' || chosen.kind === 'line')) {
-        restyleSelection({ ends: next });
-      }
+      restyleSelection({ ends: next }, (shape) => shape.kind === 'arrow' || shape.kind === 'line');
       render();
       notify();
     },
@@ -1385,28 +1582,25 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
      */
     setCorner(next) {
       corner = Math.max(0, Number(next) || 0);
-      const chosen = selectedShape(doc);
-      if (chosen && CORNERED_KINDS.includes(chosen.kind)) {
-        restyleSelection({ corner });
-      }
+      restyleSelection({ corner }, (shape) => CORNERED_KINDS.includes(shape.kind));
       render();
       notify();
     },
     /** `null` means no fill, which is a value rather than an absence. */
     setFill(next) {
       fill = next;
-      const chosen = selectedShape(doc);
       // Text is fillable too: the fill is the plate behind the words, which is
       // what makes a caption readable over a busy screenshot.
-      if (chosen && (FILLABLE_TOOLS.includes(chosen.kind) || chosen.kind === 'text')) {
-        restyleSelection(next ? { fill: next, fillOpacity } : { fill: null });
-      }
+      restyleSelection(
+        next ? { fill: next, fillOpacity } : { fill: null },
+        (shape) => FILLABLE_TOOLS.includes(shape.kind) || shape.kind === 'text',
+      );
       notify();
     },
     setFillOpacity(next) {
       fillOpacity = clamp(next, 0, 1);
       const chosen = selectedShape(doc);
-      if (chosen && fillOf(chosen)) restyleSelection({ fillOpacity });
+      restyleSelection({ fillOpacity }, (shape) => fillOf(shape) !== null);
       notify();
     },
     setTextStyle(patch) {
@@ -1425,14 +1619,59 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
       notify();
     },
     deleteSelection() {
-      const chosen = selectedShape(doc);
-      if (!chosen) return false;
-      doc = commit(doc, removeShape(doc.present, chosen.id));
+      const ids = selectedIds(doc);
+      if (ids.length === 0) return false;
+      // One step, however many shapes. History is whole document snapshots, so
+      // this needs no new machinery to be atomic.
+      doc = commit(doc, removeShapes(doc.present, ids));
       render();
       return true;
     },
+    /**
+     * Move the selection with the arrow keys.
+     *
+     * One undo step per burst, not per key press. Holding an arrow key fires
+     * `keydown` at the operating system's repeat rate, and one step per repeat
+     * would mean thirty presses of undo to put back a nudge that took a second.
+     * The burst is closed by `endNudge`, which the key release calls.
+     *
+     * This is also the first real progress on LIMITATIONS L14, the editor being
+     * unusable without a pointer.
+     */
+    nudge(dx, dy) {
+      const ids = selectedIds(doc);
+      if (ids.length === 0) return false;
+      if (!nudging) {
+        nudging = doc.present;
+        doc = commit(doc, doc.present);
+      }
+      doc = amend(doc, moveShapes(doc.present, ids, dx, dy));
+      render();
+      notify();
+      return true;
+    },
+    /** Close a nudge burst, so the next one is a separate undo step. */
+    endNudge() {
+      if (!nudging) return;
+      // Nothing actually moved, so drop the step this burst opened rather than
+      // leaving an undo that undoes nothing.
+      if (JSON.stringify(nudging.shapes) === JSON.stringify(doc.present.shapes)) {
+        doc = { ...doc, past: doc.past.slice(0, -1) };
+      }
+      nudging = null;
+      notify();
+    },
+    selectAll() {
+      const ids = doc.present.shapes.map((shape) => shape.id);
+      if (ids.length === 0) return false;
+      chooseTool('select');
+      doc = amend(doc, { ...doc.present, selection: ids });
+      render();
+      notify();
+      return true;
+    },
     deselect() {
-      doc = amend(doc, { ...doc.present, selected: null });
+      doc = amend(doc, { ...doc.present, selection: [] });
       render();
     },
 
@@ -1443,7 +1682,7 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
       if (!pendingCrop) return null;
       const rect = pendingCrop;
       pendingCrop = null;
-      doc = commit(doc, { ...doc.present, crop: rect, selected: null });
+      doc = commit(doc, { ...doc.present, crop: rect, selection: [] });
       // Handed back the way a finished shape is: the crop is done, and the next
       // thing anyone does is look at the result.
       applyTool('select');
@@ -1537,15 +1776,15 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
      * exact pixels by the time a multi-page encode reaches its last page.
      */
     flatten() {
-      const chosen = doc.present.selected;
+      const chosen = selectedIds(doc);
       // Both kinds of chrome have to go: the selection handles, and the crop
       // dimming, which would otherwise be baked into the exported file as a
       // black border round the region the user had not applied yet.
       hideChrome = true;
-      doc = amend(doc, { ...doc.present, selected: null });
+      doc = amend(doc, { ...doc.present, selection: [] });
       render();
       hideChrome = false;
-      doc = amend(doc, { ...doc.present, selected: chosen });
+      doc = amend(doc, { ...doc.present, selection: chosen });
       locked += 1;
       return canvas;
     },

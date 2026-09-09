@@ -237,7 +237,7 @@ export function createDocument(width, height) {
     width,
     height,
     past: [],
-    present: { shapes: [], crop: null, selected: null },
+    present: { shapes: [], crop: null, selection: [] },
     future: [],
   };
 }
@@ -281,7 +281,7 @@ export function redo(doc) {
 }
 
 export function reset(doc) {
-  return commit(doc, { shapes: [], crop: null, selected: null });
+  return commit(doc, { shapes: [], crop: null, selection: [] });
 }
 
 export const isEdited = (doc) => doc.present.shapes.length > 0 || doc.present.crop !== null;
@@ -291,8 +291,40 @@ export function effectiveCrop(doc) {
   return doc.present.crop ?? { x: 0, y: 0, w: doc.width, h: doc.height };
 }
 
-export const selectedShape = (doc) =>
-  doc.present.shapes.find((s) => s.id === doc.present.selected) ?? null;
+// SELECTION
+//
+// `present.selection` is a list of ids, because a selection of one is just the
+// common case of a selection of several. Order is the order they were added and
+// carries no meaning; z-order stays the order of the shapes array.
+//
+// Nothing is persisted between sessions except style keys, and a document lives
+// only for the life of one result tab, so there is no stored format to migrate.
+
+export const selectedIds = (doc) => doc.present.selection ?? [];
+
+/** Every selected shape, in z-order rather than selection order. */
+export const selectedShapes = (doc) =>
+  doc.present.shapes.filter((s) => selectedIds(doc).includes(s.id));
+
+/**
+ * The one selected shape, or null when it is not exactly one.
+ *
+ * Kept as its own function because most callers genuinely mean "the single
+ * thing being edited": the handles, the resize, the text box, the style
+ * swatches. Returning null for a multi-selection is what lets those keep
+ * working unchanged rather than each growing a length check.
+ */
+export const selectedShape = (doc) => {
+  const ids = selectedIds(doc);
+  if (ids.length !== 1) return null;
+  return doc.present.shapes.find((s) => s.id === ids[0]) ?? null;
+};
+
+export const isSelected = (doc, id) => selectedIds(doc).includes(id);
+
+/** Shift click semantics: in the set becomes out of it, and the reverse. */
+export const toggleSelected = (selection, id) =>
+  (selection.includes(id) ? selection.filter((x) => x !== id) : [...selection, id]);
 
 // GEOMETRY
 
@@ -728,12 +760,63 @@ export function replaceShape(present, shape) {
   return { ...present, shapes: present.shapes.map((s) => (s.id === shape.id ? shape : s)) };
 }
 
-export function removeShape(present, id) {
+export function removeShapes(present, ids) {
+  const gone = new Set(ids);
   return {
     ...present,
-    shapes: present.shapes.filter((s) => s.id !== id),
-    selected: present.selected === id ? null : present.selected,
+    shapes: present.shapes.filter((s) => !gone.has(s.id)),
+    selection: (present.selection ?? []).filter((id) => !gone.has(id)),
   };
+}
+
+export const removeShape = (present, id) => removeShapes(present, [id]);
+
+/** Do two axis-aligned boxes overlap at all? */
+export const rectsOverlap = (a, b) =>
+  a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+
+/**
+ * The shapes a marquee catches.
+ *
+ * Intersect, not contain. Requiring full enclosure means a marquee that clips
+ * the edge of the thing you were dragging around selects nothing, and people
+ * reliably clip the edge.
+ */
+export function shapesInMarquee(shapes, rect) {
+  // A marquee with no area is a click, not a sweep, and a click is answered by
+  // hit testing the shape itself. Without this guard a click anywhere inside a
+  // rhombus's bounding box selects it through the marquee, including the empty
+  // corners that the geometry table exists to exclude, which quietly puts back
+  // the bounding box selection this release removed.
+  if (!(rect.w >= MIN_DRAG || rect.h >= MIN_DRAG)) return [];
+  return shapes.filter((s) => rectsOverlap(boundsOf(s), rect)).map((s) => s.id);
+}
+
+/** Move several shapes by the same offset, leaving the rest untouched. */
+export function moveShapes(present, ids, dx, dy) {
+  const moving = new Set(ids);
+  return {
+    ...present,
+    shapes: present.shapes.map((s) => (moving.has(s.id) ? moveShape(s, dx, dy) : s)),
+  };
+}
+
+/**
+ * The union of several shapes' boxes, or null when there are none.
+ *
+ * Not drawn as chrome: a multi-selection gets a dashed outline on each member
+ * instead, because a union box has no handles and so is not a drag target, and
+ * its extents are readable from the members anyway. It exists for callers that
+ * need to know where the selection is.
+ */
+export function unionBounds(shapes) {
+  if (shapes.length === 0) return null;
+  const boxes = shapes.map(boundsOf);
+  const x = Math.min(...boxes.map((b) => b.x));
+  const y = Math.min(...boxes.map((b) => b.y));
+  const right = Math.max(...boxes.map((b) => b.x + b.w));
+  const bottom = Math.max(...boxes.map((b) => b.y + b.h));
+  return { x, y, w: right - x, h: bottom - y };
 }
 
 /** Counters number themselves in the order they were placed. */

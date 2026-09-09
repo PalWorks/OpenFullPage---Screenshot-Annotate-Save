@@ -72,6 +72,11 @@ const TOOL_KEYS = {
   d: 'rhombus', g: 'hexagon',
 };
 
+/** Arrow keys move the selection. Ten times as far with Shift. */
+const NUDGES = {
+  ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1],
+};
+
 const JPEG_QUALITY = 0.92;
 
 // The stitched capture, kept untouched. The visible canvas is rendered from it
@@ -224,7 +229,10 @@ async function finish() {
       ui.redo.disabled = !state.canRedo;
       ui.revert.disabled = false;
       ui.revert.title = resetLabel(state.edited);
-      ui.delete.disabled = !state.selected;
+      // selectedCount, not selected: `selected` is the ONE selected shape and
+      // is deliberately null for a set, so reading it here would disable Delete
+      // exactly when several things are selected.
+      ui.delete.disabled = state.selectedCount === 0;
       ui.dimensions.textContent = `${state.crop.w} × ${state.crop.h} pixels`;
       markPressed('[data-tool]', (b) => b.dataset.tool === state.tool);
       showStyle(state.style, state.tool);
@@ -979,6 +987,11 @@ document.addEventListener('keydown', (event) => {
     } else if (key === 'c') {
       event.preventDefault();
       ui.copy.click();
+    } else if (key === 'a') {
+      // Nothing on the canvas competes for Cmd+A: the inline text box stops
+      // propagation itself, and the guard above returns for any field.
+      event.preventDefault();
+      editor.selectAll();
     }
     return;
   }
@@ -1007,10 +1020,22 @@ document.addEventListener('keydown', (event) => {
     if (!editor.cancelDrag()) editor.deselect();
   } else if (key === 'backspace' || key === 'delete') {
     if (editor.deleteSelection()) event.preventDefault();
+  } else if (NUDGES[event.key]) {
+    // A pixel at a time, ten with Shift. The whole selection moves, which is
+    // why this was cheaper to build after multi-select than before it.
+    const [dx, dy] = NUDGES[event.key];
+    const step = event.shiftKey ? 10 : 1;
+    if (editor.nudge(dx * step, dy * step)) event.preventDefault();
   } else if (TOOL_KEYS[key]) {
     event.preventDefault();
     selectTool(TOOL_KEYS[key]);
   }
+});
+
+// A nudge burst ends when the key comes up, so holding an arrow key is one
+// undo step rather than one per repeat.
+document.addEventListener('keyup', (event) => {
+  if (NUDGES[event.key]) editor?.endNudge();
 });
 
 // EXPORTING

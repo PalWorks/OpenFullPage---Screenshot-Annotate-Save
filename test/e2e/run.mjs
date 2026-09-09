@@ -301,21 +301,31 @@ function stageProfile(downloadDir) {
 
 // EDITOR DRIVING
 
-/** A real mouse drag, so the editor sees genuine pointer events. */
-async function dragOn(cdp, session, from, to, steps = 8) {
+/** CDP's modifier bitmask, for drags that hold a key down. */
+const MODIFIERS = { alt: 1, ctrl: 2, meta: 4, shift: 8 };
+
+/**
+ * A real mouse drag, so the editor sees genuine pointer events.
+ *
+ * `held` is a list of modifier names. They go on every event of the drag, press
+ * and moves and release alike, because that is what holding a key down looks
+ * like and the editor reads the modifier off the move events.
+ */
+async function dragOn(cdp, session, from, to, steps = 8, held = []) {
+  const modifiers = held.reduce((mask, name) => mask | (MODIFIERS[name] ?? 0), 0);
   const at = (i) => ({
     x: from.x + ((to.x - from.x) * i) / steps,
     y: from.y + ((to.y - from.y) * i) / steps,
   });
 
   await cdp.send('Input.dispatchMouseEvent',
-    { type: 'mousePressed', ...from, button: 'left', buttons: 1, clickCount: 1 }, session);
+    { type: 'mousePressed', ...from, button: 'left', buttons: 1, clickCount: 1, modifiers }, session);
   for (let i = 1; i <= steps; i += 1) {
     await cdp.send('Input.dispatchMouseEvent',
-      { type: 'mouseMoved', ...at(i), button: 'left', buttons: 1 }, session);
+      { type: 'mouseMoved', ...at(i), button: 'left', buttons: 1, modifiers }, session);
   }
   await cdp.send('Input.dispatchMouseEvent',
-    { type: 'mouseReleased', ...to, button: 'left', buttons: 0, clickCount: 1 }, session);
+    { type: 'mouseReleased', ...to, button: 'left', buttons: 0, clickCount: 1, modifiers }, session);
   await sleep(120);
 }
 
@@ -954,6 +964,8 @@ async function exerciseEditor(cdp, session, log) {
 
   await exerciseShapes(cdp, session, check, p);
 
+  await exerciseMultiSelect(cdp, session, check, p);
+
   await exerciseLoupeRedaction(cdp, session, check, p);
 
   await exercisePointerFeedback(cdp, session, check, p);
@@ -1263,6 +1275,275 @@ async function exerciseTextFrame(cdp, session, check, p) {
   await clickButton(cdp, session, '#undo');
   await clickButton(cdp, session, '#undo');
   await settle();
+}
+
+/**
+ * Several shapes at once: marquee, shift click, group move, group delete, and
+ * the keyboard.
+ *
+ * Everything here works in a corner of the capture nothing else has drawn in,
+ * and asserts that corner is empty before it starts, because a check that picks
+ * up someone else's leftover shape reports whatever that shape happens to do.
+ */
+async function exerciseMultiSelect(cdp, session, check, p) {
+  const NW = [0.56, 0.74];
+  const SE = [0.94, 0.96];
+  const mid = (a, b, f) => a + (b - a) * f;
+  const at = (fx, fy) => p(mid(NW[0], SE[0], fx), mid(NW[1], SE[1], fy));
+
+  // Not canvasSignature: that one hashes only the top left 900 by 600 of the
+  // canvas, and this check works in a far corner where nothing else has drawn.
+  // Hashing a region that does not contain the shapes reports "nothing moved"
+  // whatever happens.
+  const signature = () => evaluate(cdp, session, `(() => {
+    const c = document.getElementById('canvas');
+    const g = c.getContext('2d', { willReadFrequently: true });
+    const { data } = g.getImageData(0, 0, c.width, Math.min(c.height, 900));
+    let hash = 2166136261;
+    for (let i = 0; i < data.length; i += 4) {
+      hash ^= data[i] + data[i + 1] * 3 + data[i + 2] * 7;
+      hash = Math.imul(hash, 16777619);
+    }
+    return String(hash >>> 0);
+  })()`);
+
+  // Two different jobs, and mixing them up cost a round of this check.
+  // `park` only moves the pointer off the canvas, so the hover outline is not
+  // in the picture; it must NOT deselect, because a sweep is followed by a
+  // command that acts on the selection. `settle` also drops the selection, and
+  // every signature is taken after one, so two measurements can never differ
+  // merely because one of them had a dashed outline in it.
+  /**
+   * A hash of one rectangle of the canvas, given two screen points.
+   *
+   * The whole-area signature answers "did anything change", which a move of a
+   * single shape also satisfies. To prove that dragging ONE member moved the
+   * OTHER one, the other one needs measuring on its own.
+   */
+  const regionSignature = (a, b) => evaluate(cdp, session, `(() => {
+    const c = document.getElementById('canvas');
+    const box = c.getBoundingClientRect();
+    const toCanvas = (px, py) => ({
+      x: Math.round(((px - box.left) / box.width) * c.width),
+      y: Math.round(((py - box.top) / box.height) * c.height),
+    });
+    const p1 = toCanvas(${a.x}, ${a.y});
+    const p2 = toCanvas(${b.x}, ${b.y});
+    const x = Math.max(0, Math.min(p1.x, p2.x));
+    const y = Math.max(0, Math.min(p1.y, p2.y));
+    const w = Math.min(c.width - x, Math.abs(p2.x - p1.x));
+    const h = Math.min(c.height - y, Math.abs(p2.y - p1.y));
+    if (w < 2 || h < 2) return 'empty';
+    const g = c.getContext('2d', { willReadFrequently: true });
+    const { data } = g.getImageData(x, y, w, h);
+    let hash = 2166136261;
+    for (let i = 0; i < data.length; i += 4) {
+      hash ^= data[i] + data[i + 1] * 3 + data[i + 2] * 7;
+      hash = Math.imul(hash, 16777619);
+    }
+    return String(hash >>> 0);
+  })()`);
+
+  const park = async () => {
+    await moveTo(cdp, session, { x: 6, y: 6 });
+    await sleep(110);
+  };
+  const escape = async () => {
+    await evaluate(cdp, session,
+      `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+    await sleep(110);
+  };
+  const settle = async () => {
+    await escape();
+    await park();
+  };
+  const anySelected = async () => evaluate(cdp, session,
+    'document.getElementById("delete").disabled === false');
+  const pick = async (kind) => {
+    await clickButton(cdp, session, '[data-pop="pop-shapes"]');
+    await clickButton(cdp, session, `#pop-shapes [data-shape="${kind}"]`);
+    await evaluate(cdp, session, 'document.body.click()');
+    await sleep(80);
+  };
+  const useSelect = async () => {
+    await clickButton(cdp, session, '[data-tool="select"]');
+    await escape();
+  };
+
+  // The two shapes live between fy 0.10 and 0.55, so a sweep along fy 0.30 to
+  // 0.35 starting at fx 0.02 begins on empty canvas and only CLIPS both of
+  // them. Starting inside a shape would be a move drag, not a marquee, which is
+  // exactly the mistake the first version of this check made: it reported that
+  // a marquee selected both while actually dragging one across the other.
+  const sweep = async () => {
+    await dragOn(cdp, session, at(0.02, 0.30), at(0.98, 0.35));
+    await park();
+  };
+
+  await useSelect();
+  await settle();
+  const emptyArea = await signature();
+  await dragOn(cdp, session, at(0.5, 0.5), at(0.5, 0.5), 1);
+  const clear = !(await anySelected());
+  check(clear,
+    'the corner this check draws in already had a shape in it',
+    'the multi-select test area is empty before it starts');
+  if (!clear) return;
+
+  await pick('rect');
+  await dragOn(cdp, session, at(0.05, 0.10), at(0.40, 0.55));
+  await pick('ellipse');
+  await dragOn(cdp, session, at(0.55, 0.10), at(0.95, 0.55));
+  await useSelect();
+  await settle();
+  const withBoth = await signature();
+  check(withBoth !== emptyArea, 'the two shapes did not draw',
+    'two shapes drawn in the test area');
+
+  // A sweep that only clips both must catch both. Proved by deleting: if the
+  // area returns to exactly what it was before either shape existed, both were
+  // in the selection. Checking that "something" is selected would pass with one.
+  await sweep();
+  check(await anySelected(), 'a marquee across both shapes selected nothing',
+    'a marquee that only clips both shapes selects them');
+  await clickButton(cdp, session, '#delete');
+  await settle();
+  const afterDelete = await signature();
+  check(afterDelete === emptyArea,
+    `deleting the marquee selection did not remove both shapes (empty ${emptyArea}, after delete ${afterDelete})`,
+    'a marquee selects every shape it touches, and Delete removes all of them');
+
+  await clickButton(cdp, session, '#undo');
+  await settle();
+  const restored = await signature();
+  check(restored === withBoth,
+    `undoing a group delete did not bring both shapes back in one step (wanted ${withBoth}, got ${restored})`,
+    'a group delete is one undo step, however many shapes it removed');
+  if (restored !== withBoth) return;
+
+  // Drag the set by one of its members. The other has to come with it, and
+  // that is measured on the OTHER one alone: a whole-canvas hash changes just
+  // as happily when only the shape under the pointer moves, so it cannot tell
+  // a group move from an ordinary one.
+  const ellipseArea = [at(0.48, 0.02), at(1.0, 0.62)];
+  const ellipseBefore = await regionSignature(...ellipseArea);
+  await sweep();
+  await dragOn(cdp, session, at(0.20, 0.32), at(0.20, 0.18));
+  await settle();
+  const afterMove = await signature();
+  const ellipseAfter = await regionSignature(...ellipseArea);
+  check(afterMove !== withBoth, 'dragging a member of the selection moved nothing',
+    'dragging one member of a selection moved something');
+  check(ellipseAfter !== ellipseBefore,
+    'dragging the rectangle left the ellipse where it was, so the drag moved one shape and not the selection',
+    'dragging the rectangle moved the ellipse too, so the whole selection travelled');
+  await clickButton(cdp, session, '#undo');
+  await settle();
+  const afterMoveUndo = await signature();
+  check(afterMoveUndo === withBoth,
+    `undoing the group move did not put both shapes back in one step (wanted ${withBoth}, got ${afterMoveUndo})`,
+    'a group move is one undo step');
+
+  // Arrow keys move the selection, and holding one is a single undo step.
+  await sweep();
+  for (let i = 0; i < 6; i += 1) {
+    await evaluate(cdp, session,
+      `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))`);
+  }
+  await evaluate(cdp, session,
+    `document.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowRight', bubbles: true }))`);
+  await settle();
+  const afterNudge = await signature();
+  check(afterNudge !== withBoth, 'the arrow keys moved nothing',
+    'the arrow keys nudge the selection');
+  await clickButton(cdp, session, '#undo');
+  await settle();
+  const afterNudgeUndo = await signature();
+  check(afterNudgeUndo === withBoth,
+    `a burst of six arrow keys took more than one undo to put back (wanted ${withBoth}, got ${afterNudgeUndo})`,
+    'a burst of arrow keys is one undo step, not one per key press');
+
+  // Shift click adds to the set without starting a drag.
+  await escape();
+  await dragOn(cdp, session, at(0.20, 0.32), at(0.20, 0.32), 1);
+  await dragOn(cdp, session, at(0.75, 0.32), at(0.75, 0.32), 1, ['shift']);
+  await park();
+  await clickButton(cdp, session, '#delete');
+  await settle();
+  const afterShiftDelete = await signature();
+  check(afterShiftDelete === emptyArea,
+    `shift clicking the second shape did not add it to the selection (empty ${emptyArea}, got ${afterShiftDelete})`,
+    'shift clicking adds a shape to the selection rather than replacing it');
+  await clickButton(cdp, session, '#undo');
+  await settle();
+
+  // Alt dragging duplicates: the original stays and the copy travels. Proved by
+  // deleting the selection afterwards, which removes only the copy, leaving a
+  // canvas that is neither empty nor what it was before the drag.
+  await escape();
+  await dragOn(cdp, session, at(0.20, 0.32), at(0.20, 0.32), 1);
+  await dragOn(cdp, session, at(0.20, 0.32), at(0.22, 0.90), 8, ['alt']);
+  await settle();
+  const afterAlt = await signature();
+  check(afterAlt !== withBoth, 'alt dragging changed nothing at all',
+    'alt dragging a shape changed the canvas');
+  await dragOn(cdp, session, at(0.22, 0.90), at(0.22, 0.90), 1);
+  await park();
+  await clickButton(cdp, session, '#delete');
+  await settle();
+  const afterCopyRemoved = await signature();
+  check(afterCopyRemoved === withBoth,
+    `alt drag did not leave the original behind: removing the copy gave ${afterCopyRemoved}, wanted ${withBoth}`,
+    'alt dragging leaves the original where it was and drags a copy');
+
+  // What the toolbar shows for a mixed selection.
+  //
+  // There is no single answer, so the rule is: show the value every member
+  // agrees on, and fall back to the pending style where they disagree. Never
+  // blank and never indeterminate, because the swatch is also the control that
+  // sets the value.
+  //
+  // Stroke width is used to test it because it can be set on the shapes and
+  // then changed on the pending style alone, which is what makes "agreed" and
+  // "pending" tell apart. A colour cannot: setting one sets both.
+  const setWidth = async (px) => {
+    await clickButton(cdp, session, '[data-pop="pop-style"]');
+    await clickButton(cdp, session, `[data-width="${px}"]`);
+    await evaluate(cdp, session, 'document.body.click()');
+    await sleep(90);
+  };
+  const shownWidth = () => evaluate(cdp, session, `(() => {
+    const on = document.querySelector('[data-width][aria-pressed="true"]');
+    return on ? on.dataset.width : 'none';
+  })()`);
+
+  await sweep();
+  await setWidth(7);              // both shapes become 7, and so does the pending style
+  await escape();
+  await setWidth(2);              // pending is now 2, the shapes are still 7
+  await sweep();
+  const agreedWidth = await shownWidth();
+  check(agreedWidth === '7',
+    `two shapes that both have a 7px stroke showed ${agreedWidth}px in the toolbar`,
+    'a selection whose members agree shows the value they agree on');
+
+  // Now make them disagree, and set the pending style to a third value.
+  await escape();
+  await dragOn(cdp, session, at(0.20, 0.32), at(0.20, 0.32), 1);
+  await setWidth(11);             // one shape is 11, the other is still 7
+  await escape();
+  await setWidth(2);              // pending is 2 again
+  await sweep();
+  const mixedWidth = await shownWidth();
+  check(mixedWidth === '2',
+    `a selection of a 7px and an 11px shape showed ${mixedWidth}px instead of falling back to the pending 2px`,
+    'a selection whose members disagree falls back to the pending style');
+
+  // Leave the corner as it was found.
+  await escape();
+  await sweep();
+  await clickButton(cdp, session, '#delete');
+  await park();
 }
 
 /**

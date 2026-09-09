@@ -53,7 +53,14 @@ import {
   replaceShape,
   reset,
   resizeShape,
+  moveShapes,
+  removeShapes,
+  selectedIds,
   selectedShape,
+  selectedShapes,
+  shapesInMarquee,
+  toggleSelected,
+  unionBounds,
   shapeAt,
   undo,
 } from '../src/lib/edit.js';
@@ -65,7 +72,7 @@ const box = (id, x, y, w = 100, h = 60) => ({
 const arrow = (id, ax, ay, bx, by) => ({
   id, kind: 'arrow', from: { x: ax, y: ay }, to: { x: bx, y: by }, colour: '#ef4444', width: 4,
 });
-const withShapes = (...shapes) => commit(doc(), { shapes, crop: null, selected: null });
+const withShapes = (...shapes) => commit(doc(), { shapes, crop: null, selection: [] });
 
 // HISTORY
 
@@ -373,16 +380,99 @@ test('replacing a shape leaves the others and the order alone', () => {
 });
 
 test('deleting a shape also clears the selection pointing at it', () => {
-  const present = { shapes: [box('a', 0, 0), box('b', 5, 5)], crop: null, selected: 'b' };
+  const present = { shapes: [box('a', 0, 0), box('b', 5, 5)], crop: null, selection: ['b'] };
   const next = removeShape(present, 'b');
   assert.deepEqual(next.shapes.map((s) => s.id), ['a']);
-  assert.equal(next.selected, null);
+  assert.deepEqual(next.selection, []);
 });
 
 test('selectedShape returns null rather than throwing when nothing is selected', () => {
   assert.equal(selectedShape(withShapes(box('a', 0, 0))), null);
-  const d = amend(withShapes(box('a', 0, 0)), { shapes: [box('a', 0, 0)], crop: null, selected: 'a' });
+  const d = amend(withShapes(box('a', 0, 0)), { shapes: [box('a', 0, 0)], crop: null, selection: ['a'] });
   assert.equal(selectedShape(d).id, 'a');
+});
+
+// MULTI-SELECT
+//
+// A selection of one is the common case of a selection of several, so the model
+// holds a list of ids and `selectedShape` is the convenience that returns the
+// single one. Everything that genuinely means "the one thing being edited", the
+// handles and the resize and the text box, keeps reading that.
+
+const selectionOf = (...ids) => (d) =>
+  amend(d, { ...d.present, selection: ids });
+
+test('selectedShape is null for a set, and selectedShapes is the set', () => {
+  const d = selectionOf('a', 'b')(withShapes(box('a', 0, 0), box('b', 300, 300)));
+  assert.equal(selectedShape(d), null, 'a set has no single selected shape');
+  assert.deepEqual(selectedShapes(d).map((s) => s.id), ['a', 'b']);
+  assert.deepEqual(selectedIds(d), ['a', 'b']);
+
+  const one = selectionOf('b')(withShapes(box('a', 0, 0), box('b', 300, 300)));
+  assert.equal(selectedShape(one).id, 'b');
+});
+
+test('selectedShapes comes back in z-order, not in the order they were clicked', () => {
+  // The order shapes were added to the selection carries no meaning, and the
+  // order they are drawn in does, so anything iterating the set gets that one.
+  const d = selectionOf('b', 'a')(withShapes(box('a', 0, 0), box('b', 300, 300)));
+  assert.deepEqual(selectedShapes(d).map((s) => s.id), ['a', 'b']);
+});
+
+test('shift clicking adds and removes', () => {
+  assert.deepEqual(toggleSelected([], 'a'), ['a']);
+  assert.deepEqual(toggleSelected(['a'], 'b'), ['a', 'b']);
+  assert.deepEqual(toggleSelected(['a', 'b'], 'a'), ['b']);
+});
+
+test('a marquee catches what it touches, not only what it swallows whole', () => {
+  // Containment would mean that clipping the edge of the thing you dragged
+  // around selects nothing, and people reliably clip the edge.
+  const shapes = [box('a', 0, 0, 100, 100), box('b', 400, 400, 100, 100)];
+  assert.deepEqual(shapesInMarquee(shapes, { x: 50, y: 50, w: 100, h: 100 }), ['a']);
+  assert.deepEqual(shapesInMarquee(shapes, { x: 0, y: 0, w: 600, h: 600 }), ['a', 'b']);
+  assert.deepEqual(shapesInMarquee(shapes, { x: 900, y: 900, w: 10, h: 10 }), []);
+
+  // A click is not a marquee. This has to be checked from INSIDE a shape's
+  // bounding box, not from its corner: a zero area rectangle at the corner
+  // misses for the trivial reason that nothing overlaps a zero width edge, and
+  // a test that passes for that reason proves nothing. From the middle of the
+  // box it would catch the shape, which is bounding box selection returning
+  // through the back door.
+  assert.deepEqual(shapesInMarquee(shapes, { x: 50, y: 50, w: 0, h: 0 }), []);
+  assert.deepEqual(shapesInMarquee(shapes, { x: 50, y: 50, w: 1, h: 1 }), []);
+  // And a real sweep from the same point still works.
+  assert.deepEqual(shapesInMarquee(shapes, { x: 50, y: 50, w: 40, h: 40 }), ['a']);
+});
+
+test('moving a set moves every member by the same amount and nothing else', () => {
+  const present = {
+    shapes: [box('a', 0, 0), box('b', 300, 300), box('c', 600, 600)],
+    crop: null,
+    selection: ['a', 'c'],
+  };
+  const moved = moveShapes(present, ['a', 'c'], 10, 20);
+  assert.deepEqual(moved.shapes.map((s) => s.rect.x), [10, 300, 610]);
+  assert.deepEqual(moved.shapes.map((s) => s.rect.y), [20, 300, 620]);
+});
+
+test('deleting a set is one step and leaves nothing selected', () => {
+  let d = withShapes(box('a', 0, 0), box('b', 300, 300), box('c', 600, 600));
+  d = selectionOf('a', 'c')(d);
+  const before = d.past.length;
+  d = commit(d, removeShapes(d.present, selectedIds(d)));
+  assert.deepEqual(d.present.shapes.map((s) => s.id), ['b']);
+  assert.deepEqual(d.present.selection, []);
+  assert.equal(d.past.length, before + 1, 'deleting two shapes is one undo step, not two');
+  assert.deepEqual(undo(d).present.shapes.map((s) => s.id), ['a', 'b', 'c']);
+});
+
+test('the union of a selection is the box around all of it', () => {
+  assert.equal(unionBounds([]), null);
+  const box1 = box('a', 0, 0, 100, 60);
+  const box2 = box('b', 300, 200, 100, 60);
+  assert.deepEqual(unionBounds([box1, box2]), { x: 0, y: 0, w: 400, h: 260 });
+  assert.deepEqual(unionBounds([box1]), boundsOf(box1));
 });
 
 // GEOMETRY
