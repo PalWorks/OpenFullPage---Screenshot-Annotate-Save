@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  invariants:
+    name: Invariants and unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # No install step: the project has zero dependencies by design (V1-SPEC §1).
+      - name: Package
+        run: ./tools/pack.sh
+
+      - name: Security invariants
+        run: node --test 'test/**/*.test.js'
+
+      - name: Icons match their design source
+        run: node tools/make-icons.mjs --check
+
+  capture:
+    name: End-to-end capture
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Only the local fixture: deterministic, and it needs no network.
+      - name: Capture the fixture page in real Chrome
+        run: xvfb-run --auto-servernum node test/e2e/run.mjs
+        env:
+          FPC_CHROME: /usr/bin/google-chrome
+
+  verifier:
+    name: verify-crx
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Vet and build
+        working-directory: tools/verify-crx
+        run: |
+          test -z "$(gofmt -l .)"
+          go vet ./...
+          go build -o verify-crx .
+
+      - name: The packaged zip must match the source tree
+        run: |
+          ./tools/pack.sh
+          ./tools/verify-crx/verify-crx zip dist/openfullpage-$(cat VERSION).zip .

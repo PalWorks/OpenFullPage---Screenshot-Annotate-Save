@@ -1,0 +1,29 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Tall Capture Fixture</title>
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body { font: 16px/1.4 system-ui, sans-serif; }
+  .row {
+    height: 100px; display: flex; align-items: center; padding: 0 20px;
+    font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums;
+  }
+  .row:nth-child(odd) { background: #f4f4f5; }
+  .row:nth-child(even) { background: #e4e4e7; }
+</style>
+
+<main id="rows"></main>
+
+<script>
+  // Long enough that the walk takes many seconds, which is what the Finish now
+  // button needs in order to be pressed while a capture is still going. Kept
+  // under Chrome's 16384 pixel canvas limit so nothing else about the capture
+  // changes: this fixture tests stopping, not scaling.
+  const rows = document.getElementById('rows');
+  for (let i = 1; i <= 150; i++) {
+    const el = document.createElement('div');
+    el.className = 'row';
+    el.textContent = `ROW ${String(i).padStart(3, '0')}`;
+    rows.appendChild(el);
+  }
+</script>

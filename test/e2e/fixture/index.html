@@ -1,0 +1,58 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Capture Fixture</title>
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body { font: 16px/1.4 system-ui, sans-serif; }
+  /* A sticky header: must appear exactly once, at the top, in the output. */
+  header {
+    position: sticky; top: 0; z-index: 10;
+    height: 64px; display: flex; align-items: center; padding: 0 20px;
+    background: #4338ca; color: #fff; font-weight: 700; letter-spacing: .04em;
+  }
+  /* A fixed cookie bar: allowed in the first tile only. */
+  #cookiebar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+    padding: 14px 20px; background: #18181b; color: #fbbf24; font-weight: 700;
+  }
+  .row {
+    height: 100px; display: flex; align-items: center; padding: 0 20px;
+    font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums;
+  }
+  .row:nth-child(odd) { background: #f4f4f5; }
+  .row:nth-child(even) { background: #e4e4e7; }
+  #lazy {
+    height: 140px; display: flex; align-items: center; justify-content: center;
+    background: #fee2e2; color: #991b1b; font-size: 30px; font-weight: 800;
+  }
+  #lazy.seen { background: #dcfce7; color: #166534; }
+</style>
+
+<header>STICKY HEADER</header>
+<main id="rows"></main>
+<div id="lazy">LAZY NOT LOADED</div>
+<div id="cookiebar">FIXED COOKIE BAR</div>
+
+<script>
+  // 40 numbered bands. Any duplicated or missing number in the stitched output
+  // is a tiling bug, and it is visible at a glance.
+  const rows = document.getElementById('rows');
+  for (let i = 1; i <= 40; i++) {
+    const el = document.createElement('div');
+    el.className = 'row';
+    el.textContent = `ROW ${String(i).padStart(2, '0')}`;
+    rows.appendChild(el);
+  }
+
+  // Only resolves if something actually scrolls this into view, the check that
+  // the lazy-load warm-up pass works.
+  const lazy = document.getElementById('lazy');
+  new IntersectionObserver((entries, obs) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      lazy.textContent = 'LAZY LOADED OK';
+      lazy.classList.add('seen');
+      obs.disconnect();
+    }
+  }).observe(lazy);
+</script>

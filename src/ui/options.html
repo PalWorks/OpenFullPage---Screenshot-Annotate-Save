@@ -1,0 +1,371 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>OpenFullPage, settings</title>
+<style>
+  :root {
+    --indigo: #4338ca; --indigo-bright: #6366f1; --ink: #18181b; --muted: #6b6b73;
+    --line: #e4e4e7; --surface: #fff; --sunken: #fafafa; --warn: #b45309; --warnbg: #fffbeb;
+    /* Text drawn on the accent. It flips with the accent, because the accent is
+       dark in this theme and light in the other one. */
+    --on-indigo: #ffffff;
+  }
+  /* The accent has to lift in the dark theme too. Left at the light value it
+     was indigo on near black, 2.24:1, which is below the floor for the picked
+     feedback category and for every link on the page.
+
+     Written twice on purpose. "system" is the default and stamps no data-theme,
+     so it falls through to prefers-color-scheme; an explicit choice has to win
+     over the system in both directions. See src/lib/theme.js. */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink:#fafafa; --muted:#a1a1aa; --line:#3f3f46; --surface:#18181b; --sunken:#101012;
+      --warn:#fbbf24; --warnbg:#292524;
+      --indigo:#a5a0f5; --indigo-bright:#c3bffa; --on-indigo:#16132a;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink:#fafafa; --muted:#a1a1aa; --line:#3f3f46; --surface:#18181b; --sunken:#101012;
+    --warn:#fbbf24; --warnbg:#292524;
+    --indigo:#a5a0f5; --indigo-bright:#c3bffa; --on-indigo:#16132a;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--sunken); color:var(--ink);
+         font:14px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  /* Content and its index, side by side and centred as a pair. minmax(0, ...)
+     rather than a bare width: a grid item's default min-width is auto, which lets
+     the <pre> in the diagnostics block refuse to shrink and pushes the whole page
+     sideways on a narrow window. */
+  main {
+    display: grid;
+    grid-template-columns: minmax(0, 680px) 190px;
+    gap: 44px;
+    justify-content: center;
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+    align-items: start;
+    counter-reset: section;
+  }
+  .col { min-width: 0; }
+  h1 { font-size:20px; margin:0 0 6px; letter-spacing:-0.02em; }
+  .lede { margin:0 0 32px; color:var(--muted); }
+  section { background:var(--surface); border:1px solid var(--line); border-radius:10px;
+            padding:18px 20px; margin-bottom:16px; scroll-margin-top: 24px; }
+  h2 { font-size:14px; margin:0 0 4px; display:flex; align-items:center; gap:10px; }
+  /* The numeral is generated, so inserting a section renumbers the rest and the
+     index beside it, which is built from the same list, cannot disagree. */
+  section > h2::before {
+    counter-increment: section;
+    content: counter(section, decimal-leading-zero);
+    flex: none;
+    min-width: 24px;
+    padding: 3px 0;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--indigo) 14%, transparent);
+    color: var(--indigo);
+    text-align: center;
+    font: 700 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* THE INDEX
+     Sticky, because the page is long enough that the reason to have one is
+     scrolling. Hidden rather than squeezed on a narrow window: the sections all
+     have headings, so losing it costs nothing but the jump. */
+  .toc { position: sticky; top: 32px; }
+  .toc h2 {
+    margin: 0 0 10px 12px;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .toc ol { margin: 0; padding: 0; list-style: none; counter-reset: nav; }
+  .toc a {
+    display: flex;
+    align-items: baseline;
+    gap: 9px;
+    padding: 6px 12px;
+    border-left: 2px solid transparent;
+    color: var(--muted);
+    font-size: 12.5px;
+    line-height: 1.35;
+    text-decoration: none;
+  }
+  .toc a::before {
+    counter-increment: nav;
+    content: counter(nav, decimal-leading-zero);
+    flex: none;
+    color: color-mix(in srgb, var(--ink) 45%, transparent);
+    font: 700 10px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+  .toc a:hover { color: var(--ink); }
+  .toc a[aria-current="true"] {
+    border-left-color: var(--indigo);
+    color: var(--ink);
+    font-weight: 600;
+  }
+  .toc a[aria-current="true"]::before { color: var(--indigo); }
+  .toc a:focus-visible { outline: 2px solid var(--indigo); outline-offset: -2px; border-radius: 4px; }
+
+  @media (max-width: 920px) {
+    main { grid-template-columns: minmax(0, 1fr); max-width: 720px; }
+    .toc { display: none; }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    html { scroll-behavior: smooth; }
+  }
+  section > p { margin:0 0 14px; color:var(--muted); font-size:12.5px; }
+  .row { display:flex; gap:14px; align-items:flex-start; padding:12px 0; border-top:1px solid var(--line); }
+  .row:first-of-type { border-top:0; }
+  .row .text { flex:1; }
+  .row strong { display:block; font-weight:600; font-size:13px; }
+  .row span { color:var(--muted); font-size:12.5px; }
+  input[type=checkbox] { width:17px; height:17px; margin-top:2px; accent-color:var(--indigo); }
+  select { padding:6px 9px; border:1px solid var(--line); border-radius:7px;
+           background:var(--surface); color:var(--ink); font:inherit; }
+  .warn { margin-top:12px; padding:11px 13px; border-radius:8px; background:var(--warnbg);
+          color:var(--warn); font-size:12.5px; border:1px solid currentColor; }
+  .warn strong { display:block; margin-bottom:3px; }
+  kbd { font:600 11px ui-monospace,SFMono-Regular,Menlo,monospace; border:1px solid var(--line);
+        border-radius:4px; padding:1px 5px; background:var(--sunken); }
+  footer { color:var(--muted); font-size:12px; margin-top:26px; }
+  /* The toolbar list. A grid rather than rows: fifteen stacked rows would make
+     the page longer than everything else on it put together. */
+  .tools { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:2px 14px;
+           margin:2px 0 0; padding:12px 0 0; border-top:1px solid var(--line); }
+  .tools label { display:flex; gap:9px; align-items:center; padding:5px 0; font-size:13px; cursor:pointer; }
+  .tools input { margin-top:0; }
+  .tools .group { grid-column:1/-1; margin-top:10px; font:600 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
+                  letter-spacing:0.09em; text-transform:uppercase; color:var(--muted); }
+  .tools .group:first-child { margin-top:0; }
+  .actions { display:flex; gap:8px; margin-top:16px; }
+  .actions button { padding:7px 13px; border:1px solid var(--line); border-radius:7px;
+                    background:var(--surface); color:var(--ink); font:inherit; font-size:12.5px;
+                    font-weight:500; cursor:pointer; }
+  .actions button:hover { background:var(--sunken); }
+  .actions button.primary { background:var(--indigo); border-color:var(--indigo); color:var(--on-indigo); }
+  .actions button.primary:hover { background:var(--indigo-bright); }
+  .hint { margin-top:12px; color:var(--muted); font-size:12.5px; }
+  .hint code { font:11.5px ui-monospace,SFMono-Regular,Menlo,monospace; }
+  textarea, input[type=text] {
+    width:100%; padding:9px 11px; border:1px solid var(--line); border-radius:8px;
+    background:var(--surface); color:var(--ink); font:inherit; font-size:13.5px;
+  }
+  textarea { min-height:104px; resize:vertical; line-height:1.5; }
+  .field { display:block; margin-top:14px; }
+  .field > span { display:block; margin-bottom:6px; font-size:12.5px; color:var(--muted); }
+  .radios { display:flex; flex-wrap:wrap; gap:8px; margin-top:2px; }
+  .radios label {
+    display:inline-flex; align-items:center; gap:7px; padding:7px 12px;
+    border:1px solid var(--line); border-radius:999px; font-size:13px; cursor:pointer;
+  }
+  .radios input { width:14px; height:14px; margin:0; accent-color:var(--indigo); }
+  .radios label:has(input:checked) { border-color:var(--indigo); color:var(--indigo); }
+  details.diag { margin-top:14px; border:1px solid var(--line); border-radius:8px; background:var(--sunken); }
+  details.diag summary { padding:10px 13px; cursor:pointer; font-size:12.5px; color:var(--muted); }
+  details.diag pre {
+    margin:0; padding:0 13px 13px; overflow-x:auto; color:var(--ink);
+    font:11.5px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace; white-space:pre-wrap; word-break:break-word;
+  }
+  /* --indigo, not --indigo-bright: #6366f1 on this background is 4.28:1, which
+     is under the 4.5:1 floor. Both tokens lift in the dark theme, so this one
+     stays readable there too. */
+  a { color:var(--indigo); }
+</style>
+
+<main>
+ <div class="col">
+  <h1>OpenFullPage settings</h1>
+  <p class="lede">Everything here is off by default. Nothing is stored anywhere but this browser.</p>
+
+  <section id="access">
+    <h2>Advanced access</h2>
+    <p>Extra ability that costs a permission. Chrome will ask you before granting it, and you can revoke it here at any time.</p>
+
+    <div class="row">
+      <input type="checkbox" id="deepFrames">
+      <label class="text" for="deepFrames">
+        <strong>Capture inside cross-origin frames</strong>
+        <span>Embedded content from another site, maps, videos, comment widgets, is
+        captured as it appears on screen. Turning this on also captures what is below
+        such a frame's own scrollbar.</span>
+      </label>
+    </div>
+
+    <div class="warn">
+      <strong>What this costs: access to every site you visit.</strong>
+      Chrome has no narrower way to read inside a frame served by another domain, so it
+      asks for all of them. What it does <em>not</em> change: the extension still cannot
+      send anything anywhere. Its content security policy sets <code>connect-src 'none'</code>,
+      which Chrome enforces whatever permissions are granted.
+    </div>
+  </section>
+
+  <section id="capturing">
+    <h2>While capturing</h2>
+    <p>Off by default, so one click always means one thing: capture the whole page.</p>
+
+    <div class="row">
+      <input type="checkbox" id="extraModes">
+      <label class="text" for="extraModes">
+        <strong>Enable visible-area and pick-an-element capture</strong>
+        <span>Adds <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd> for the visible area and
+        <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>E</kbd> to point at one element. No permission needed.</span>
+      </label>
+    </div>
+
+    <div class="row">
+      <div class="text">
+        <strong>What the toolbar button does</strong>
+        <span>The mode used by a plain click and <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>.</span>
+      </div>
+      <select id="defaultMode" disabled>
+        <option value="full">Capture the whole page</option>
+        <option value="visible">Capture the visible area</option>
+        <option value="element">Pick an element</option>
+      </select>
+    </div>
+
+    <div class="row">
+      <input type="checkbox" id="progressPopup">
+      <label class="text" for="progressPopup">
+        <strong>Show the progress popup while capturing</strong>
+        <span>An animated panel under the toolbar button, showing how far along the
+        capture is. The toolbar icon shows the percentage either way. Nothing is drawn
+        into your page, so nothing can end up in the screenshot.</span>
+      </label>
+    </div>
+
+    <div class="row">
+      <input type="checkbox" id="directDownload">
+      <label class="text" for="directDownload">
+        <strong>Save straight to your downloads instead of opening the editor</strong>
+        <span>The capture is written to a file and the tab closes itself, so a capture
+        is one click and nothing else. You give up the annotation tools for that
+        capture. Chrome will ask for permission to use downloads when you switch this
+        on; without it the editor opens as usual.</span>
+      </label>
+    </div>
+
+    <div class="row">
+      <div class="text">
+        <strong>Wait before capturing</strong>
+        <span>Time to open a menu or hover something first.</span>
+      </div>
+      <select id="captureDelay">
+        <option value="0">No delay</option>
+        <option value="2">2 seconds</option>
+        <option value="5">5 seconds</option>
+        <option value="10">10 seconds</option>
+      </select>
+    </div>
+  </section>
+
+  <section id="appearance">
+    <h2>Appearance</h2>
+    <p>How the editor and this page look. The same choice sits on the editor toolbar as a button that rotates through the three.</p>
+
+    <div class="row">
+      <div class="text">
+        <strong>Theme</strong>
+        <span>Following your system is the default, and it keeps following it: if your
+        computer switches to dark in the evening, so does this.</span>
+      </div>
+      <select id="theme">
+        <option value="system">Follow my system</option>
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+      </select>
+    </div>
+  </section>
+
+  <section id="toolbar-controls">
+    <h2>Toolbar</h2>
+    <p>
+      Which controls appear in the editor. Hiding one never disables its keyboard
+      shortcut, and the settings button always stays.
+    </p>
+    <div class="tools" id="toolbarButtons"></div>
+    <div class="actions">
+      <button type="button" id="showEverything">Show everything</button>
+      <button type="button" id="resetToolbar">Reset to defaults</button>
+    </div>
+  </section>
+
+  <section id="settings-file">
+    <h2>Your settings as a file</h2>
+    <p>
+      Settings are never synced, so they do not follow you to another computer on
+      their own. Export them and you can carry them yourself, read them first, and
+      import them anywhere.
+    </p>
+    <div class="actions" style="margin-top:4px">
+      <button type="button" id="exportSettings">Export to a file</button>
+      <button type="button" id="importSettings">Import from a file</button>
+      <input type="file" id="settingsFile" accept="application/json,.json" hidden>
+    </div>
+    <p class="hint">
+      A small <code>.json</code> file you can open in any text editor. On import,
+      anything it contains that is not a setting we recognise is ignored, and every
+      value is checked against the range it is allowed to hold.
+    </p>
+  </section>
+
+  <section id="support">
+    <h2>Support and feedback</h2>
+    <p>
+      This composes a message in your own email app. The extension has no network
+      access, so it cannot send anything for you, and nothing here leaves this page
+      until you press send yourself.
+    </p>
+
+    <div class="radios" id="feedbackKind">
+      <label><input type="radio" name="kind" value="bug" checked> Something is broken</label>
+      <label><input type="radio" name="kind" value="idea"> An idea</label>
+      <label><input type="radio" name="kind" value="question"> A question</label>
+    </div>
+
+    <label class="field">
+      <span>What happened, and what you expected instead</span>
+      <textarea id="feedbackBody" placeholder="On a long page with a sticky header, the header repeated three times down the image."></textarea>
+    </label>
+
+    <div class="row" style="margin-top:16px">
+      <input type="checkbox" id="includeDiagnostics" checked>
+      <label class="text" for="includeDiagnostics">
+        <strong>Include your version and settings</strong>
+        <span>Extension and browser version, platform, and the settings on this page. No page addresses, no screenshots, nothing about what you have captured.</span>
+      </label>
+    </div>
+
+    <details class="diag">
+      <summary>See exactly what that adds</summary>
+      <pre id="diagnosticsPreview">Loading…</pre>
+    </details>
+
+    <div class="actions">
+      <button type="button" class="primary" id="composeEmail">Compose the email</button>
+      <button type="button" id="copyFeedback">Copy it instead</button>
+    </div>
+    <p class="hint">
+      To attach a screenshot, add it in your email app after the draft opens. The
+      extension cannot read your files or upload anything.
+    </p>
+  </section>
+
+  <footer>
+    <p id="saved" role="status" aria-live="polite">Settings are stored on this computer only, and never synced.</p>
+    <p>Verify what is running: <a href="https://github.com" id="verify">docs/VERIFYING-YOUR-INSTALL.md</a></p>
+  </footer>
+ </div>
+
+ <nav class="toc" id="toc" aria-label="Sections">
+   <h2 id="toc-title">On this page</h2>
+   <ol id="tocList" aria-labelledby="toc-title"></ol>
+ </nav>
+</main>
+
+<script src="options.js" type="module"></script>

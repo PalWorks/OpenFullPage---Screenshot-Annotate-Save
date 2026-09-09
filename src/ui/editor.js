@@ -1,0 +1,978 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (C) 2026 Palaniappan
+//
+// Canvas and pointer handling for the editor. The model lives in
+// src/lib/edit.js; this file draws it and turns input into edits.
+//
+// Shapes stay live: with the Select tool you can click one, drag it, drag its
+// handles to resize, restyle it, or delete it. That is the convention across
+// annotation tools generally, and the reason the model keeps objects rather
+// than baked strokes.
+//
+// The original capture is never drawn into. Every frame re-renders from it, so
+// undo is exact and repeated edits never degrade the image.
+
+import {
+  BOX_TOOLS,
+  POINT_TOOLS,
+  DEFAULT_FILL_OPACITY,
+  MAX_STROKE,
+  MAX_TEXT_SIZE,
+  MIN_STROKE,
+  MIN_TEXT_SIZE,
+  amend,
+  arrowGeometry,
+  boundsOf,
+  canRedo,
+  canUndo,
+  clampRect,
+  commit,
+  constrain,
+  createDocument,
+  cropCursor,
+  cropHandleAt,
+  cropHandlesFor,
+  dashOf,
+  dashPattern,
+  effectiveCrop,
+  fillAlphaOf,
+  fillOf,
+  endsOf,
+  fontOf,
+  hasEnd,
+  handleAt,
+  handlesFor,
+  insideRect,
+  isEdited,
+  isUsableCrop,
+  isUsableDrag,
+  moveCrop,
+  moveShape,
+  newId,
+  nextCounterNumber,
+  normalizeRect,
+  redo,
+  removeShape,
+  replaceShape,
+  reset,
+  resizeCrop,
+  resizeShape,
+  selectedShape,
+  shapeAt,
+  undo,
+} from '../lib/edit.js';
+
+const DASH = [8, 6];
+const HANDLE_SIZE = 9;
+const HIGHLIGHT_ALPHA = 0.35;
+const PIXELATE_BLOCKS = 14;
+const TEXT_LINE_RATIO = 1.25;
+
+export function createEditor({ base, canvas, onChange, initial = {} }) {
+  const ctx = canvas.getContext('2d');
+
+  let doc = createDocument(base.width, base.height);
+  let tool = initial.tool ?? 'arrow';
+  let colour = initial.colour ?? '#ef4444';
+  let width = initial.strokeWidth ?? 4;
+  // Style that new shapes inherit. Each is also editable on the selected shape,
+  // which is why every one of them lives here rather than only on the shape.
+  let dash = initial.dash ?? 'solid';
+  let ends = initial.lineEnds ?? 'end';
+  let fill = initial.fill ?? null;
+  let fillOpacity = initial.fillOpacity ?? DEFAULT_FILL_OPACITY;
+  let text = {
+    size: initial.textSize ?? 24,
+    family: initial.textFamily ?? 'system',
+    bold: initial.textBold !== false,
+    italic: initial.textItalic === true,
+    underline: initial.textUnderline === true,
+  };
+
+  let drag = null;
+  let editing = null;
+
+  /**
+   * A crop that has been drawn but not applied.
+   *
+   * Cropping used to happen on pointerup, which meant the one destructive edit in
+   * the editor was also the only one with no chance to look at it first. It is now
+   * a proposal: drawn, adjustable by its handles or by sliding it whole, and
+   * applied only when the user says so. It lives outside the document because it
+   * is not an edit yet, which is also why cancelling it costs no undo step.
+   */
+  let pendingCrop = null;
+  // Set only while flatten() is rendering for export, so the dimming and the
+  // handles never reach a saved file.
+  let hideChrome = false;
+  /**
+   * While an export is reading the canvas, nothing may repaint it.
+   *
+   * PDF encoding walks the canvas one page at a time with an await between each,
+   * and a click or a keystroke landing in one of those gaps would repaint the
+   * canvas with selection handles or crop dimming on it, which the next page
+   * would then photograph. Locking is safer than blocking input: the model still
+   * accepts the edit, it is just not drawn until the export lets go.
+   *
+   * A count, not a flag. Copy is still live while a PDF is encoding, and it takes
+   * its own flatten(); with a flag, its restoreSelection() would unlock the canvas
+   * halfway through the PDF and hand the remaining pages back to whatever the user
+   * did next.
+   */
+  let locked = 0;
+
+  const notify = () =>
+    onChange({
+      canUndo: canUndo(doc),
+      canRedo: canRedo(doc),
+      crop: effectiveCrop(doc),
+      edited: isEdited(doc),
+      selected: selectedShape(doc),
+      pendingCrop: pendingCrop ? { ...pendingCrop } : null,
+      tool,
+      style: currentStyle(),
+    });
+
+  // DRAWING
+
+  /**
+   * Canvas pixels per screen pixel.
+   *
+   * The canvas is sized to the crop and then fitted to the window by CSS, so a
+   * long capture is displayed at a small fraction of its real size. Anything
+   * drawn *about* a shape rather than as part of it is divided by this, so it
+   * keeps its size under the pointer at any display scale (D19).
+   */
+  function screenScale() {
+    const box = canvas.getBoundingClientRect();
+    return box.width ? canvas.width / box.width : 1;
+  }
+
+  function applyDash(shape) {
+    ctx.setLineDash(dashPattern(dashOf(shape), shape.width));
+  }
+
+  /** One arrowhead, pointing from `from` towards `to`. */
+  function head(from, to, shapeWidth, dx, dy) {
+    const { head: points } = arrowGeometry(from, to, shapeWidth);
+    ctx.beginPath();
+    ctx.moveTo(points[0].x + dx, points[0].y + dy);
+    ctx.lineTo(points[1].x + dx, points[1].y + dy);
+    ctx.lineTo(points[2].x + dx, points[2].y + dy);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  /** Paint the inside of a box shape, when it has one. */
+  function paintFill(shape, path) {
+    const colourIn = fillOf(shape);
+    if (!colourIn) return;
+    ctx.save();
+    ctx.globalAlpha = fillAlphaOf(shape);
+    ctx.fillStyle = colourIn;
+    path();
+    ctx.restore();
+  }
+
+  function drawShape(shape, crop) {
+    const dx = -crop.x;
+    const dy = -crop.y;
+
+    ctx.save();
+    ctx.strokeStyle = shape.colour;
+    ctx.fillStyle = shape.colour;
+    ctx.lineWidth = shape.width;
+    ctx.lineCap = dashOf(shape) === 'dotted' ? 'round' : 'round';
+    ctx.lineJoin = 'round';
+
+    if (shape.kind === 'arrow' || shape.kind === 'line') {
+      // One geometry per end: the shaft stops short wherever a head is drawn, so
+      // the point of the arrow is the point of the line and not a stub past it.
+      const atStart = hasEnd(shape, 'start');
+      const atEnd = hasEnd(shape, 'end');
+      const from = atStart
+        ? arrowGeometry(shape.to, shape.from, shape.width).shaft[1]
+        : shape.from;
+      const to = atEnd ? arrowGeometry(shape.from, shape.to, shape.width).shaft[1] : shape.to;
+
+      applyDash(shape);
+      ctx.beginPath();
+      ctx.moveTo(from.x + dx, from.y + dy);
+      ctx.lineTo(to.x + dx, to.y + dy);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      if (atStart) head(shape.to, shape.from, shape.width, dx, dy);
+      if (atEnd) head(shape.from, shape.to, shape.width, dx, dy);
+    } else if (shape.kind === 'rect') {
+      const { x, y, w, h } = shape.rect;
+      paintFill(shape, () => ctx.fillRect(x + dx, y + dy, w, h));
+      applyDash(shape);
+      ctx.strokeRect(x + dx, y + dy, w, h);
+    } else if (shape.kind === 'ellipse') {
+      const cx = shape.rect.x + shape.rect.w / 2 + dx;
+      const cy = shape.rect.y + shape.rect.h / 2 + dy;
+      const rx = Math.max(1, shape.rect.w / 2);
+      const ry = Math.max(1, shape.rect.h / 2);
+      const trace = () => {
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+      };
+      paintFill(shape, () => {
+        trace();
+        ctx.fill();
+      });
+      applyDash(shape);
+      trace();
+      ctx.stroke();
+    } else if (shape.kind === 'highlight') {
+      ctx.globalAlpha = HIGHLIGHT_ALPHA;
+      ctx.fillRect(shape.rect.x + dx, shape.rect.y + dy, shape.rect.w, shape.rect.h);
+    } else if (shape.kind === 'pixelate') {
+      drawPixelated(shape, dx, dy);
+    } else if (shape.kind === 'text') {
+      drawText(shape, dx, dy);
+    } else if (shape.kind === 'counter') {
+      ctx.beginPath();
+      ctx.arc(shape.at.x + dx, shape.at.y + dy, shape.radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.font = `700 ${Math.round(shape.radius * 1.15)}px system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(shape.number), shape.at.x + dx, shape.at.y + dy + 1);
+    }
+
+    ctx.restore();
+  }
+
+  /**
+   * Canvas has no underline, so it is drawn: one rule per line, at a tenth of
+   * the size below the baseline, thick enough to survive the export.
+   */
+  function drawText(shape, dx, dy) {
+    ctx.font = fontOf(shape);
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+
+    const lines = String(shape.text).split('\n');
+    lines.forEach((line, i) => {
+      const y = shape.at.y + dy + i * shape.size * TEXT_LINE_RATIO;
+      ctx.fillText(line, shape.at.x + dx, y);
+
+      if (shape.underline === true && line.length > 0) {
+        const run = ctx.measureText(line).width;
+        ctx.save();
+        ctx.strokeStyle = shape.colour;
+        ctx.lineWidth = Math.max(1, shape.size / 14);
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(shape.at.x + dx, y + shape.size * 1.06);
+        ctx.lineTo(shape.at.x + dx + run, y + shape.size * 1.06);
+        ctx.stroke();
+        ctx.restore();
+      }
+    });
+  }
+
+  /**
+   * Redaction: resample the region coarsely from the original and paint it back.
+   * The export is flat, so what is saved genuinely has no original underneath ,
+   * this is not a blur laid over recoverable pixels in a layered file.
+   */
+  function drawPixelated(shape, dx, dy) {
+    const { x, y, w, h } = shape.rect;
+    if (w < 1 || h < 1) return;
+
+    const cols = Math.max(1, Math.min(PIXELATE_BLOCKS, Math.round(w / 8)));
+    const rows = Math.max(1, Math.min(PIXELATE_BLOCKS, Math.round(h / 8)));
+
+    const scratch = document.createElement('canvas');
+    scratch.width = cols;
+    scratch.height = rows;
+    const small = scratch.getContext('2d');
+    small.imageSmoothingEnabled = true;
+    small.drawImage(base, x, y, w, h, 0, 0, cols, rows);
+
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(scratch, 0, 0, cols, rows, x + dx, y + dy, w, h);
+    ctx.imageSmoothingEnabled = true;
+  }
+
+  /**
+   * Selection outline plus resize handles, drawn on top of everything.
+   *
+   * Every measurement here is divided by the display scale, so a handle is nine
+   * pixels under the pointer whether the capture is shown at 12% or at 400%.
+   * Drawing it in canvas pixels, as this used to, made the handles on a long
+   * capture one pixel wide and the dashed outline thinner than a pixel, which is
+   * to say invisible, even though the hit test compensated and they stayed
+   * grabbable. See DECISIONS.md D19.
+   */
+  function drawSelection(shape, crop) {
+    const b = boundsOf(shape);
+    const scale = screenScale();
+    const size = HANDLE_SIZE * scale;
+
+    ctx.save();
+    ctx.strokeStyle = '#6366f1';
+    ctx.lineWidth = 1.5 * scale;
+    ctx.setLineDash(DASH.map((step) => step * scale));
+    const pad = 3 * scale;
+    ctx.strokeRect(b.x - crop.x - pad, b.y - crop.y - pad, b.w + pad * 2, b.h + pad * 2);
+    ctx.setLineDash([]);
+
+    for (const handle of handlesFor(shape)) {
+      ctx.fillStyle = '#ffffff';
+      ctx.strokeStyle = '#6366f1';
+      ctx.lineWidth = 2 * scale;
+      ctx.beginPath();
+      ctx.rect(handle.x - crop.x - size / 2, handle.y - crop.y - size / 2, size, size);
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  /**
+   * The crop region, with everything outside it dimmed.
+   *
+   * Four bands around the region rather than a full dim and a clearRect: clearing
+   * punches a hole through the image as well as the dimming, which is why the
+   * version this replaces had to redraw the slice underneath to put it back.
+   *
+   * Handles and guides are divided by the screen scale (D19), so they stay the
+   * same size under the pointer whether the capture is shown at 8% or at 100%.
+   */
+  function drawCropOverlay(rect, crop, withHandles) {
+    const scale = screenScale();
+    const x = rect.x - crop.x;
+    const y = rect.y - crop.y;
+    const right = x + rect.w;
+    const bottom = y + rect.h;
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+    ctx.fillRect(0, 0, canvas.width, Math.max(0, y));
+    ctx.fillRect(0, bottom, canvas.width, Math.max(0, canvas.height - bottom));
+    ctx.fillRect(0, y, Math.max(0, x), rect.h);
+    ctx.fillRect(right, y, Math.max(0, canvas.width - right), rect.h);
+
+    // Thirds. They are how a person judges a crop and they cost two lines.
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+    ctx.lineWidth = Math.max(1, scale);
+    ctx.beginPath();
+    for (let i = 1; i < 3; i += 1) {
+      ctx.moveTo(x + (rect.w * i) / 3, y);
+      ctx.lineTo(x + (rect.w * i) / 3, bottom);
+      ctx.moveTo(x, y + (rect.h * i) / 3);
+      ctx.lineTo(right, y + (rect.h * i) / 3);
+    }
+    ctx.stroke();
+
+    ctx.setLineDash([]);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1.5 * scale;
+    ctx.strokeRect(x, y, rect.w, rect.h);
+
+    if (withHandles) {
+      const size = HANDLE_SIZE * scale;
+      for (const handle of cropHandlesFor(rect)) {
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = '#6366f1';
+        ctx.lineWidth = 2 * scale;
+        ctx.beginPath();
+        ctx.rect(handle.x - crop.x - size / 2, handle.y - crop.y - size / 2, size, size);
+        ctx.fill();
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  function render(preview) {
+    if (locked > 0) return;
+    const crop = effectiveCrop(doc);
+    if (canvas.width !== crop.w || canvas.height !== crop.h) {
+      canvas.width = crop.w;
+      canvas.height = crop.h;
+    }
+
+    ctx.drawImage(base, crop.x, crop.y, crop.w, crop.h, 0, 0, crop.w, crop.h);
+    for (const shape of doc.present.shapes) drawShape(shape, crop);
+
+    if (preview) {
+      if (preview.kind === 'crop') drawCropOverlay(preview.rect, crop, false);
+      else drawShape(preview, crop);
+    } else if (pendingCrop && !hideChrome) {
+      drawCropOverlay(pendingCrop, crop, true);
+    }
+
+    const chosen = selectedShape(doc);
+    if (chosen && !preview && !pendingCrop) drawSelection(chosen, crop);
+
+    notify();
+  }
+
+  // INPUT
+
+  function toImage(event) {
+    const box = canvas.getBoundingClientRect();
+    const crop = effectiveCrop(doc);
+    return {
+      x: crop.x + ((event.clientX - box.left) / box.width) * crop.w,
+      y: crop.y + ((event.clientY - box.top) / box.height) * crop.h,
+    };
+  }
+
+  /**
+   * Slack around a handle, in image pixels. It is the drawn size, so the target
+   * matches what the user can see. One helper feeds both, which is the whole
+   * point: they used to disagree.
+   */
+  function pickTolerance() {
+    return HANDLE_SIZE * screenScale();
+  }
+
+  function buildShape(from, to, shifted) {
+    const crop = effectiveCrop(doc);
+    const end = shifted && tool !== 'crop' ? constrain(from, to, tool) : to;
+
+    if (tool === 'crop') {
+      return { kind: 'crop', rect: clampRect(normalizeRect(from, end), crop) };
+    }
+    if (BOX_TOOLS.includes(tool)) {
+      const shape = {
+        id: newId(), kind: tool, rect: clampRect(normalizeRect(from, end), crop), colour, width,
+      };
+      // Only the outlined boxes take a fill. A highlighter is already a fill and
+      // a redaction has to stay opaque to be a redaction.
+      if (tool === 'rect' || tool === 'ellipse') {
+        shape.dash = dash;
+        if (fill) {
+          shape.fill = fill;
+          shape.fillOpacity = fillOpacity;
+        }
+      }
+      return shape;
+    }
+    return { id: newId(), kind: tool, from, to: end, colour, width, dash, ends };
+  }
+
+  function applyTool(next) {
+    // Leaving the crop tool abandons a region that was never confirmed. Keeping
+    // it would leave the image dimmed under a tool that cannot act on it.
+    if (next !== 'crop') pendingCrop = null;
+    tool = next;
+    // Leaving the selection tool drops the selection: the handles belong to it,
+    // and leaving them drawn under a drawing tool invites clicking them.
+    if (next !== 'select') doc = amend(doc, { ...doc.present, selected: null });
+    canvas.style.cursor = next === 'select' ? 'default' : next === 'text' ? 'text' : 'crosshair';
+    render();
+  }
+
+  /**
+   * Hand the finished object back to the user.
+   *
+   * This is the general convention in drawing and annotation tools: finishing a
+   * shape returns to the selection tool with the new shape selected, so it can be
+   * moved, resized or restyled without a detour through the toolbar. Staying in
+   * the drawing tool means the next click, which is almost always aimed at the
+   * thing just drawn, draws a second shape instead.
+   *
+   * Numbered steps are the exception, on purpose. Their whole point is 1, 2, 3 in
+   * sequence, and making someone re-pick the tool between each number would be
+   * worse rather than more consistent.
+   */
+  function handBackToSelection() {
+    if (tool === 'counter') return;
+    applyTool('select');
+  }
+
+  function placePoint(at) {
+    if (tool === 'counter') {
+      return {
+        id: newId(),
+        kind: 'counter',
+        at,
+        radius: Math.max(12, width * 4),
+        number: nextCounterNumber(doc.present.shapes),
+        colour,
+        width,
+      };
+    }
+    return null;
+  }
+
+  canvas.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0 || editing) return;
+    canvas.setPointerCapture(event.pointerId);
+    const point = toImage(event);
+
+    // A pending crop owns the canvas while it exists: a handle resizes it, the
+    // inside slides it, and anywhere outside starts a new one, which is what
+    // every crop tool does and what stops the region becoming a trap.
+    if (tool === 'crop' && pendingCrop) {
+      const handle = cropHandleAt(pendingCrop, point, pickTolerance());
+      if (handle) {
+        drag = { mode: 'crop-resize', handle };
+        return;
+      }
+      if (insideRect(pendingCrop, point)) {
+        drag = { mode: 'crop-move', from: point, rect: pendingCrop };
+        return;
+      }
+    }
+
+    if (tool === 'select') {
+      const chosen = selectedShape(doc);
+      const handle = chosen ? handleAt(chosen, point, pickTolerance()) : null;
+
+      if (handle) {
+        drag = { mode: 'resize', handle, shape: chosen, before: doc.present };
+        return;
+      }
+
+      const hit = shapeAt(doc.present.shapes, point);
+      doc = amend(doc, { ...doc.present, selected: hit ? hit.id : null });
+      drag = hit ? { mode: 'move', shape: hit, last: point, before: doc.present } : null;
+      render();
+      return;
+    }
+
+    if (POINT_TOOLS.includes(tool)) {
+      if (tool === 'text') {
+        // The browser's own mousedown handling runs after this listener and moves
+        // focus to whatever was clicked. Left alone it takes focus straight back
+        // off the box we are about to create, which fires its blur, which commits
+        // an empty value and removes it again. From the outside the text tool
+        // simply does nothing.
+        event.preventDefault();
+        startTextEntry(point);
+        return;
+      }
+      const shape = placePoint(point);
+      if (shape) {
+        doc = commit(doc, {
+          ...doc.present,
+          shapes: [...doc.present.shapes, shape],
+          selected: shape.id,
+        });
+        render();
+      }
+      return;
+    }
+
+    drag = { mode: 'draw', from: point };
+  });
+
+  canvas.addEventListener('pointermove', (event) => {
+    if (!drag) {
+      // Hovering. Say what a click would do before it does it.
+      if (tool === 'crop' && pendingCrop) {
+        const at = toImage(event);
+        const handle = cropHandleAt(pendingCrop, at, pickTolerance());
+        canvas.style.cursor = handle
+          ? cropCursor(handle)
+          : insideRect(pendingCrop, at) ? 'move' : 'crosshair';
+      }
+      return;
+    }
+    const point = toImage(event);
+
+    if (drag.mode === 'crop-resize') {
+      pendingCrop = resizeCrop(pendingCrop, drag.handle, point, effectiveCrop(doc));
+      render();
+      return;
+    }
+
+    if (drag.mode === 'crop-move') {
+      // Measured from where the drag started, not from the last event, so a drag
+      // that pushes against the edge and comes back does not leave the region
+      // trailing the pointer by however far it was clamped.
+      pendingCrop = moveCrop(
+        drag.rect, point.x - drag.from.x, point.y - drag.from.y, effectiveCrop(doc),
+      );
+      render();
+      return;
+    }
+
+    if (drag.mode === 'draw') {
+      drag.to = point;
+      render(buildShape(drag.from, point, event.shiftKey));
+      return;
+    }
+
+    if (drag.mode === 'move') {
+      const moved = moveShape(drag.shape, point.x - drag.last.x, point.y - drag.last.y);
+      drag.shape = moved;
+      drag.last = point;
+      doc = amend(doc, replaceShape(doc.present, moved));
+      render();
+      return;
+    }
+
+    if (drag.mode === 'resize') {
+      const resized = resizeShape(drag.shape, drag.handle, point);
+      doc = amend(doc, replaceShape(doc.present, resized));
+      render();
+    }
+  });
+
+  function endDrag(event) {
+    if (!drag) return;
+    const finished = drag;
+    drag = null;
+
+    if (finished.mode === 'draw') {
+      const to = finished.to ?? toImage(event);
+      const shape = buildShape(finished.from, to, event.shiftKey);
+      const usable =
+        shape.kind === 'crop' ? isUsableCrop(shape.rect) : isUsableDrag(finished.from, to);
+
+      if (!usable) {
+        render();
+        return;
+      }
+
+      if (shape.kind === 'crop') {
+        // Drawn, not applied. The confirm bar in result.js is what applies it.
+        pendingCrop = shape.rect;
+        render();
+        return;
+      }
+
+      doc = commit(doc, {
+        ...doc.present,
+        shapes: [...doc.present.shapes, shape],
+        selected: shape.id,
+      });
+      handBackToSelection();
+      render();
+      return;
+    }
+
+    // Adjusting a pending crop is not an edit, so it leaves no undo step behind.
+    if (finished.mode === 'crop-resize' || finished.mode === 'crop-move') {
+      render();
+      return;
+    }
+
+    // A move or resize became final: make the state before it undoable.
+    doc = { ...doc, past: [...doc.past, finished.before].slice(-60), future: [] };
+    render();
+  }
+
+  canvas.addEventListener('pointerup', endDrag);
+  canvas.addEventListener('pointercancel', () => {
+    drag = null;
+    render();
+  });
+
+  // TEXT ENTRY
+
+  /** An input positioned over the canvas, committed on Enter or blur. */
+  function startTextEntry(at) {
+    const box = canvas.getBoundingClientRect();
+    const crop = effectiveCrop(doc);
+    const shown = box.width / crop.w;
+    const size = text.size;
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'text-entry';
+    input.style.left = `${box.left + window.scrollX + (at.x - crop.x) * shown}px`;
+    input.style.top = `${box.top + window.scrollY + (at.y - crop.y) * shown}px`;
+    // What is typed should look like what will be drawn, so the entry box takes
+    // the same family, weight and slant, scaled to however the canvas is shown.
+    input.style.font = fontOf({ ...text, size: Math.max(12, size * shown) });
+    input.style.color = colour;
+    if (text.underline) input.style.textDecoration = 'underline';
+    document.body.append(input);
+
+    editing = input;
+    // Focus on the next frame, once the browser has finished its own handling of
+    // the click that created this. Focusing inside the same task is what let the
+    // default action take focus away again.
+    let focused = false;
+    requestAnimationFrame(() => {
+      focused = true;
+      input.focus();
+      input.select();
+    });
+
+    const finish = (keep) => {
+      if (!editing) return;
+      editing = null;
+      const value = input.value.trim();
+      input.remove();
+
+      if (!keep || !value) {
+        render();
+        return;
+      }
+
+      const shape = {
+        id: newId(), kind: 'text', at, text: value, size, colour, width,
+        family: text.family,
+        bold: text.bold,
+        italic: text.italic,
+        underline: text.underline,
+        w: 0, h: size * TEXT_LINE_RATIO,
+      };
+
+      ctx.save();
+      ctx.font = fontOf(shape);
+      shape.w = ctx.measureText(value).width;
+      ctx.restore();
+
+      doc = commit(doc, {
+        ...doc.present,
+        shapes: [...doc.present.shapes, shape],
+        selected: shape.id,
+      });
+      handBackToSelection();
+      render();
+    };
+
+    // A blur before the box has been focused is the browser settling the click,
+    // not the user leaving. Committing there would delete the box immediately.
+    input.addEventListener('blur', () => {
+      if (focused) finish(true);
+    });
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') finish(true);
+      if (event.key === 'Escape') finish(false);
+      event.stopPropagation();
+    });
+  }
+
+  // API
+
+  function restyleSelection(patch) {
+    const chosen = selectedShape(doc);
+    if (!chosen) return false;
+    doc = commit(doc, replaceShape(doc.present, { ...chosen, ...patch }));
+    render();
+    return true;
+  }
+
+  /**
+   * What the toolbar glyphs should show. A selected shape wins over the pending
+   * style, because the buttons act on it. It is the usual rule in an inspector:
+   * the border swatch shows the selected object's border, not the last one set.
+   */
+  function currentStyle() {
+    const chosen = selectedShape(doc);
+    if (!chosen) {
+      return { colour, width, dash, ends, fill, fillOpacity, text: { ...text } };
+    }
+    return {
+      colour: chosen.colour ?? colour,
+      width: chosen.width ?? width,
+      dash: dashOf(chosen),
+      ends: chosen.kind === 'arrow' || chosen.kind === 'line' ? endsOf(chosen) : ends,
+      fill: fillOf(chosen),
+      fillOpacity: fillOf(chosen) ? fillAlphaOf(chosen) : fillOpacity,
+      text: chosen.kind === 'text'
+        ? {
+          size: chosen.size,
+          family: chosen.family ?? text.family,
+          bold: chosen.bold !== false,
+          italic: chosen.italic === true,
+          underline: chosen.underline === true,
+        }
+        : { ...text },
+    };
+  }
+
+  const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
+
+  return {
+    render: () => render(),
+    setTool: applyTool,
+    setColour(next) {
+      colour = next;
+      restyleSelection({ colour: next });
+      notify();
+    },
+    setWidth(next) {
+      width = clamp(Math.round(next), MIN_STROKE, MAX_STROKE);
+      restyleSelection({ width });
+      notify();
+    },
+    setDash(next) {
+      dash = next;
+      restyleSelection({ dash: next });
+      notify();
+    },
+    setEnds(next) {
+      ends = next;
+      // Only a line carries ends. Setting it with a box selected changes what
+      // the next line will look like and leaves the box alone.
+      const chosen = selectedShape(doc);
+      if (chosen && (chosen.kind === 'arrow' || chosen.kind === 'line')) {
+        restyleSelection({ ends: next });
+      }
+      notify();
+    },
+    /** `null` means no fill, which is a value rather than an absence. */
+    setFill(next) {
+      fill = next;
+      const chosen = selectedShape(doc);
+      if (chosen && (chosen.kind === 'rect' || chosen.kind === 'ellipse')) {
+        restyleSelection(next ? { fill: next, fillOpacity } : { fill: null });
+      }
+      notify();
+    },
+    setFillOpacity(next) {
+      fillOpacity = clamp(next, 0, 1);
+      const chosen = selectedShape(doc);
+      if (chosen && fillOf(chosen)) restyleSelection({ fillOpacity });
+      notify();
+    },
+    setTextStyle(patch) {
+      if (Number.isFinite(patch.size)) {
+        patch.size = clamp(Math.round(patch.size), MIN_TEXT_SIZE, MAX_TEXT_SIZE);
+      }
+      text = { ...text, ...patch };
+      const chosen = selectedShape(doc);
+      if (chosen && chosen.kind === 'text') {
+        const restyled = { ...chosen, ...patch };
+        // The stored width is what hit testing and the selection box use, so it
+        // has to be re-measured whenever anything about the type changes.
+        ctx.save();
+        ctx.font = fontOf(restyled);
+        restyled.w = ctx.measureText(String(restyled.text)).width;
+        ctx.restore();
+        restyled.h = restyled.size * TEXT_LINE_RATIO;
+        doc = commit(doc, replaceShape(doc.present, restyled));
+        render();
+      }
+      notify();
+    },
+    deleteSelection() {
+      const chosen = selectedShape(doc);
+      if (!chosen) return false;
+      doc = commit(doc, removeShape(doc.present, chosen.id));
+      render();
+      return true;
+    },
+    deselect() {
+      doc = amend(doc, { ...doc.present, selected: null });
+      render();
+    },
+
+    // CROP, CONFIRMED
+
+    /** Apply the pending crop. Returns the rectangle applied, or null. */
+    applyCrop() {
+      if (!pendingCrop) return null;
+      const rect = pendingCrop;
+      pendingCrop = null;
+      doc = commit(doc, { ...doc.present, crop: rect, selected: null });
+      // Handed back the way a finished shape is: the crop is done, and the next
+      // thing anyone does is look at the result.
+      applyTool('select');
+      return rect;
+    },
+
+    /** Abandon it. No undo step, because nothing was ever committed. */
+    cancelCrop() {
+      if (!pendingCrop) return false;
+      pendingCrop = null;
+      canvas.style.cursor = 'crosshair';
+      render();
+      return true;
+    },
+
+    /**
+     * Where the pending region is on the user's screen, in client coordinates.
+     *
+     * The confirm bar is a real element positioned against the viewport rather
+     * than something drawn on the canvas, so that it can follow the region while
+     * a long capture is scrolled, and so that it is a real button with focus,
+     * hover and a name. This is the only thing it needs from the canvas.
+     */
+    cropRectOnScreen() {
+      if (!pendingCrop) return null;
+      const box = canvas.getBoundingClientRect();
+      const crop = effectiveCrop(doc);
+      const shown = crop.w ? box.width / crop.w : 1;
+      return {
+        x: box.left + (pendingCrop.x - crop.x) * shown,
+        y: box.top + (pendingCrop.y - crop.y) * shown,
+        w: pendingCrop.w * shown,
+        h: pendingCrop.h * shown,
+      };
+    },
+    undo() {
+      doc = undo(doc);
+      render();
+    },
+    redo() {
+      doc = redo(doc);
+      render();
+    },
+    reset() {
+      doc = reset(doc);
+      render();
+    },
+    get document() {
+      return doc;
+    },
+    get state() {
+      return { tool, edited: isEdited(doc), ...currentStyle() };
+    },
+    /**
+     * Re-seed the pending style wholesale.
+     *
+     * Used by Reset on an untouched capture. It sets what the *next* shape will
+     * look like and never restyles anything already drawn, which is why it does
+     * not go through the individual setters: those deliberately push the new
+     * value onto the selected shape as well.
+     */
+    applyStyle(next) {
+      colour = next.colour ?? colour;
+      width = clamp(Math.round(next.strokeWidth ?? width), MIN_STROKE, MAX_STROKE);
+      dash = next.dash ?? dash;
+      ends = next.lineEnds ?? ends;
+      fill = next.fill ?? null;
+      fillOpacity = Number.isFinite(next.fillOpacity) ? next.fillOpacity : fillOpacity;
+      text = {
+        size: clamp(Math.round(next.textSize ?? text.size), MIN_TEXT_SIZE, MAX_TEXT_SIZE),
+        family: next.textFamily ?? text.family,
+        bold: next.textBold !== false,
+        italic: next.textItalic === true,
+        underline: next.textUnderline === true,
+      };
+      render();
+    },
+    /** Draw without the selection chrome, for export. */
+    /**
+     * The canvas with nothing on it but the image and the annotations.
+     *
+     * Leaves the canvas locked. Every caller pairs this with restoreSelection()
+     * in a finally, and the lock is what guarantees the canvas still holds these
+     * exact pixels by the time a multi-page encode reaches its last page.
+     */
+    flatten() {
+      const chosen = doc.present.selected;
+      // Both kinds of chrome have to go: the selection handles, and the crop
+      // dimming, which would otherwise be baked into the exported file as a
+      // black border round the region the user had not applied yet.
+      hideChrome = true;
+      doc = amend(doc, { ...doc.present, selected: null });
+      render();
+      hideChrome = false;
+      doc = amend(doc, { ...doc.present, selected: chosen });
+      locked += 1;
+      return canvas;
+    },
+    /** Release the lock flatten() took, and draw whatever changed meanwhile. */
+    restoreSelection() {
+      locked = Math.max(0, locked - 1);
+      render();
+    },
+  };
+}

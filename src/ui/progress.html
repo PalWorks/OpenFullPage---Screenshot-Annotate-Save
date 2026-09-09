@@ -1,0 +1,142 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Capturing</title>
+<style>
+  :root {
+    --indigo: #4338ca;
+    --indigo-bright: #6366f1;
+    --ink: #18181b;
+    --muted: #71717a;
+    --line: #e4e4e7;
+    --surface: #ffffff;
+    --danger: #dc2626;
+  }
+  /* See src/lib/theme.js: an explicit choice has to beat the system both ways,
+     and "system" stamps nothing. */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: #fafafa;
+      --muted: #a1a1aa;
+      --line: #3f3f46;
+      --surface: #18181b;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: #fafafa;
+    --muted: #a1a1aa;
+    --line: #3f3f46;
+    --surface: #18181b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    position: relative;
+    width: 268px;
+    margin: 0;
+    padding: 16px;
+    background: var(--surface);
+    color: var(--ink);
+    font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+
+  .stage { display: flex; align-items: center; gap: 14px; }
+
+  /* A page being read top to bottom, which is literally what is happening. */
+  .sheet {
+    position: relative;
+    flex: none;
+    width: 54px;
+    height: 68px;
+    border: 1.5px solid var(--line);
+    border-radius: 5px;
+    overflow: hidden;
+    background: var(--surface);
+  }
+  .sheet i {
+    position: absolute;
+    left: 8px;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--line);
+  }
+  .sheet i:nth-child(1) { top: 9px;  width: 30px; }
+  .sheet i:nth-child(2) { top: 18px; width: 38px; }
+  .sheet i:nth-child(3) { top: 27px; width: 34px; }
+  .sheet i:nth-child(4) { top: 36px; width: 38px; }
+  .sheet i:nth-child(5) { top: 45px; width: 22px; }
+  .sheet i:nth-child(6) { top: 54px; width: 32px; }
+
+  /* Fills downward as screenfuls land, so the icon and this agree. */
+  .filled {
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 0;
+    background: color-mix(in srgb, var(--indigo-bright) 18%, transparent);
+    border-bottom: 2px solid var(--indigo-bright);
+    transition: height 180ms ease-out;
+  }
+
+  .read { min-width: 0; }
+
+  /*
+   * Finish now. It sits at the top right of the panel, out of the reading order
+   * of the percentage, because it is an escape hatch rather than the next step.
+   * Hidden until a screenful has actually landed: with nothing captured there is
+   * nothing to finish with, and a button that cannot work is worse than no button.
+   *
+   * Positioned out of flow rather than as a third flex item. In the row it stole
+   * width from the line that says which screen is being taken, and "Screen 1 of
+   * 22" wrapped onto two lines in a panel that has room for it.
+   */
+  .stop {
+    position: absolute;
+    top: 13px;
+    right: 13px;
+    padding: 4px 9px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: 11.5px;
+    cursor: pointer;
+  }
+  .stop:hover { border-color: var(--indigo-bright); color: var(--ink); }
+  .stop:focus-visible { outline: 2px solid var(--indigo-bright); outline-offset: 2px; }
+  .stop[hidden] { display: none; }
+  .stop:disabled { cursor: default; opacity: 0.6; border-color: var(--line); color: var(--muted); }
+  .percent { font-size: 22px; font-weight: 650; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .what { margin-top: 2px; color: var(--muted); }
+  .page {
+    margin-top: 6px;
+    color: var(--muted);
+    font-size: 11.5px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .track { margin-top: 14px; height: 4px; border-radius: 3px; background: var(--line); overflow: hidden; }
+  .bar { height: 100%; width: 0; background: var(--indigo); transition: width 180ms ease-out; }
+
+  .hint { margin-top: 10px; color: var(--muted); font-size: 11.5px; }
+  body.failed .percent { color: var(--danger); }
+</style>
+
+<div class="stage">
+  <div class="sheet">
+    <i></i><i></i><i></i><i></i><i></i><i></i>
+    <div class="filled" id="filled"></div>
+  </div>
+  <div class="read">
+    <div class="percent" id="percent">0%</div>
+    <div class="what" id="what">Starting</div>
+    <div class="page" id="page"></div>
+  </div>
+  <button type="button" class="stop" id="stop" hidden
+          title="Stop here and open what has been captured so far">Finish now</button>
+</div>
+
+<div class="track"><div class="bar" id="bar"></div></div>
+<p class="hint" id="hint">Leave the page alone until this finishes.</p>
+
+<script src="progress.js" type="module"></script>

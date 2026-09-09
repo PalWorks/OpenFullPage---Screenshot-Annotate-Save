@@ -1,0 +1,839 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Screenshot. OpenFullPage</title>
+<style>
+  :root {
+    --indigo: #4338ca;
+    --indigo-bright: #6366f1;
+    --amber: #fbbf24;
+    --ink: #18181b;
+    /* Darkened from #71717a when the mat became solarized. Against #fdf6e3 the
+       old grey measured 4.48:1, which fails 4.5:1 by a rounding error and fails
+       it all the same: "Save as", the pixel dimensions and the status line all
+       sit directly on the mat. 4.90:1 here, and it improves the toolbar too. */
+    --muted: #6b6b73;
+    --line: #e4e4e7;
+    --surface: #ffffff;
+    --sunken: #fafafa;
+    --danger: #dc2626;
+    /* The mat: the surface the capture is laid on, and nothing else. Solarized
+       base3 and base03, which are warm and cool off-neutrals rather than paper
+       white and black. That is the whole point of them here: a screenshot is
+       usually white or near-white at its edges, and on a white page it has no
+       edge at all, so the reader cannot see where their capture stops and the
+       tab begins. Solarized was chosen over an arbitrary grey because its two
+       backgrounds are a designed pair: they hold the same relationship to their
+       foregrounds in both directions, so one token swap gives a mat that works
+       in both themes instead of two guesses. */
+    --mat: #fdf6e3;
+    --mat-edge: #d8d0ba;
+  }
+  /* Three states, not two. The default is "system", which stamps no data-theme
+     at all and falls through to prefers-color-scheme; an explicit choice has to
+     beat the system in both directions, which is why the dark tokens are written
+     twice. Every token is declared on bare :root first, so none of them exists
+     only inside a media query. See src/lib/theme.js. */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: #fafafa;
+      --muted: #a1a1aa;
+      --line: #3f3f46;
+      --surface: #18181b;
+      --sunken: #101012;
+      --mat: #002b36;
+      --mat-edge: #073642;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: #fafafa;
+    --muted: #a1a1aa;
+    --line: #3f3f46;
+    --surface: #18181b;
+    --sunken: #101012;
+    --mat: #002b36;
+    --mat-edge: #073642;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--mat);
+    color: var(--ink);
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+
+
+  label { font-size: 12.5px; color: var(--muted); }
+  #toolbar select { padding: 5px 6px; font-size: 12px; }
+  #toolbar #copy, #toolbar #download, #toolbar #settings { margin-left: 2px; }
+
+  select {
+    padding: 7px 9px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: var(--surface);
+    color: var(--ink);
+    font: inherit;
+  }
+  button {
+    padding: 8px 15px;
+    border: 0;
+    border-radius: 7px;
+    background: var(--indigo);
+    color: #fff;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:hover:not(:disabled) { background: var(--indigo-bright); }
+  button:disabled { opacity: 0.5; cursor: default; }
+
+  .track { height: 3px; background: var(--line); }
+  .bar { height: 100%; width: 0%; background: var(--amber); transition: width 140ms linear; }
+
+  main { padding: 24px; display: flex; justify-content: center; }
+  figure { margin: 0; max-width: 100%; }
+  /* The capture sits on the mat, so its edge is drawn against the mat rather
+     than against the page's own line colour: on solarized the neutral grey
+     border disappeared into the warm background at exactly the moment it was
+     needed most, which is a white screenshot on a near-white page. */
+  #canvas {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    background: #fff;
+    border: 1px solid var(--mat-edge);
+    border-radius: 4px;
+    box-shadow: 0 1px 3px rgb(0 0 0 / 0.10), 0 8px 24px rgb(0 0 0 / 0.07);
+    touch-action: none;
+    cursor: crosshair;
+  }
+  #canvas[hidden] { display: none; }
+
+  /* One row: every tool, then the format and the two actions pushed right. It
+     is the page header as well as the toolbar, which is why it is sticky. */
+  #toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    padding: 8px 16px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+  }
+  #toolbar .sep { width: 1px; height: 22px; background: var(--line); margin: 0 3px; }
+  #toolbar button {
+    padding: 6px 10px;
+    background: transparent;
+    color: var(--ink);
+    border: 1px solid var(--line);
+    font-weight: 500;
+    font-size: 12.5px;
+  }
+  #toolbar button.icon {
+    width: 30px;
+    height: 28px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  /* :not(.caret) matters. This selector scores (1,1,2) and `.caret` below scores
+     (0,1,0), so without the exclusion every chevron rendered at 20px, exactly as
+     large as the glyph it was meant to annotate. */
+  #toolbar button.icon svg:not(.caret) {
+    width: 20px;
+    height: 20px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  #toolbar .caret {
+    width: 7px;
+    height: 7px;
+    flex: none;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    opacity: 0.55;
+  }
+  #toolbar button:hover .caret, #toolbar button[aria-expanded="true"] .caret { opacity: 1; }
+  #toolbar button:hover:not(:disabled) { background: var(--line); }
+  #toolbar button[aria-pressed="true"] {
+    background: var(--indigo);
+    border-color: var(--indigo);
+    color: #fff;
+    font-weight: 600;
+  }
+  /* The download formats. A menu rather than a separate select, so adding WebP
+     or PDF later is one more line here and nothing moves. */
+  .menuwrap { position: relative; display: inline-flex; }
+  #toolbar button.icon.wide { width: 44px; gap: 1px; }
+  .menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    z-index: 20;
+    min-width: 210px;
+    padding: 5px;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: var(--surface);
+    box-shadow: 0 10px 28px rgb(0 0 0 / 0.16);
+  }
+  #toolbar .menu button {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1px;
+    width: 100%;
+    padding: 7px 10px;
+    border: 0;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    text-align: left;
+  }
+  #toolbar .menu button span { color: var(--muted); font-weight: 400; font-size: 11.5px; }
+  #toolbar .menu button:hover { background: var(--line); }
+  #toolbar .menu button[aria-pressed="true"] { background: var(--indigo); color: #fff; }
+  #toolbar .menu button[aria-pressed="true"] span { color: rgb(255 255 255 / 0.75); }
+
+  .grow { flex: 1 1 12px; }
+
+  #filebar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 10px 20px 12px;
+  }
+  #filebar label { flex: none; }
+  /* The extension sits inside the box so it reads as part of the name, but it is
+     not editable: the format select owns it. */
+  .field {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 1 520px;
+    min-width: 200px;
+    padding: 0 9px 0 0;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: var(--surface);
+  }
+  .field:focus-within { border-color: var(--indigo-bright); }
+  #filename {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 7px 2px 7px 9px;
+    border: 0;
+    background: none;
+    color: var(--ink);
+    font: inherit;
+    font-size: 12.5px;
+  }
+  #filename:focus { outline: none; }
+  #filename:disabled { color: var(--muted); }
+  #ext { flex: none; color: var(--muted); font-size: 12.5px; }
+  #dimensions, #status { color: var(--muted); font-size: 12.5px; }
+  #status.error { color: var(--danger); font-weight: 600; }
+
+  /* ---- Grouped toolbar buttons (DECISIONS.md D18) ----
+     A button carries a chevron; the chevron opens the whole related set, and
+     the button's own glyph shows the current value, so the toolbar reads as
+     state rather than as a list of possibilities. */
+  .grp { position: relative; display: inline-flex; }
+  /* A split button, for the two groups that own a tool as well as a set: the
+     glyph half picks the tool, the chevron half opens the set. Without the split,
+     picking Text also opened the type inspector, which covered the part of the
+     canvas you were about to click on.
+
+     The border belongs to the group, not to the two halves. Drawn on the halves
+     it made Shapes and Text the only two controls in the row wearing a visible
+     box around their chevron, so they read as a different kind of thing when they
+     are not: every chevron in this toolbar opens a set. The split is still there,
+     it is just quiet until you point at it. */
+  #toolbar .grp.split {
+    border: 1px solid var(--line);
+    border-radius: 7px;
+  }
+  /* The corners are rounded on each half rather than clipped on the group.
+     `overflow: hidden` was the obvious way to make two square buttons sit inside
+     one rounded border, and it also clipped the popover this group contains, so
+     the Shapes and Text chevrons opened a menu that was drawn entirely outside
+     its own clip box: present in the DOM, sized correctly, and invisible. A
+     container that holds a popover can never hide its overflow. */
+  #toolbar .grp.split > button {
+    border: 0;
+    border-radius: 0;
+    height: 26px;
+  }
+  #toolbar .grp.split > button:first-of-type { border-radius: 6px 0 0 6px; }
+  #toolbar .grp.split > button:last-of-type { border-radius: 0 6px 6px 0; }
+  /* Filling the whole control rather than only the glyph half, so an active tool
+     looks like one pressed button instead of a button next to a chevron. */
+  #toolbar .grp.split:has(.combo-main[aria-pressed="true"]) {
+    background: var(--indigo);
+    border-color: var(--indigo);
+    color: #fff;
+  }
+  #toolbar .grp.split:has(.combo-main[aria-pressed="true"]) > button {
+    background: transparent;
+    color: inherit;
+  }
+  #toolbar .grp.split > button:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--ink) 12%, transparent);
+  }
+  /* The only hint that this is two controls, and only while it matters. */
+  #toolbar .combo-chev:hover:not(:disabled),
+  #toolbar .combo-chev[aria-expanded="true"] {
+    box-shadow: inset 1px 0 0 color-mix(in srgb, var(--ink) 22%, transparent);
+  }
+  #toolbar .combo-chev {
+    width: 16px;
+    min-width: 0;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #toolbar button.combo, #toolbar button.combo-main {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    width: auto;
+    min-width: 42px;
+    height: 28px;
+    padding: 0 6px 0 7px;
+  }
+  #toolbar button.combo-main { min-width: 30px; padding: 0 3px 0 6px; }
+  #toolbar button.combo > svg:not(.caret), #toolbar button.combo-main > svg:not(.caret) {
+    width: 19px;
+    height: 19px;
+  }
+  #toolbar button.combo .rule {
+    width: 17px;
+    height: 4px;
+    border-radius: 2px;
+    background: currentColor;
+    flex: none;
+  }
+
+  .pop {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    z-index: 20;
+    padding: 7px;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: var(--surface);
+    box-shadow: 0 10px 28px rgb(0 0 0 / 0.16);
+  }
+  /* Specificity, not order. Every .pop.<variant> below sets `display: flex` and
+     scores the same (0,2,0) as a plain `.pop[hidden]`, so the later rule would
+     win and the popover would never hide. Adding #toolbar makes this (1,2,0),
+     which beats all of them whatever order they end up in. */
+  #toolbar .pop[hidden] { display: none; }
+  .pop.row { display: flex; flex-direction: column; gap: 5px; }
+  .pop.row .opts { display: flex; align-items: center; gap: 6px; }
+
+  /* Every popover says what it is. Without it the two colour panels are the same
+     grid of swatches twice and nothing on screen distinguishes border from fill.
+     It is the accessible name as well, so the label and the heading cannot drift. */
+  .pop-title, .menu-title {
+    margin: 1px 2px 2px;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .pop hr { height: 1px; margin: 4px 0; border: 0; background: var(--line); }
+  .pop .hint { margin: 2px 2px 0; color: var(--muted); font-size: 11px; line-height: 1.4; }
+
+  /* Stroke style: the list is the preview, each row drawn at its real weight. */
+  .pop.style { width: 152px; display: flex; flex-direction: column; gap: 2px; }
+  #toolbar .pop.style button.opt {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 26px;
+    padding: 0;
+    border-color: transparent;
+  }
+  #toolbar .pop.style button.opt svg {
+    width: 104px;
+    height: 18px;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  #toolbar .pop.style button.opt[aria-pressed="true"] {
+    background: color-mix(in srgb, var(--indigo) 16%, transparent);
+    border-color: var(--indigo);
+    color: var(--ink);
+  }
+
+  .numrow { display: flex; align-items: center; gap: 6px; padding: 2px 2px 0; }
+  .numrow label, .numrow .unit { font-size: 11px; color: var(--muted); }
+  .numrow input[type="number"] {
+    width: 58px;
+    padding: 4px 6px;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    background: var(--sunken);
+    color: var(--ink);
+    font: 500 12px/1.2 ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Colour: quick row, tint grid, then the custom picker. */
+  .pop.paint { width: 216px; display: flex; flex-direction: column; gap: 7px; }
+  .quickrow, .swgrid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 3px; }
+  .swgrid { gap: 2px; }
+  #toolbar .pop.paint button.sw {
+    width: 100%;
+    aspect-ratio: 1;
+    height: auto;
+    min-width: 0;
+    padding: 0;
+    /* Derived from the text colour rather than a fixed black, so the near-black
+       swatches are still visible against a dark popover and the white ones are
+       still visible against a light one. */
+    border: 1px solid color-mix(in srgb, var(--ink) 26%, transparent);
+    border-radius: 4px;
+  }
+  #toolbar .pop.paint button.sw[aria-pressed="true"] {
+    outline: 2px solid var(--indigo);
+    outline-offset: 1px;
+  }
+  .paintrow { display: flex; align-items: center; gap: 7px; }
+  .paintrow label { flex: none; font-size: 11px; }
+  #toolbar button.nofill {
+    width: 26px;
+    height: 26px;
+    flex: none;
+    padding: 0;
+    background: linear-gradient(to bottom right,
+      transparent calc(50% - 1px), var(--danger) calc(50% - 1px),
+      var(--danger) calc(50% + 1px), transparent calc(50% + 1px));
+  }
+  .paintrow input[type="range"] { flex: 1 1 auto; min-width: 0; accent-color: var(--indigo); }
+  .paintrow output {
+    flex: none;
+    width: 34px;
+    text-align: right;
+    font: 500 11px/1 ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+  }
+  /* The custom swatch is a real colour input: it opens the operating system's
+     picker, which is where a "more colours" control normally leads, and it comes
+     with an eyedropper and keyboard support we would otherwise have to build. */
+  .custom { display: flex; align-items: center; gap: 6px; }
+  .custom input[type="color"] {
+    width: 30px;
+    height: 28px;
+    flex: none;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--surface);
+    cursor: pointer;
+  }
+  .custom input[type="text"] {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 5px 8px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--sunken);
+    color: var(--ink);
+    font: 500 12px/1.2 ui-monospace, monospace;
+    text-transform: uppercase;
+  }
+  .custom input[type="text"]:invalid { border-color: var(--danger); }
+
+  /* Text inspector. */
+  .pop.text { width: 244px; display: flex; flex-direction: column; gap: 7px; }
+  .pop.text select { width: 100%; padding: 5px 7px; font-size: 12.5px; border-radius: 6px; }
+  .pop.text .r2 { display: flex; gap: 6px; }
+  .stepper {
+    display: flex;
+    align-items: stretch;
+    flex: none;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--sunken);
+  }
+  .stepper input {
+    width: 44px;
+    padding: 4px 6px;
+    border: 0;
+    background: none;
+    color: var(--ink);
+    font: 500 12.5px/1.2 ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+  .stepper input:focus { outline: none; }
+  .stepper .unit { align-self: center; padding-right: 6px; font-size: 11px; color: var(--muted); }
+  .stepper .arrows { display: flex; flex-direction: column; border-left: 1px solid var(--line); }
+  #toolbar .stepper .arrows button {
+    width: 19px;
+    height: auto;
+    min-width: 0;
+    flex: 1;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    font-size: 7px;
+    line-height: 1;
+  }
+  #toolbar .stepper .arrows button + button { border-top: 1px solid var(--line); }
+  .bir { display: flex; flex: 1 1 auto; gap: 4px; }
+  #toolbar .bir button { flex: 1; width: auto; min-width: 0; padding: 4px 0; font-size: 13px; }
+  #toolbar .bir button.b { font-weight: 700; }
+  #toolbar .bir button.i { font-family: Georgia, serif; font-style: italic; }
+  #toolbar .bir button.u { text-decoration: underline; }
+
+  /* The upload hand-off list. Wider than the format menu because each row has to
+     say what the site does with the image, which is the whole point of choosing. */
+  .pop.hosts { width: 268px; display: flex; flex-direction: column; gap: 2px; }
+  #toolbar .pop.hosts button {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+    width: 100%; padding: 8px 10px; border: 0; border-radius: 6px;
+    font-size: 13px; font-weight: 600; text-align: left;
+  }
+  #toolbar .pop.hosts button span { color: var(--muted); font-weight: 400; font-size: 11.5px; }
+  #toolbar .pop.hosts button:hover { background: var(--line); }
+  .pop.hosts .caption {
+    padding: 8px 10px 4px; margin-top: 2px; border-top: 1px solid var(--line);
+    color: var(--muted); font-size: 11px; line-height: 1.45;
+  }
+
+  /* The inline text box, created by editor.js startTextEntry().
+     It is positioned in document coordinates (canvas box + scroll offset), so it
+     has to be absolutely positioned against the initial containing block. Without
+     this rule it is a static input appended to <body>, which lands under the whole
+     page and makes focus() scroll to the bottom: the class was set on the element
+     from the beginning and the rule for it never existed. */
+  .text-entry {
+    position: absolute;
+    z-index: 30;
+    min-width: 140px;
+    margin: 0;
+    padding: 2px 6px;
+    border: 1px solid var(--indigo-bright);
+    border-radius: 5px;
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    box-shadow: 0 2px 12px rgb(0 0 0 / 0.18);
+    caret-color: var(--indigo-bright);
+  }
+  .text-entry:focus { outline: 2px solid var(--indigo-bright); outline-offset: 1px; }
+
+  /* THE CROP CONFIRM BAR
+     Fixed to the viewport rather than absolute on the page. A capture is often
+     ten screens tall, so the region being judged and the buttons that answer for
+     it have to be in the same place: the bar follows the region while the page
+     scrolls, and stays inside the window when the region is larger than it. */
+  .crop-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 7px 6px 13px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--surface);
+    box-shadow: 0 8px 28px rgb(0 0 0 / 0.3);
+  }
+  .crop-bar[hidden] { display: none; }
+  .crop-size {
+    font: 600 12px/1 ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .crop-bar button.crop-act {
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--line);
+    border-radius: 50%;
+    background: var(--surface);
+    color: var(--ink);
+  }
+  .crop-bar button.crop-act svg {
+    width: 18px;
+    height: 18px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .crop-bar button.crop-act:hover:not(:disabled) { background: var(--line); }
+  .crop-bar button.crop-act.ok {
+    background: var(--indigo);
+    border-color: var(--indigo);
+    color: #fff;
+  }
+  .crop-bar button.crop-act.ok:hover:not(:disabled) { background: var(--indigo-bright); }
+  .crop-bar button:focus-visible { outline: 2px solid var(--indigo-bright); outline-offset: 2px; }
+
+  /* A control the user switched off on the options page. */
+  #toolbar [data-button][hidden] { display: none; }
+  /* The theme button carries all three glyphs and shows one, and the Fill button
+     carries a slash it lifts once a fill is chosen. `hidden` is an HTML
+     attribute: the user agent stylesheet hides HTML elements that carry it and
+     says nothing at all about SVG, so both cases have to be spelled out. The
+     second selector reaches shapes inside a glyph, not only whole glyphs. */
+  #toolbar svg[hidden], #toolbar svg [hidden] { display: none; }
+  .note { padding: 0 20px 12px; margin: 0; color: var(--muted); font-size: 12px; }
+</style>
+
+<div id="toolbar">
+  <button class="icon" type="button" data-tool="select" data-button="select" aria-pressed="false" aria-label="Select" title="Select, move and resize (V)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path fill="currentColor" stroke="none" d="M5.2 2.8 16 9.6l-4.5 1.1 2.2 4.5-1.9.9-2.2-4.5-3.2 3.2z"/></svg></button>
+
+  <span class="grp split" data-button="shapes">
+    <button class="icon combo-main" type="button" id="shapes-combo" data-tool="arrow"
+            aria-pressed="true" aria-label="Shapes" title="Draw the last shape you used">
+      <svg id="shapes-glyph" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M4 16 16 4"/><path d="M10.2 4H16v5.8"/></svg>
+    </button>
+    <button class="icon combo-chev" type="button" data-pop="pop-shapes"
+            aria-haspopup="true" aria-expanded="false" aria-label="Choose a shape" title="Choose a shape">
+      <svg class="caret" viewBox="0 0 8 8" aria-hidden="true" focusable="false"><path d="M1.4 2.9 4 5.5l2.6-2.6"/></svg>
+    </button>
+    <div class="pop row" id="pop-shapes" role="group" aria-labelledby="pop-shapes-title" hidden>
+      <p class="pop-title" id="pop-shapes-title">Shapes</p>
+      <div class="opts">
+      <button class="icon" type="button" data-tool="arrow" aria-pressed="true" aria-label="Arrow" title="Arrow (A)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M4 16 16 4"/><path d="M10.2 4H16v5.8"/></svg></button>
+      <button class="icon" type="button" data-tool="line" aria-pressed="false" aria-label="Line" title="Line (L)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M4 16 16 4"/></svg></button>
+      <button class="icon" type="button" data-tool="rect" aria-pressed="false" aria-label="Box" title="Box (R)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect x="3.5" y="5" width="13" height="10" rx="1.5"/></svg></button>
+      <button class="icon" type="button" data-tool="ellipse" aria-pressed="false" aria-label="Ellipse" title="Ellipse (O)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><ellipse cx="10" cy="10" rx="6.6" ry="5.4"/></svg></button>
+      <button class="icon" type="button" data-tool="highlight" aria-pressed="false" aria-label="Highlighter" title="Highlighter (H)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M11.8 3.4 16.6 8.2l-6.2 6.2H5.6V9.6z"/><path d="M3.5 17.5h13"/></svg></button>
+      </div>
+    </div>
+  </span>
+
+  <span class="grp split" data-button="text">
+    <button class="icon combo-main" type="button" id="text-combo" data-tool="text"
+            aria-pressed="false" aria-label="Text" title="Text (T)">
+      <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M4 5V3.6h12V5"/><path d="M10 3.6v12.8"/><path d="M7.4 16.4h5.2"/></svg>
+    </button>
+    <button class="icon combo-chev" type="button" data-pop="pop-text"
+            aria-haspopup="true" aria-expanded="false" aria-label="Text style" title="Text style">
+      <svg class="caret" viewBox="0 0 8 8" aria-hidden="true" focusable="false"><path d="M1.4 2.9 4 5.5l2.6-2.6"/></svg>
+    </button>
+    <div class="pop text" id="pop-text" role="group" aria-labelledby="pop-text-title" hidden>
+      <p class="pop-title" id="pop-text-title">Text style</p>
+      <select id="text-family" aria-label="Font">
+        <option value="system">System UI</option>
+        <option value="sans">Helvetica</option>
+        <option value="serif">Georgia</option>
+        <option value="mono">Monospace</option>
+      </select>
+      <div class="r2">
+        <span class="stepper">
+          <input id="text-size" type="number" min="8" max="200" step="1" value="24" aria-label="Size in points">
+          <span class="unit">pt</span>
+          <span class="arrows">
+            <button type="button" data-size-step="1" aria-label="Larger">&#9650;</button>
+            <button type="button" data-size-step="-1" aria-label="Smaller">&#9660;</button>
+          </span>
+        </span>
+        <span class="bir">
+          <button class="b" type="button" id="text-bold" aria-pressed="true" title="Bold">B</button>
+          <button class="i" type="button" id="text-italic" aria-pressed="false" title="Italic">I</button>
+          <button class="u" type="button" id="text-underline" aria-pressed="false" title="Underline">U</button>
+        </span>
+      </div>
+      <p class="hint">Colour comes from Border colour. Alignment needs more than one line and the text box holds one, so it arrives with multi-line text.</p>
+    </div>
+  </span>
+
+  <button class="icon" type="button" data-tool="counter" data-button="counter" aria-pressed="false" aria-label="Numbered step" title="Numbered step (N)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="6.8"/><path d="M8.8 8.2 10.6 6.9v6.4"/></svg></button>
+  <button class="icon" type="button" data-tool="pixelate" data-button="pixelate" aria-pressed="false" aria-label="Redact" title="Redact (P)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><g fill="currentColor" stroke="none"><rect x="2" y="2" width="4" height="4"/><rect x="6" y="2" width="4" height="4" fill-opacity="0.3"/><rect x="10" y="2" width="4" height="4" fill-opacity="0.7"/><rect x="14" y="2" width="4" height="4" fill-opacity="0.35"/><rect x="2" y="6" width="4" height="4" fill-opacity="0.3"/><rect x="6" y="6" width="4" height="4" fill-opacity="0.85"/><rect x="10" y="6" width="4" height="4" fill-opacity="0.3"/><rect x="14" y="6" width="4" height="4"/><rect x="2" y="10" width="4" height="4" fill-opacity="0.7"/><rect x="6" y="10" width="4" height="4" fill-opacity="0.3"/><rect x="10" y="10" width="4" height="4"/><rect x="14" y="10" width="4" height="4" fill-opacity="0.5"/><rect x="2" y="14" width="4" height="4" fill-opacity="0.35"/><rect x="6" y="14" width="4" height="4"/><rect x="10" y="14" width="4" height="4" fill-opacity="0.45"/><rect x="14" y="14" width="4" height="4" fill-opacity="0.3"/></g></svg></button>
+  <button class="icon" type="button" data-tool="crop" data-button="crop" aria-pressed="false" aria-label="Crop" title="Crop (C)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M5.6 2v12.4H18"/><path d="M2 5.6h12.4V18"/></svg></button>
+
+  <span class="sep"></span>
+
+  <span class="grp" data-button="style">
+    <button class="icon combo" type="button" id="style-combo" data-pop="pop-style"
+            aria-haspopup="true" aria-expanded="false" aria-label="Stroke style" title="Stroke style">
+      <span class="rule" id="style-glyph"></span>
+      <svg class="caret" viewBox="0 0 8 8" aria-hidden="true" focusable="false"><path d="M1.4 2.9 4 5.5l2.6-2.6"/></svg>
+    </button>
+    <div class="pop style" id="pop-style" role="group" aria-labelledby="pop-style-title" hidden>
+      <p class="pop-title" id="pop-style-title">Stroke style</p>
+      <button class="opt" type="button" data-width="1" aria-pressed="false" aria-label="1 pixel stroke" title="1 px"><svg viewBox="0 0 104 18" aria-hidden="true" focusable="false"><path d="M6 9h92" stroke-width="1"/></svg></button>
+      <button class="opt" type="button" data-width="2" aria-pressed="false" aria-label="2 pixel stroke" title="2 px"><svg viewBox="0 0 104 18" aria-hidden="true" focusable="false"><path d="M6 9h92" stroke-width="2"/></svg></button>
+      <button class="opt" type="button" data-width="4" aria-pressed="true" aria-label="4 pixel stroke" title="4 px"><svg viewBox="0 0 104 18" aria-hidden="true" focusable="false"><path d="M6 9h92" stroke-width="4"/></svg></button>
+      <button class="opt" type="button" data-width="7" aria-pressed="false" aria-label="7 pixel stroke" title="7 px"><svg viewBox="0 0 104 18" aria-hidden="true" focusable="false"><path d="M6 9h92" stroke-width="7"/></svg></button>
+      <button class="opt" type="button" data-width="11" aria-pressed="false" aria-label="11 pixel stroke" title="11 px"><svg viewBox="0 0 104 18" aria-hidden="true" focusable="false"><path d="M6 9h92" stroke-width="11"/></svg></button>
+      <hr>
+      <button class="opt" type="button" data-dash="solid" aria-pressed="true" aria-label="Solid" title="Solid"><svg viewBox="0 0 104 18" aria-hidden="true" focusable="false"><path d="M6 9h92" stroke-width="4"/></svg></button>
+      <button class="opt" type="button" data-dash="dashed" aria-pressed="false" aria-label="Dashed" title="Dashed"><svg viewBox="0 0 104 18" aria-hidden="true" focusable="false"><path d="M6 9h92" stroke-width="4" stroke-dasharray="10 8"/></svg></button>
+      <button class="opt" type="button" data-dash="dotted" aria-pressed="false" aria-label="Dotted" title="Dotted"><svg viewBox="0 0 104 18" aria-hidden="true" focusable="false"><path d="M6 9h92" stroke-width="4.5" stroke-dasharray="0.5 8"/></svg></button>
+      <hr>
+      <button class="opt" type="button" data-ends="none" aria-pressed="false" aria-label="No arrow" title="No arrow"><svg viewBox="0 0 104 18" aria-hidden="true" focusable="false"><path d="M6 9h92" stroke-width="2.4"/></svg></button>
+      <button class="opt" type="button" data-ends="start" aria-pressed="false" aria-label="Arrow at the start" title="Arrow at the start"><svg viewBox="0 0 104 18" aria-hidden="true" focusable="false"><path d="M6 9h92" stroke-width="2.4"/><path d="M17 3.5 6 9l11 5.5" stroke-width="2.4"/></svg></button>
+      <button class="opt" type="button" data-ends="end" aria-pressed="true" aria-label="Arrow at the end" title="Arrow at the end"><svg viewBox="0 0 104 18" aria-hidden="true" focusable="false"><path d="M6 9h92" stroke-width="2.4"/><path d="M87 3.5 98 9l-11 5.5" stroke-width="2.4"/></svg></button>
+      <button class="opt" type="button" data-ends="both" aria-pressed="false" aria-label="Arrows at both ends" title="Arrows at both ends"><svg viewBox="0 0 104 18" aria-hidden="true" focusable="false"><path d="M6 9h92" stroke-width="2.4"/><path d="M17 3.5 6 9l11 5.5" stroke-width="2.4"/><path d="M87 3.5 98 9l-11 5.5" stroke-width="2.4"/></svg></button>
+      <hr>
+      <div class="numrow">
+        <label for="stroke-px">Exact</label>
+        <input id="stroke-px" type="number" min="1" max="64" step="1" value="4" aria-label="Stroke width in pixels">
+        <span class="unit">px</span>
+      </div>
+    </div>
+  </span>
+
+  <span class="grp" data-button="border">
+    <button class="icon combo" type="button" id="border-combo" data-pop="pop-border"
+            aria-haspopup="true" aria-expanded="false" aria-label="Border colour" title="Border colour">
+      <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect id="border-glyph" x="3.5" y="3.5" width="13" height="13" rx="2.5" fill="none" stroke="#ef4444" stroke-width="2.6"/></svg>
+      <svg class="caret" viewBox="0 0 8 8" aria-hidden="true" focusable="false"><path d="M1.4 2.9 4 5.5l2.6-2.6"/></svg>
+    </button>
+    <div class="pop paint" id="pop-border" role="group" aria-labelledby="pop-border-title" hidden>
+      <p class="pop-title" id="pop-border-title">Border colour</p>
+      <div class="quickrow" data-quick="border"></div>
+      <div class="swgrid" data-grid="border"></div>
+      <div class="custom">
+        <input type="color" id="border-picker" value="#ef4444" aria-label="Custom border colour" title="Custom colour">
+        <input type="text" id="border-hex" value="#EF4444" spellcheck="false" autocomplete="off"
+               pattern="#?[0-9a-fA-F]{6}" aria-label="Border colour as hex" placeholder="#RRGGBB">
+      </div>
+    </div>
+  </span>
+
+  <span class="grp" data-button="fill">
+    <button class="icon combo" type="button" id="fill-combo" data-pop="pop-fill"
+            aria-haspopup="true" aria-expanded="false" aria-label="Fill colour" title="Fill colour">
+      <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect id="fill-glyph" x="3.5" y="3.5" width="13" height="13" rx="2.5" fill="none" stroke="currentColor" stroke-opacity="0.45" stroke-width="1.3"/><path id="fill-slash" d="M4.6 15.4 15.4 4.6" stroke="#dc2626" stroke-width="1.9" stroke-linecap="round"/></svg>
+      <svg class="caret" viewBox="0 0 8 8" aria-hidden="true" focusable="false"><path d="M1.4 2.9 4 5.5l2.6-2.6"/></svg>
+    </button>
+    <div class="pop paint" id="pop-fill" role="group" aria-labelledby="pop-fill-title" hidden>
+      <p class="pop-title" id="pop-fill-title">Fill colour</p>
+    <div class="paintrow">
+      <button class="nofill" type="button" data-fill="none" aria-pressed="true" aria-label="No fill" title="No fill"></button>
+      <label for="fill-opacity">Opacity</label>
+      <input id="fill-opacity" type="range" min="0" max="100" step="5" value="35" aria-label="Fill opacity">
+      <output id="fill-opacity-out" for="fill-opacity">35%</output>
+    </div>
+      <div class="quickrow" data-quick="fill"></div>
+      <div class="swgrid" data-grid="fill"></div>
+      <div class="custom">
+        <input type="color" id="fill-picker" value="#ef4444" aria-label="Custom fill colour" title="Custom colour">
+        <input type="text" id="fill-hex" value="#EF4444" spellcheck="false" autocomplete="off"
+               pattern="#?[0-9a-fA-F]{6}" aria-label="Fill colour as hex" placeholder="#RRGGBB">
+      </div>
+    </div>
+  </span>
+
+  <span class="sep"></span>
+
+  <button class="icon" id="delete" data-button="delete" type="button" disabled aria-label="Delete selected" title="Delete selected (Backspace)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M3.6 5.6h12.8"/><path d="M8 5.6V3.4h4v2.2"/><path d="M5.6 5.6 6.4 16.6h7.2l.8-11"/></svg></button>
+  <button class="icon" id="undo" data-button="undo" type="button" disabled aria-label="Undo" title="Undo (Cmd/Ctrl+Z)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M7 6.4h4.6a4.3 4.3 0 0 1 0 8.6H5.4"/><path d="M9.4 3.6 6 6.9l3.4 3.3"/></svg></button>
+  <button class="icon" id="redo" data-button="redo" type="button" disabled aria-label="Redo" title="Redo (Cmd/Ctrl+Shift+Z)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M13 6.4H8.4a4.3 4.3 0 0 0 0 8.6h6.2"/><path d="M10.6 3.6 14 6.9l-3.4 3.3"/></svg></button>
+  <button id="revert" data-button="revert" type="button" title="Remove every edit">Reset</button>
+
+  <span class="grow"></span>
+
+  <button class="icon" id="copy" data-button="copy" type="button" disabled aria-label="Copy image"
+          title="Copy image (Cmd/Ctrl+C)">
+    <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect x="6.6" y="2.6" width="10.8" height="13" rx="2"/><path d="M13.4 17.4H4.6a2 2 0 0 1-2-2V6"/></svg>
+  </button>
+
+  <span class="menuwrap" data-button="download">
+    <button class="icon wide" id="download" type="button" disabled aria-label="Download"
+            aria-haspopup="true" aria-expanded="false" title="Download">
+      <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M10 2.6v9.8"/><path d="M6.2 8.8 10 12.6l3.8-3.8"/><path d="M3.4 15.4h13.2"/></svg>
+      <svg class="caret" viewBox="0 0 8 8" aria-hidden="true" focusable="false"><path d="M1.4 2.9 4 5.5l2.6-2.6"/></svg>
+    </button>
+    <div class="menu" id="formats" role="menu" aria-label="Download format" hidden>
+      <p class="menu-title" aria-hidden="true">Download as</p>
+      <button type="button" role="menuitem" data-format="png">PNG<span>Lossless, larger file</span></button>
+      <button type="button" role="menuitem" data-format="jpeg">JPEG<span>Smaller file, slight loss</span></button>
+      <button type="button" role="menuitem" data-format="pdf">PDF<span>Lossless, one page, or several if the capture is very long</span></button>
+    </div>
+  </span>
+
+  <span class="grp" data-button="upload">
+    <button class="icon combo" type="button" id="upload" data-pop="pop-upload" disabled
+            aria-haspopup="true" aria-expanded="false" aria-label="Upload" title="Upload to an image host">
+      <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M10 13.4V3.6"/><path d="M6.2 7.4 10 3.6l3.8 3.8"/><path d="M3.4 15.4h13.2"/></svg>
+      <svg class="caret" viewBox="0 0 8 8" aria-hidden="true" focusable="false"><path d="M1.4 2.9 4 5.5l2.6-2.6"/></svg>
+    </button>
+    <div class="pop hosts" id="pop-upload" role="group" aria-labelledby="pop-upload-title" hidden>
+      <p class="pop-title" id="pop-upload-title">Image hosts</p>
+      <button type="button" data-host="https://imgbb.com/upload" data-host-name="ImgBB">ImgBB<span>32 MB, no account, links can be set to expire</span></button>
+      <button type="button" data-host="https://postimages.org/" data-host-name="Postimages">Postimages<span>24 MB, no account, direct image links</span></button>
+      <button type="button" data-host="https://catbox.moe/" data-host-name="Catbox">Catbox<span>200 MB, anonymous, the link does not expire</span></button>
+      <button type="button" data-host="https://litterbox.catbox.moe/" data-host-name="Litterbox">Litterbox<span>1 GB, anonymous, deletes itself after 1 to 72 hours</span></button>
+      <p class="caption">
+        Copies the image and opens the site so you can paste it there. OpenFullPage
+        does not upload anything and cannot: it has no network access.
+      </p>
+    </div>
+  </span>
+
+  <button class="icon" id="theme" data-button="theme" type="button"
+          aria-label="Theme: follows your system. Switch to light."
+          title="Theme: follows your system. Switch to light.">
+    <svg id="theme-system" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect x="2.4" y="4" width="15.2" height="10.2" rx="1.6"/><path d="M7 17.4h6"/><path d="M10 14.2v3.2"/></svg>
+    <svg id="theme-light" viewBox="0 0 20 20" aria-hidden="true" focusable="false" hidden><circle cx="10" cy="10" r="3.6"/><path d="M10 2v2.1"/><path d="M10 15.9V18"/><path d="M2 10h2.1"/><path d="M15.9 10H18"/><path d="m4.3 4.3 1.5 1.5"/><path d="m14.2 14.2 1.5 1.5"/><path d="m15.7 4.3-1.5 1.5"/><path d="m5.8 14.2-1.5 1.5"/></svg>
+    <svg id="theme-dark" viewBox="0 0 20 20" aria-hidden="true" focusable="false" hidden><path d="M16.4 12.3A6.9 6.9 0 0 1 7.7 3.6a6.9 6.9 0 1 0 8.7 8.7z"/></svg>
+  </button>
+
+  <button class="icon" id="settings" type="button" aria-label="Settings" title="Settings">
+    <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="2.5"/><path d="M17.349,6.479l-0.625-1.082c-0.345-0.598-1.109-0.802-1.707-0.457L14.688,5.129C13.438,5.85,11.875,4.948,11.875,3.505V3.125c0-0.691-0.559-1.25-1.25-1.25h-1.25 c-0.691,0-1.25,0.559-1.25,1.25v0.38c0,1.443-1.562,2.346-2.812,1.624L4.984,4.939C4.386,4.594,3.621,4.798,3.276,5.396l-0.625,1.083 c-0.345,0.598-0.141,1.363,0.458,1.708L3.438,8.376c1.25,0.722,1.25,2.526,0,3.247l-0.329,0.19c-0.598,0.345-0.802,1.109-0.457,1.708 l0.625,1.083c0.345,0.598,1.109,0.803,1.708,0.458L5.313,14.871c1.25-0.722,2.813,0.181,2.813,1.624V16.875c0,0.691,0.559,1.25,1.25,1.25h1.25 c0.691,0,1.25-0.559,1.25-1.25v-0.38c0-1.443,1.563-2.346,2.813-1.624l0.329,0.19c0.598,0.345,1.363,0.141,1.708-0.457l0.625-1.082 c0.345-0.598,0.141-1.362-0.457-1.707L16.563,11.624c-1.25-0.722-1.25-2.526,0-3.247l0.329-0.19C17.489,7.841,17.694,7.077,17.349,6.479z"/></svg>
+  </button>
+</div>
+
+<div class="track" id="track"><div class="bar" id="bar"></div></div>
+
+<div id="filebar">
+  <label for="filename">Save as</label>
+  <span class="field">
+    <input id="filename" type="text" spellcheck="false" autocomplete="off" disabled
+           placeholder="Waiting for the capture">
+    <span id="ext">.png</span>
+  </span>
+  <span id="dimensions"></span>
+  <span id="status" role="status" aria-live="polite">Waiting for the capture to start…</span>
+</div>
+<p class="note" id="note" hidden></p>
+
+<main>
+  <figure><canvas id="canvas" hidden></canvas></figure>
+</main>
+
+<div class="crop-bar" id="crop-bar" role="group" aria-label="Confirm the crop" hidden>
+  <span class="crop-size" id="crop-size">0 × 0</span>
+  <button class="crop-act" type="button" id="crop-cancel" aria-label="Cancel the crop" title="Cancel the crop (Esc)">
+    <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="m5.6 5.6 8.8 8.8"/><path d="m14.4 5.6-8.8 8.8"/></svg>
+  </button>
+  <button class="crop-act ok" type="button" id="crop-apply" aria-label="Crop to this area" title="Crop to this area (Enter)">
+    <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="m4.6 10.4 3.8 3.8 7-8.4"/></svg>
+  </button>
+</div>
+
+<script src="result.js" type="module"></script>

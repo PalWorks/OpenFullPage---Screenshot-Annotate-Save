@@ -1,0 +1,13 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body { font: 700 30px system-ui, sans-serif; background: #86efac; }
+  .c { height: 300px; padding: 20px; }
+  .c:nth-child(even) { background: #4ade80; }
+</style>
+<script>
+  for (let i = 1; i <= 10; i++) {
+    document.write('<div class="c">CROSS-ORIGIN FRAME BLOCK ' + i + '</div>');
+  }
+</script>

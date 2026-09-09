@@ -1,0 +1,20 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Iframe Fixture</title>
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body { font: 16px/1.4 system-ui, sans-serif; }
+  h2 { padding: 12px 20px; background: #4338ca; color: #fff; font-size: 15px; }
+  iframe { display: block; width: 100%; border: 0; }
+  .spacer { height: 900px; background: #f4f4f5; padding: 20px; font-size: 24px; font-weight: 700; }
+</style>
+
+<h2>SAME-ORIGIN IFRAME, INNER SCROLL (400px tall, 3000px of content)</h2>
+<iframe src="/frame.html" height="400"></iframe>
+
+<div class="spacer">SPACER A, forces the cross-origin frame below the fold</div>
+
+<h2>CROSS-ORIGIN IFRAME (served from port 8788)</h2>
+<iframe src="http://127.0.0.1:8788/" height="400"></iframe>
+
+<div class="spacer">SPACER B</div>

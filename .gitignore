@@ -1,0 +1,7 @@
+dist/
+.DS_Store
+tools/verify-crx/verify-crx
+.gstack/
+
+# Local working notes dropped into the repo root. Never published.
+Prompt - *.md
