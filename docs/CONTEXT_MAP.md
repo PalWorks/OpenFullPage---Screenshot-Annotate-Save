@@ -33,6 +33,9 @@ fifteen.
 | Why is the page behind the capture not white? | [DECISIONS.md](DECISIONS.md) D36 |
 | Why will my SVG not hide? | It is not an HTML element. [DECISIONS.md](DECISIONS.md) D37 |
 | My popover is in the DOM and I cannot see it | An ancestor is clipping it. [DECISIONS.md](DECISIONS.md) D38 |
+| Why does a popover live inside another popover? | [DECISIONS.md](DECISIONS.md) D40 |
+| Why does picking Arrow change the stroke style? | [DECISIONS.md](DECISIONS.md) D41 |
+| What is the cursor supposed to say? | [DECISIONS.md](DECISIONS.md) D42 |
 | Where does the website live? | [PLAYBOOK.md](PLAYBOOK.md), "The other two repositories" |
 | Who controls this project and what happens if it is sold? | [../GOVERNANCE.md](../GOVERNANCE.md) |
 | How do I report a vulnerability? | [../SECURITY.md](../SECURITY.md) |

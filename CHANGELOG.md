@@ -88,6 +88,54 @@ Saving is read-modify-write over the whole settings object, so two overlapping s
 each put back what the other had just changed. Dragging the fill opacity slider
 fires one per step. Writes are now serialised.
 
+### Changed: the text colour is a well beside the font menu
+It was a section of its own at the bottom of the inspector, which made the panel
+taller than the thing it describes. Colour is a property of the type, like the
+family and the size, so it sits on the same row as them and opens the same palette
+the border and fill controls open. D40.
+
+A popover inside a popover needed two things to learn about it: closing "every
+popover but this one" was taking the container down with the contents, and the end
+to end chevron check now opens every enclosing popover before it tries to reach a
+nested trigger.
+
+### Fixed: picking Arrow could still draw a line
+Arrow and line are one shape recorded in two places, the tool and the arrowheads,
+and nothing kept them in step. Draw an arrow, take its head off from the stroke
+panel, then come back and pick Arrow from the Shapes menu: you got a line, because
+the ends still said none and the ends won. Picking Arrow is the clearest statement
+the interface offers and it was being ignored.
+
+Whichever of the two was touched last now wins and the other follows. Choosing
+Arrow puts a head back on, choosing Line takes them off, taking the heads off makes
+the tool Line, and putting one back makes it Arrow. Choosing Arrow when the ends
+are already at the start or at both leaves them alone, because that is still an
+arrow and it is a preference set on purpose. D41.
+
+### Added: the editor says what is under the pointer
+A canvas has no hover states, so every shape on the image looked exactly as
+clickable as the empty pixels beside it. Now:
+
+- **A handle shows the axis it travels on**, `nwse-resize` on one diagonal and
+  `nesw-resize` on the other. A line's endpoints show `move`, because an endpoint
+  is not constrained to an axis.
+- **The body of a shape shows `move`**, so it reads as something that can be
+  picked up.
+- **The shape under the pointer is outlined**, in a solid hairline rather than the
+  selection's dashed box, so the two are never confused.
+- **Escape abandons a drag** and puts the shape back where it started. Until now
+  the only way out of a misjudged drag was to finish it and undo.
+
+The open hand was considered and not used: it means "drag the view", which is what
+it will mean here the day the canvas can be panned, and a cursor that means two
+things means neither. D42.
+
+### Fixed: the keyboard guard stopped covering the text box
+It tested for `HTMLInputElement`, which stopped being true the moment the inline
+text box became a textarea. Nothing broke, because the box stops propagation
+itself, but a guard that quietly no longer guards is worth the one line it costs to
+keep true.
+
 ### Added: text is a first class shape now
 It could be placed and after that almost nothing: no re-editing, no resize
 handles, one line only, and no alignment. Four changes, taken together because

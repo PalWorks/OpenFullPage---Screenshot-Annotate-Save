@@ -244,14 +244,29 @@ export const MIN_CROP = 12;
 /** Corners first, then edge midpoints. The order the handles are drawn in. */
 export const CROP_HANDLES = ['nw', 'ne', 'se', 'sw', 'n', 'e', 's', 'w'];
 
-const CROP_CURSORS = {
+/**
+ * The cursor a handle should show, by handle id.
+ *
+ * Shared by the crop region and by shape selection, because they use the same
+ * handle ids and mean the same thing by them. The double headed arrow points
+ * along the axis the handle actually moves, which is the whole information the
+ * cursor carries: `nwse-resize` on a corner says this corner travels diagonally,
+ * and getting the diagonal backwards is worse than showing nothing.
+ *
+ * Anything not in the map, which is the two endpoints of a line, falls back to
+ * `move`: an endpoint is not constrained to an axis, it goes wherever it is put.
+ */
+const HANDLE_CURSORS = {
   nw: 'nwse-resize', se: 'nwse-resize',
   ne: 'nesw-resize', sw: 'nesw-resize',
   n: 'ns-resize', s: 'ns-resize',
   e: 'ew-resize', w: 'ew-resize',
 };
 
-export const cropCursor = (handleId) => CROP_CURSORS[handleId] ?? 'move';
+export const handleCursor = (handleId) => HANDLE_CURSORS[handleId] ?? 'move';
+
+/** The crop region's handles use the same map. Kept as its own name for callers. */
+export const cropCursor = handleCursor;
 
 export function cropHandlesFor(rect) {
   const midX = rect.x + rect.w / 2;

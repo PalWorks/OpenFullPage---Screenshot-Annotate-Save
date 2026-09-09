@@ -31,10 +31,10 @@ import {
   commit,
   constrain,
   createDocument,
-  cropCursor,
   cropHandleAt,
   cropHandlesFor,
   dashOf,
+  handleCursor,
   dashPattern,
   effectiveCrop,
   fillAlphaOf,
@@ -103,6 +103,10 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
   // The shape currently open in the text box, hidden from the canvas while its
   // own words sit over it. Null while a new box is being typed into.
   let editingId = null;
+  // The shape under the pointer, outlined so a click is never a guess about what
+  // it will land on. Held as an id rather than a shape so a stale object cannot
+  // be drawn after an edit replaced it.
+  let hoverId = null;
 
   /**
    * A crop that has been drawn but not applied.
@@ -367,6 +371,26 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
    * to say invisible, even though the hit test compensated and they stayed
    * grabbable. See DECISIONS.md D19.
    */
+  /**
+   * A quiet outline around the shape the pointer is over.
+   *
+   * Deliberately lighter than the selection: a solid hairline rather than a
+   * dashed box with handles, so the two are never confused. It answers one
+   * question, which is "what would I get if I clicked here", and a screenshot
+   * dense with annotations is exactly where that question is hard to answer by
+   * eye.
+   */
+  function drawHover(shape, crop) {
+    const b = boundsOf(shape);
+    const scale = screenScale();
+    const pad = 3 * scale;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(99, 102, 241, 0.55)';
+    ctx.lineWidth = 1.5 * scale;
+    ctx.strokeRect(b.x - crop.x - pad, b.y - crop.y - pad, b.w + pad * 2, b.h + pad * 2);
+    ctx.restore();
+  }
+
   function drawSelection(shape, crop) {
     const b = boundsOf(shape);
     const scale = screenScale();
@@ -471,6 +495,14 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
     const chosen = selectedShape(doc);
     if (chosen && !preview && !pendingCrop) drawSelection(chosen, crop);
 
+    // What a click would pick up, shown before the click. Never on the selected
+    // shape, which already has an outline and handles of its own, and never
+    // while something is being drawn or a crop is waiting to be answered.
+    if (hoverId && hoverId !== chosen?.id && !preview && !pendingCrop) {
+      const under = doc.present.shapes.find((shape) => shape.id === hoverId);
+      if (under) drawHover(under, crop);
+    }
+
     notify();
   }
 
@@ -532,6 +564,30 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
   }
 
   /**
+   * Picking a tool, as an act by the user rather than by the editor.
+   *
+   * Arrow and line are one shape drawn two ways, and the toolbar stores that fact
+   * twice: once as the tool, and once as the arrowheads in the stroke style. They
+   * drift. Draw an arrow, take its head off from the stroke panel, then come back
+   * and pick Arrow from the Shapes menu: the tool says arrow, the ends still say
+   * none, and what gets drawn is a line. The reader asked for an arrow, in the
+   * clearest way the interface offers, and got the opposite.
+   *
+   * So whichever of the two was touched last wins and the other follows. Choosing
+   * Arrow puts a head back on if there is none, and choosing Line takes them off.
+   * Choosing Arrow when the ends are already start or both leaves them alone: that
+   * is still an arrow, and it is a preference the reader set on purpose.
+   *
+   * `applyTool` stays private for the editor's own moves, such as handing back to
+   * the selection tool, which must not restyle anything.
+   */
+  function chooseTool(next) {
+    if (next === 'arrow' && ends === 'none') ends = 'end';
+    else if (next === 'line') ends = 'none';
+    applyTool(next);
+  }
+
+  /**
    * Hand the finished object back to the user.
    *
    * This is the general convention in drawing and annotation tools: finishing a
@@ -584,6 +640,63 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
     event.preventDefault();
     startTextEntry(hit.at, hit);
   });
+
+  /**
+   * Say what a click would do, before it does it.
+   *
+   * The cursor is the cheapest affordance a canvas has, and until now it changed
+   * only when the tool changed: every shape on the image looked exactly as
+   * clickable as the empty pixels beside it. Three answers, in the order the
+   * click itself would resolve them.
+   *
+   * A handle shows the axis it travels on, which is the one thing a resize cursor
+   * is for. The body of a shape shows `move`, not the open hand: the hand means
+   * "drag the view", which is what it will mean here the day the canvas can be
+   * panned (F6), and having it mean two things would make it mean neither.
+   * Everywhere else keeps the tool's own cursor.
+   */
+  function hover(event) {
+    const at = toImage(event);
+
+    if (tool === 'crop' && pendingCrop) {
+      const handle = cropHandleAt(pendingCrop, at, pickTolerance());
+      canvas.style.cursor = handle
+        ? handleCursor(handle)
+        : insideRect(pendingCrop, at) ? 'move' : 'crosshair';
+      return;
+    }
+
+    // Only the selection tool picks things up, so only it should suggest that it
+    // will. Under a drawing tool the crosshair is the honest answer: a drag there
+    // draws a new shape whatever is underneath.
+    if (tool !== 'select') {
+      setHover(null);
+      return;
+    }
+
+    const chosen = selectedShape(doc);
+    const handle = chosen ? handleAt(chosen, at, pickTolerance()) : null;
+    if (handle) {
+      canvas.style.cursor = handleCursor(handle);
+      setHover(null);
+      return;
+    }
+
+    const under = shapeAt(doc.present.shapes, at);
+    canvas.style.cursor = under ? 'move' : 'default';
+    setHover(under ? under.id : null);
+  }
+
+  /** Repaint only when the answer changed. Every pointermove would be wasteful. */
+  function setHover(id) {
+    if (hoverId === id) return;
+    hoverId = id;
+    render();
+  }
+
+  // A pointer that leaves the canvas has nothing under it, and an outline left
+  // behind would claim otherwise.
+  canvas.addEventListener('pointerleave', () => setHover(null));
 
   canvas.addEventListener('pointerdown', (event) => {
     if (event.button !== 0 || editing) return;
@@ -649,14 +762,7 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
 
   canvas.addEventListener('pointermove', (event) => {
     if (!drag) {
-      // Hovering. Say what a click would do before it does it.
-      if (tool === 'crop' && pendingCrop) {
-        const at = toImage(event);
-        const handle = cropHandleAt(pendingCrop, at, pickTolerance());
-        canvas.style.cursor = handle
-          ? cropCursor(handle)
-          : insideRect(pendingCrop, at) ? 'move' : 'crosshair';
-      }
+      hover(event);
       return;
     }
     const point = toImage(event);
@@ -712,6 +818,7 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
     if (!drag) return;
     const finished = drag;
     drag = null;
+    hoverId = null;
 
     if (finished.mode === 'draw') {
       const to = finished.to ?? toImage(event);
@@ -969,7 +1076,28 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
 
   return {
     render: () => render(),
-    setTool: applyTool,
+    /**
+     * Abandon a drag that is under way, putting the shape back where it started.
+     *
+     * A move or a resize is committed on pointerup, so until then the shape is
+     * only amended and the state before it is still in `drag.before`. Escape is
+     * the universal "I did not mean this" and there was no way to say it: the
+     * only exit from a misjudged drag was to finish it and then undo.
+     *
+     * @returns {boolean} whether there was anything to cancel
+     */
+    cancelDrag() {
+      if (!drag) return false;
+      const finished = drag;
+      drag = null;
+      hoverId = null;
+      if (finished.mode === 'move' || finished.mode === 'resize') {
+        doc = amend(doc, finished.before);
+      }
+      render();
+      return true;
+    },
+    setTool: chooseTool,
     setColour(next) {
       colour = next;
       restyleSelection({ colour: next });
@@ -987,12 +1115,25 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
     },
     setEnds(next) {
       ends = next;
+      // The other half of the reconciliation in chooseTool. Taking the heads off
+      // means the reader is drawing lines, and putting one back means arrows, so
+      // the tool follows and the Shapes glyph never disagrees with what the next
+      // drag will actually draw.
+      //
+      // Assigned rather than pushed through applyTool: that drops the selection,
+      // and the shape being restyled two lines below is exactly the selection.
+      // Arrow and line share a cursor and neither touches a pending crop, so
+      // there is nothing else for applyTool to do here.
+      if (tool === 'arrow' && next === 'none') tool = 'line';
+      else if (tool === 'line' && next !== 'none') tool = 'arrow';
+
       // Only a line carries ends. Setting it with a box selected changes what
       // the next line will look like and leaves the box alone.
       const chosen = selectedShape(doc);
       if (chosen && (chosen.kind === 'arrow' || chosen.kind === 'line')) {
         restyleSelection({ ends: next });
       }
+      render();
       notify();
     },
     /** `null` means no fill, which is a value rather than an absence. */

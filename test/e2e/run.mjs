@@ -319,6 +319,12 @@ async function dragOn(cdp, session, from, to, steps = 8) {
   await sleep(120);
 }
 
+/** Move the pointer without pressing anything, so hover handlers run. */
+async function moveTo(cdp, session, at) {
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...at, buttons: 0 }, session);
+  await sleep(90);
+}
+
 /**
  * A real double click, so the editor's own `dblclick` listener fires.
  *
@@ -940,6 +946,12 @@ async function exerciseEditor(cdp, session, log) {
   // 8c. Every chevron opens a menu that can actually be reached.
   await exerciseChevrons(cdp, session, check);
 
+  // 8d. Arrow and line are one shape stored twice. They must not drift apart.
+  await exerciseArrowAndLine(cdp, session, check, p);
+
+  // 8e. What the pointer says before the click.
+  await exercisePointerFeedback(cdp, session, check, p);
+
   // 9. What the browser actually drew: contrast, overflow, broken images.
   //
   // Twice, once per theme. Until the theme button existed the dark palette could
@@ -1075,6 +1087,146 @@ async function exerciseTheme(cdp, session, check) {
 }
 
 /**
+ * The cursor, and the outline under the pointer.
+ *
+ * A canvas has no hover states of its own, so every shape on it looked exactly as
+ * clickable as the empty pixels beside it: the cursor changed only when the tool
+ * changed. These are the three answers a click can have, and the cursor has to
+ * give the right one before the click rather than after it.
+ */
+async function exercisePointerFeedback(cdp, session, check, p) {
+  const cursor = () => evaluate(cdp, session, `document.getElementById('canvas').style.cursor`);
+
+  await clickButton(cdp, session, '[data-tool="rect"]');
+  const corner = p(0.2, 0.68);
+  await dragOn(cdp, session, corner, p(0.5, 0.8));
+  await sleep(150);
+
+  // Drawing hands back to the selection tool with the new shape selected, which
+  // is the state every one of these questions is asked in.
+  await moveTo(cdp, session, p(0.35, 0.74));
+  check(await cursor() === 'move',
+    `over the middle of a shape the cursor was "${await cursor()}", not move`,
+    'over a shape the cursor says it can be picked up and moved');
+
+  await moveTo(cdp, session, corner);
+  const onHandle = await cursor();
+  check(onHandle === 'nwse-resize',
+    `over the north west handle the cursor was "${onHandle}", not nwse-resize`,
+    `over a corner handle the cursor points along the axis it travels (${onHandle})`);
+
+  await moveTo(cdp, session, p(0.8, 0.9));
+  check(await cursor() === 'default',
+    `over empty canvas the cursor was "${await cursor()}", not default`,
+    'over empty canvas the cursor claims nothing');
+
+  // The hover outline: a second shape, not selected, has to show it is there.
+  await clickButton(cdp, session, '[data-tool="rect"]');
+  await dragOn(cdp, session, p(0.6, 0.68), p(0.75, 0.8));
+  await sleep(150);
+  await moveTo(cdp, session, p(0.8, 0.9));
+  const nothingUnder = await canvasSignature(cdp, session);
+  await moveTo(cdp, session, p(0.35, 0.74));
+  const somethingUnder = await canvasSignature(cdp, session);
+  check(somethingUnder !== nothingUnder,
+    'hovering an unselected shape drew no outline, so nothing says what a click would pick up',
+    'hovering an unselected shape outlines it');
+
+  // Escape abandons a drag rather than leaving it half done.
+  //
+  // The shape is selected first and the pointer parked away from everything, so
+  // the two signatures are taken in the same state: pressing on a shape selects
+  // it, and comparing a hovered unselected shape against a selected one would
+  // differ because of the chrome rather than because anything moved.
+  await clickButton(cdp, session, '[data-tool="select"]');
+  await dragOn(cdp, session, p(0.35, 0.74), p(0.35, 0.74), 1);
+  await moveTo(cdp, session, p(0.8, 0.9));
+  await sleep(120);
+  const before = await canvasSignature(cdp, session);
+  await cdp.send('Input.dispatchMouseEvent',
+    { type: 'mousePressed', ...p(0.35, 0.74), button: 'left', buttons: 1, clickCount: 1 }, session);
+  await cdp.send('Input.dispatchMouseEvent',
+    { type: 'mouseMoved', ...p(0.4, 0.85), button: 'left', buttons: 1 }, session);
+  await sleep(100);
+  await evaluate(cdp, session,
+    `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+  await cdp.send('Input.dispatchMouseEvent',
+    { type: 'mouseReleased', ...p(0.4, 0.85), button: 'left', buttons: 0, clickCount: 1 }, session);
+  await moveTo(cdp, session, p(0.8, 0.9));
+  await sleep(150);
+  check(await canvasSignature(cdp, session) === before,
+    'Escape during a drag left the shape where the pointer had dragged it',
+    'Escape during a drag puts the shape back where it started');
+
+  await clickButton(cdp, session, '#undo');
+  await clickButton(cdp, session, '#undo');
+  await sleep(120);
+}
+
+/**
+ * Arrow and line, which are the same shape recorded in two places.
+ *
+ * The tool says arrow or line, and the stroke style says which ends carry a head.
+ * Nothing kept them in step, so this exact sequence drew the wrong thing: draw an
+ * arrow, take its head off from the stroke panel, pick Arrow again from the Shapes
+ * menu, draw, and get a line. Picking Arrow is the clearest statement the
+ * interface offers and it was being ignored.
+ *
+ * Asserted from both ends: the button state, which is where the disagreement
+ * lived, and the pixels, because an arrow has a head and a line does not.
+ */
+async function exerciseArrowAndLine(cdp, session, check, p) {
+  const pressedEnds = () => evaluate(cdp, session, `(() => {
+    const on = [...document.querySelectorAll('[data-ends]')]
+      .find((b) => b.getAttribute('aria-pressed') === 'true');
+    return on ? on.dataset.ends : 'none';
+  })()`);
+  const toolNow = () => evaluate(cdp, session, `(() => {
+    const on = [...document.querySelectorAll('#pop-shapes [data-tool]')]
+      .find((b) => b.getAttribute('aria-pressed') === 'true');
+    return on ? on.dataset.tool : '';
+  })()`);
+  const scan = { x: 0, y: 0, w: 900, h: 600 };
+  const RED = [239, 68, 68];
+
+  // Take the heads off, from the stroke panel. The tool has to follow.
+  await clickButton(cdp, session, '#pop-shapes [data-tool="arrow"]');
+  await clickButton(cdp, session, '[data-pop="pop-style"]');
+  await clickButton(cdp, session, '[data-ends="none"]');
+  await evaluate(cdp, session, `document.body.click()`);
+  await sleep(120);
+  check(await toolNow() === 'line',
+    `taking the arrowheads off left the tool as ${await toolNow()}`,
+    'taking the arrowheads off makes the tool Line, so the glyph agrees with it');
+
+  const beforeLine = await countColour(cdp, session, scan, RED);
+  await dragOn(cdp, session, p(0.15, 0.62), p(0.55, 0.62));
+  const lineInk = (await countColour(cdp, session, scan, RED)) - beforeLine;
+  check(lineInk > 50, 'the line drew nothing', `the line drew ${lineInk} pixels`);
+  await clickButton(cdp, session, '#undo');
+  await sleep(120);
+
+  // Now pick Arrow again, the way the reader would, and it must mean arrow.
+  await clickButton(cdp, session, '[data-pop="pop-shapes"]');
+  await clickButton(cdp, session, '#pop-shapes [data-tool="arrow"]');
+  await evaluate(cdp, session, `document.body.click()`);
+  await sleep(120);
+  const ends = await pressedEnds();
+  check(ends !== 'none',
+    `after choosing Arrow the stroke panel still says "${ends}", so it would draw a line`,
+    `choosing Arrow put a head back on (${ends})`);
+
+  const beforeArrow = await countColour(cdp, session, scan, RED);
+  await dragOn(cdp, session, p(0.15, 0.62), p(0.55, 0.62));
+  const arrowInk = (await countColour(cdp, session, scan, RED)) - beforeArrow;
+  check(arrowInk > lineInk,
+    `the arrow drew ${arrowInk} pixels and the line drew ${lineInk}, so it has no head`,
+    `the arrow drew ${arrowInk - lineInk} pixels more than the line, which is its head`);
+  await clickButton(cdp, session, '#undo');
+  await sleep(120);
+}
+
+/**
  * Every chevron in the toolbar, opened, and the menu it opens hit tested.
  *
  * `hidden` coming off the popover is not enough and never was. The Shapes and
@@ -1097,6 +1249,20 @@ async function exerciseChevrons(cdp, session, check) {
     `${chevrons.length} chevrons to open`);
 
   for (const popId of chevrons) {
+    // A popover can now live inside another one: the text colour palette hangs
+    // off a well in the text inspector. Its trigger is unreachable, and its own
+    // menu unpainted, until the inspector holding it is open, so every enclosing
+    // popover is opened first, outermost in.
+    const ancestors = JSON.parse(await evaluate(cdp, session, `(() => {
+      const trigger = document.querySelector('[data-pop="${popId}"]');
+      const open = [];
+      for (let node = trigger.parentElement; node; node = node.parentElement) {
+        if (node.classList?.contains('pop')) open.unshift(node.id);
+      }
+      return JSON.stringify(open);
+    })()`));
+    for (const outer of ancestors) await clickButton(cdp, session, `[data-pop="${outer}"]`);
+
     await clickButton(cdp, session, `[data-pop="${popId}"]`);
     await sleep(90);
     const state = JSON.parse(await evaluate(cdp, session, `(() => {
@@ -1122,6 +1288,13 @@ async function exerciseChevrons(cdp, session, check) {
       `#${popId} stays inside the window`);
     await evaluate(cdp, session, `document.body.click()`);
     await sleep(60);
+    const stillOpen = JSON.parse(await evaluate(cdp, session, `(() => JSON.stringify(
+      [...document.querySelectorAll('#toolbar .pop')]
+        .filter((p) => getComputedStyle(p).display !== 'none' && p.getClientRects().length > 0)
+        .map((p) => p.id)))()`));
+    check(stillOpen.length === 0,
+      `clicking away left ${stillOpen.join(', ')} open after #${popId}`,
+      `clicking away closes #${popId}`);
   }
 }
 

@@ -40,6 +40,9 @@ implements them twice. Every one has tests.
 | **T24** | A move or resize that changed nothing no longer pushes an undo step, so clicking a shape to select it stops filling the history | `src/ui/editor.js`, D39 |
 | **T25** | Three glyphs were toggled with `element.hidden`, which SVG does not have, so none of them ever changed | `src/ui/result.js`, D37 |
 | **T26** | The Shapes and Text chevrons opened a popover their own group was clipping | `src/ui/result.html`, D38 |
+| **F40** | The text colour is a well beside the font menu, opening the same palette the border and fill controls open | `src/ui/result.*`, D40 |
+| **T27** | Picking Arrow could still draw a line. The tool and the arrowheads are reconciled in both directions | `src/ui/editor.js`, D41 |
+| **F41** | Hover cursors, a hover outline, and Escape to abandon a drag. Part of F27 | `src/ui/editor.js`, D42 |
 
 **Still open from the 1.7.0 list below:** T19, T2, T11, F1, F21, F2, F26.
 **Still open from 1.8.0:** F6, F4, F27.

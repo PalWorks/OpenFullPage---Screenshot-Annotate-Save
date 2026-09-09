@@ -52,6 +52,7 @@ const ui = {
   fillOpacity: el('fill-opacity'),
   fillOpacityOut: el('fill-opacity-out'),
   textFamily: el('text-family'),
+  textWell: el('text-well'),
   textSize: el('text-size'),
   textBold: el('text-bold'),
   textItalic: el('text-italic'),
@@ -428,7 +429,10 @@ ui.cropCancel.addEventListener('click', () => {
 function selectTool(name) {
   if (!editor) return;
   editor.setTool(name);
-  saveSettings({ tool: name });
+  // Picking Arrow or Line is also a statement about the arrowheads, and the
+  // editor reconciles the two. Persist what it settled on rather than what was
+  // asked for, or the next capture opens on the pair that disagreed.
+  saveSettings({ tool: editor.state.tool, lineEnds: editor.state.style.ends });
 }
 
 /** Every tool is inert until there is an image to use it on. */
@@ -642,6 +646,7 @@ function showStyle(style, tool) {
   ui.textUnderline.setAttribute('aria-pressed', String(style.text.underline));
   markPressed('[data-align]', (b) => b.dataset.align === style.text.align);
   markPressed('[data-paint="text"]', (b) => b.dataset.colour === style.text.colour);
+  ui.textWell.style.background = style.text.colour;
   setHex('text', style.text.colour);
 }
 
@@ -683,7 +688,10 @@ function keepInView(pop) {
 
 function closePopovers(except) {
   for (const pop of ui.toolbar.querySelectorAll('.pop')) {
-    if (pop === except) continue;
+    // Never close a popover that contains the one being opened. The text colour
+    // palette lives inside the text inspector, and closing its own container
+    // would hide it along with everything else in there.
+    if (pop === except || (except && pop.contains(except))) continue;
     pop.hidden = true;
   }
   for (const trigger of ui.toolbar.querySelectorAll('[data-pop]')) {
@@ -764,8 +772,11 @@ for (const button of ui.toolbar.querySelectorAll('[data-dash]')) {
 
 for (const button of ui.toolbar.querySelectorAll('[data-ends]')) {
   button.addEventListener('click', () => {
-    editor?.setEnds(button.dataset.ends);
-    saveSettings({ lineEnds: button.dataset.ends });
+    if (!editor) return;
+    editor.setEnds(button.dataset.ends);
+    // Taking the arrowheads off turns the tool into Line, and putting one back
+    // turns it into Arrow, so both halves are saved together.
+    saveSettings({ lineEnds: editor.state.style.ends, tool: editor.state.tool });
   });
 }
 
@@ -784,9 +795,7 @@ function applyPaint(kind, colour) {
   }
 }
 
-// `.pop.paint` is the two colour popovers; the text inspector carries a colour
-// row too, so it is included by name rather than by class.
-for (const pop of [...ui.toolbar.querySelectorAll('.pop.paint'), ui.toolbar.querySelector('#pop-text')]) {
+for (const pop of ui.toolbar.querySelectorAll('.pop.paint')) {
   pop.addEventListener('click', (event) => {
     const swatch = event.target.closest?.('[data-paint]');
     if (swatch) applyPaint(swatch.dataset.paint, swatch.dataset.colour);
@@ -915,8 +924,12 @@ ui.revert.addEventListener('click', async () => {
 
 document.addEventListener('keydown', (event) => {
   if (!editor) return;
-  // Never steal keys from the inline text box.
-  if (event.target instanceof HTMLInputElement) return;
+  // Never steal keys from anything the reader is typing into. This used to test
+  // for HTMLInputElement alone, which stopped covering the inline text box the
+  // moment that became a textarea: the box stops propagation itself, so nothing
+  // broke, but a guard that quietly no longer guards is worth more than the one
+  // line it costs to keep true.
+  if (event.target?.closest?.('input, textarea, select')) return;
 
   const key = event.key.toLowerCase();
 
@@ -950,7 +963,10 @@ document.addEventListener('keydown', (event) => {
   if (key === 'escape') {
     openMenu(false);
     closePopovers(null);
-    editor.deselect();
+    // A drag in progress is the most recent thing Escape could mean, so it
+    // answers that first. Only when there is nothing to abandon does it fall
+    // through to dropping the selection.
+    if (!editor.cancelDrag()) editor.deselect();
   } else if (key === 'backspace' || key === 'delete') {
     if (editor.deleteSelection()) event.preventDefault();
   } else if (TOOL_KEYS[key]) {

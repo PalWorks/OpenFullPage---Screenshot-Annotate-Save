@@ -951,3 +951,115 @@ is unchanged. It surfaced because an end to end check asserted how many undo ste
 a piece of work should cost, which is a more useful thing to assert than that undo
 merely works.
 
+## D40: The text colour is a well beside the font, not a section below it
+
+**Date.** 2026-09-09.
+
+**Context.** The text colour shipped as its own block at the bottom of the
+inspector: a heading, ten swatches and a hex field, stacked under the alignment
+row. It worked and it was in the wrong place. Colour is a property of the type,
+like the family and the size, and it belongs on the same row as them rather than
+in a section of its own that pushes the panel taller than the thing it describes.
+
+**Decision.** A colour well to the right of the font menu, which opens the same
+palette the border and fill controls open: quick colours, the tint grid, the
+system picker and a hex field. `buildPalettes` already took a palette name, so the
+text palette is the same code and the same markup shape as the other two rather
+than a third variant of a colour picker.
+
+**Consequences.** A popover now lives inside another popover, and two things had
+to learn about that.
+
+`closePopovers(except)` closed every popover but one, which meant opening the text
+palette closed the inspector containing it. It now skips any popover that contains
+the one being opened.
+
+The end to end chevron check opens every chevron and hit tests the menu it claims
+to have opened. A nested trigger is unreachable, and its menu unpainted, until the
+popover holding it is open, so the check now walks up and opens every enclosing
+popover first. It also asserts that clicking away closes the nested one, which is
+the failure mode a nested popover actually has.
+
+## D41: Arrow and line are reconciled, not merely stored twice
+
+**Date.** 2026-09-09. Reported by the maintainer as plain common sense, which it is.
+
+**Context.** Arrow and line are one shape drawn two ways, and the toolbar records
+that fact in two places: the tool, which is `arrow` or `line`, and the arrowheads
+in the stroke style, which is `none`, `start`, `end` or `both`. Nothing kept them
+in step. Draw an arrow, take its head off from the stroke panel, draw some text,
+then pick Arrow again from the Shapes menu and draw: you get a line. The tool said
+arrow, the ends still said none, and the ends won.
+
+Picking Arrow from the Shapes menu is the clearest statement the interface offers
+about what the reader wants, and it was being ignored in favour of a setting they
+had last touched several actions ago.
+
+**Decision.** Whichever of the two was touched last wins, and the other follows.
+
+- Choosing **Arrow** puts a head back on if there is none. If the ends are already
+  `start` or `both` it leaves them alone: that is still an arrow, and it is a
+  preference set on purpose.
+- Choosing **Line** takes the heads off.
+- Taking the heads off from the stroke panel makes the tool **Line**.
+- Putting one back makes the tool **Arrow**.
+
+Both halves are saved together, so the next capture cannot open on the pair that
+disagreed.
+
+**Why not collapse them into one control.** Because they are two useful questions.
+"Which shape am I drawing" and "which ends carry a head" are asked at different
+moments and from different parts of the toolbar, and an arrow with a head at both
+ends is a thing people want. Keeping both and reconciling them costs six lines;
+removing one would cost a feature.
+
+**Where it lives.** `chooseTool` in `src/ui/editor.js` is the public entry, and
+`applyTool` stays private for the editor's own moves, such as handing back to the
+selection tool after a shape is finished. That distinction matters: an internal
+tool change must not restyle anything.
+
+## D42: The editor says what is under the pointer
+
+**Date.** 2026-09-09.
+
+**Context.** A canvas has no hover states. Every shape on the image looked exactly
+as clickable as the empty pixels beside it, the cursor changed only when the tool
+changed, and `pointermove` returned immediately unless a drag was running. On a
+screenshot dense with annotations, working out what a click would pick up meant
+clicking and finding out.
+
+**Decision.** Four answers, all before the click rather than after it.
+
+1. **A handle shows the axis it travels on.** `nwse-resize` on the north west and
+   south east corners, `nesw-resize` on the other two. The map is shared with the
+   crop region, which uses the same handle ids and means the same thing by them.
+   The two endpoints of a line fall back to `move`, because an endpoint is not
+   constrained to an axis: it goes wherever it is put.
+2. **The body of a shape shows `move`.**
+3. **Empty canvas shows the tool's own cursor**, and under a drawing tool the
+   crosshair stays: a drag there draws a new shape whatever is underneath, so
+   suggesting otherwise would be a lie.
+4. **The shape under the pointer is outlined**, in a solid hairline rather than
+   the selection's dashed box with handles, so the two are never confused.
+
+**Why `move` and not the open hand.** The maintainer asked for a hand. The hand
+means "drag the view", which is what it will have to mean here the day the canvas
+can be panned (F6 in the roadmap), and a cursor that means two things means
+neither. `move`, the four headed arrow, is the one that says "this object comes
+with you", which is the thing being promised. One line changes it if the call is
+judged wrong.
+
+**Also.** Escape now abandons a drag in progress and puts the shape back where it
+started. A move or a resize is only committed on pointerup, so until then the state
+before it is still in hand; the only previous exit from a misjudged drag was to
+finish it and then undo. Escape falls through to dropping the selection when there
+is no drag to cancel, so it keeps doing what it did.
+
+**Cost.** The hover outline repaints, so it repaints only when the answer changes
+rather than on every `pointermove`. A pointer leaving the canvas clears it, because
+an outline left behind would claim something is under a pointer that has gone.
+
+**Still open from F27.** Alt drag to duplicate, a right click menu carrying the z
+order, arrow key nudging (which is also the first step of L14), and shortcut keys
+in every tooltip. They are separate pieces of work rather than part of this one.
+

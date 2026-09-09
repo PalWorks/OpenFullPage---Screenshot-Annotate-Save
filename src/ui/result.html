@@ -496,7 +496,34 @@
     color: var(--indigo);
   }
   .pop.text select { width: 100%; padding: 5px 7px; font-size: 12.5px; border-radius: 6px; }
+  .pop.text .r1 { display: flex; align-items: center; gap: 6px; }
+  .pop.text .r1 select { flex: 1; min-width: 0; }
   .pop.text .r2 { display: flex; gap: 6px; }
+  /* The colour well, beside the font menu rather than in a section of its own.
+     It is the shape a colour control takes in a type inspector: the current
+     colour, and a chevron that opens the whole palette. */
+  #toolbar .pop.text button.well {
+    width: auto;
+    min-width: 0;
+    height: 28px;
+    flex: none;
+    gap: 3px;
+    padding: 0 5px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+  }
+  .pop.text .wellswatch {
+    width: 20px;
+    height: 15px;
+    border-radius: 3px;
+    /* A hairline inside the swatch rather than a border around it, so a white or
+       very pale text colour still has an edge against the panel. */
+    box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.28);
+  }
+  /* The palette hangs off the well, not off the inspector, so it needs the well
+     as its positioning context and must not inherit the inspector's own width. */
+  #toolbar .pop.text .grp { position: relative; flex: none; }
+  #toolbar .pop.text .pop.paint { width: 216px; }
   .stepper {
     display: flex;
     align-items: stretch;
@@ -680,12 +707,31 @@
     </button>
     <div class="pop text" id="pop-text" role="group" aria-labelledby="pop-text-title" hidden>
       <p class="pop-title" id="pop-text-title">Text style</p>
-      <select id="text-family" aria-label="Font">
-        <option value="system">System UI</option>
-        <option value="sans">Helvetica</option>
-        <option value="serif">Georgia</option>
-        <option value="mono">Monospace</option>
-      </select>
+      <div class="r1">
+        <select id="text-family" aria-label="Font">
+          <option value="system">System UI</option>
+          <option value="sans">Helvetica</option>
+          <option value="serif">Georgia</option>
+          <option value="mono">Monospace</option>
+        </select>
+        <span class="grp">
+          <button class="icon well" type="button" data-pop="pop-text-colour"
+                  aria-haspopup="true" aria-expanded="false" aria-label="Text colour" title="Text colour">
+            <span class="wellswatch" id="text-well"></span>
+            <svg class="caret" viewBox="0 0 8 8" aria-hidden="true" focusable="false"><path d="M1.4 2.9 4 5.5l2.6-2.6"/></svg>
+          </button>
+          <div class="pop paint" id="pop-text-colour" role="group" aria-labelledby="pop-text-colour-title" hidden>
+            <p class="pop-title" id="pop-text-colour-title">Text colour</p>
+            <div class="quickrow" data-quick="text"></div>
+            <div class="swgrid" data-grid="text"></div>
+            <div class="custom">
+              <input type="color" id="text-picker" value="#ef4444" aria-label="Custom text colour" title="Custom colour">
+              <input type="text" id="text-hex" value="#EF4444" spellcheck="false" autocomplete="off"
+                     pattern="#?[0-9a-fA-F]{6}" aria-label="Text colour as hex" placeholder="#RRGGBB">
+            </div>
+          </div>
+        </span>
+      </div>
       <div class="r2">
         <span class="stepper">
           <input id="text-size" type="number" min="8" max="200" step="1" value="24" aria-label="Size in points">
@@ -706,14 +752,6 @@
         <button class="opt" type="button" data-align="center" aria-pressed="false" aria-label="Align centre" title="Align centre"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M3 5h14"/><path d="M5.5 9h9"/><path d="M4 13h12"/><path d="M6.5 17h7"/></svg></button>
         <button class="opt" type="button" data-align="right" aria-pressed="false" aria-label="Align right" title="Align right"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M3 5h14"/><path d="M8 9h9"/><path d="M5 13h12"/><path d="M10 17h7"/></svg></button>
         <button class="opt" type="button" data-align="justify" aria-pressed="false" aria-label="Justify" title="Justify"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M3 5h14"/><path d="M3 9h14"/><path d="M3 13h14"/><path d="M3 17h7"/></svg></button>
-      </div>
-      <hr>
-      <p class="pop-title">Text colour</p>
-      <div class="quickrow" data-quick="text"></div>
-      <div class="custom">
-        <input type="color" id="text-picker" value="#ef4444" aria-label="Custom text colour" title="Custom colour">
-        <input type="text" id="text-hex" value="#EF4444" spellcheck="false" autocomplete="off"
-               pattern="#?[0-9a-fA-F]{6}" aria-label="Text colour as hex" placeholder="#RRGGBB">
       </div>
       <p class="hint">Enter starts a new line. Escape, or clicking away, finishes the text.</p>
     </div>

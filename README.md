@@ -106,7 +106,7 @@ The capture opens in a tab with a real editor. Shapes stay **live objects**: sel
 | | |
 |---|---|
 | Tools | Select `V`, Arrow `A`, Line `L`, Box `R`, Ellipse `O`, Highlight `H`, Redact `P`, Text `T`, Numbered step `N`, Crop `C` |
-| Editing | Finishing a shape selects it and returns to the selection tool, drag to move, corner handles to resize, `Backspace` to delete, `Esc` to deselect |
+| Editing | Finishing a shape selects it and returns to the selection tool, drag to move, corner handles to resize, `Backspace` to delete, `Esc` to cancel a drag or drop the selection. The shape under the pointer is outlined, and the cursor says whether a click would move it or resize it |
 | Stroke | Five weights plus an exact pixel box, solid, dashed and dotted, arrowheads on either end, both ends or neither |
 | Colour | Border and fill are separate controls. Ten quick colours, a sixty step grid, and any colour through the system picker or a hex field. Fill carries an opacity |
 | Text | Multi-line. Family, size in points, bold, italic, underline, four alignments including justify, and its own colour, all stored on the shape, so text drawn ten minutes ago can be restyled. Enter starts a new line; Escape or clicking away finishes. Double click a text shape to change its words, and drag a corner to scale the type |
@@ -288,7 +288,7 @@ Three processes, one message port, no shared state.
 
 **The progress indicator is browser chrome, never an in-page overlay.** The page is what gets photographed, so an in-page indicator would have to be hidden for every screenful and would strobe.
 
-Full walkthrough with diagrams: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). The vocabulary the code assumes (screenful, tile, capture scale, output scale, region) is defined in [docs/DOMAIN.md](docs/DOMAIN.md). Why any given choice was made: [docs/DECISIONS.md](docs/DECISIONS.md), 38 records and counting.
+Full walkthrough with diagrams: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). The vocabulary the code assumes (screenful, tile, capture scale, output scale, region) is defined in [docs/DOMAIN.md](docs/DOMAIN.md). Why any given choice was made: [docs/DECISIONS.md](docs/DECISIONS.md), 42 records and counting.
 
 ## Tech stack
 
@@ -568,7 +568,7 @@ Changing an invariant and the code it guards in the same commit is the thing rev
 | [docs/CONTEXT_MAP.md](docs/CONTEXT_MAP.md) | Which file to read for what |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | The capture pipeline end to end, with diagrams |
 | [docs/DOMAIN.md](docs/DOMAIN.md) | The vocabulary the code assumes |
-| [docs/DECISIONS.md](docs/DECISIONS.md) | Why it is built this way, 38 records |
+| [docs/DECISIONS.md](docs/DECISIONS.md) | Why it is built this way, 42 records |
 | [docs/LIMITATIONS.md](docs/LIMITATIONS.md) | Known gaps and deliberate trades |
 | [docs/TESTING.md](docs/TESTING.md) | Both test layers, and what each one is for |
 | [docs/PLAYBOOK.md](docs/PLAYBOOK.md) | Commands, releasing, rolling back, debugging |
