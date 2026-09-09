@@ -20,6 +20,12 @@ import {
 import {
   BOX_TOOLS,
   CORNERED_KINDS,
+  glyphBoxOf,
+  inkOf,
+  isFramedText,
+  strokeOf,
+  textPadding,
+  textRadius,
   FILLABLE_TOOLS,
   POINT_TOOLS,
   cornerOf,
@@ -107,7 +113,12 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
     // arrow pointing at a thing and a caption naming it are rarely wanted in the
     // same colour, and the default matches the stroke so nothing changes for
     // anyone who never opens the control.
-    colour: initial.textColour ?? initial.colour ?? '#ef4444',
+    ink: initial.textColour ?? initial.colour ?? '#ef4444',
+    // The frame around the words, and the plate behind them. Both off by
+    // default, and both turned on by picking a colour rather than by a switch,
+    // which is how a fill already works everywhere else in this editor.
+    colour: null,
+    fill: null,
   };
 
   let drag = null;
@@ -352,6 +363,8 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
    * the size below the baseline, thick enough to survive the export.
    */
   function drawText(shape, dx, dy) {
+    drawTextFrame(shape, dx, dy);
+    ctx.fillStyle = inkOf(shape);
     ctx.font = fontOf(shape);
     // Every line is placed by hand from the block's own left edge, so the canvas
     // alignment is left throughout and `align` is applied as an offset. Letting
@@ -379,7 +392,7 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
 
       if (shape.underline === true && line.length > 0) {
         ctx.save();
-        ctx.strokeStyle = shape.colour;
+        ctx.strokeStyle = inkOf(shape);
         ctx.lineWidth = Math.max(1, shape.size / 14);
         ctx.setLineDash([]);
         ctx.beginPath();
@@ -389,6 +402,38 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
         ctx.restore();
       }
     });
+  }
+
+  /**
+   * The plate behind a caption and the frame around it.
+   *
+   * Both are built out of controls that already exist: the plate is the fill
+   * colour and fill opacity, the frame is the border colour, the stroke width
+   * and the dash. Nothing here is a new concept and nothing needed a new
+   * control, which is the whole reason this is fifteen lines.
+   *
+   * A text label over a busy screenshot is often unreadable, and the plate is
+   * the half that fixes that.
+   */
+  function drawTextFrame(shape, dx, dy) {
+    if (!isFramedText(shape)) return;
+    const box = boundsOf(shape);
+    const ops = outlineOps('rect', box, { corner: textRadius(shape) });
+    const stroke = strokeOf(shape);
+
+    paintFill(shape, () => {
+      traceOps(ops, dx, dy);
+      ctx.fill();
+    });
+
+    if (!stroke) return;
+    ctx.save();
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = shape.width;
+    applyDash(shape);
+    traceOps(ops, dx, dy);
+    ctx.stroke();
+    ctx.restore();
   }
 
   /** How far into the block a line of `width` starts, for a given alignment. */
@@ -1102,7 +1147,10 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
         italic: existing.italic === true,
         underline: existing.underline === true,
         align: alignOf(existing),
-        colour: existing.colour ?? text.colour,
+        ink: inkOf(existing),
+        colour: existing.colour ?? null,
+        fill: existing.fill ?? null,
+        fillOpacity: existing.fillOpacity,
       }
       : { ...text };
     const size = style.size;
@@ -1120,7 +1168,9 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
     input.style.font = fontOf({ ...style, size: Math.max(12, size * shown) });
     input.style.lineHeight = String(TEXT_LINE_RATIO);
     input.style.textAlign = style.align;
-    input.style.color = style.colour;
+    // The glyph colour, not the frame colour: the box you type into should
+    // look like the words it will become.
+    input.style.color = style.ink;
     if (style.underline) input.style.textDecoration = 'underline';
     document.body.append(input);
 
@@ -1176,7 +1226,10 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
         at,
         text: value,
         size,
+        ink: style.ink,
         colour: style.colour,
+        fill: style.fill,
+        fillOpacity: style.fillOpacity ?? fillOpacity,
         width,
         family: style.family,
         bold: style.bold,
@@ -1252,7 +1305,7 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
           italic: chosen.italic === true,
           underline: chosen.underline === true,
           align: alignOf(chosen),
-          colour: chosen.colour ?? text.colour,
+          ink: inkOf(chosen),
         }
         : { ...text },
     };
@@ -1343,7 +1396,9 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
     setFill(next) {
       fill = next;
       const chosen = selectedShape(doc);
-      if (chosen && FILLABLE_TOOLS.includes(chosen.kind)) {
+      // Text is fillable too: the fill is the plate behind the words, which is
+      // what makes a caption readable over a busy screenshot.
+      if (chosen && (FILLABLE_TOOLS.includes(chosen.kind) || chosen.kind === 'text')) {
         restyleSelection(next ? { fill: next, fillOpacity } : { fill: null });
       }
       notify();
@@ -1467,7 +1522,9 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
         italic: next.textItalic === true,
         underline: next.textUnderline === true,
         align: next.textAlign ?? text.align,
-        colour: next.textColour ?? text.colour,
+        ink: next.textColour ?? text.ink,
+        colour: text.colour,
+        fill: text.fill,
       };
       render();
     },

@@ -33,8 +33,14 @@ import {
   insideRect,
   moveCrop,
   resizeCrop,
+  glyphBoxOf,
   handleAt,
   handlesFor,
+  inkOf,
+  isFramedText,
+  strokeOf,
+  textPadding,
+  textRadius,
   hits,
   isEdited,
   isUsableCrop,
@@ -186,6 +192,88 @@ test('a counter is a circle, not the square it sits in', () => {
   assert.ok(hits(counter, { x: 118, y: 100 }, 0));
   // The corner of its bounding box is outside the circle by about 8 pixels.
   assert.equal(hits(counter, { x: 84, y: 84 }, 0), false);
+});
+
+// TEXT FRAME
+//
+// A framed caption is a box with type in it, built out of controls that already
+// exist: the border colour is the frame, the fill is the plate, the stroke width
+// and dash reach both. The only new property is `ink`, the glyph colour, which
+// exists because `colour` is the stroke on every other shape and text was the
+// one exception.
+
+const caption = (extra = {}) => ({
+  id: 't', kind: 'text', at: { x: 100, y: 50 }, w: 200, h: 40,
+  text: 'hello', size: 20, width: 4, ink: '#18181b', ...extra,
+});
+
+test('a caption is framed by having a colour, not by a switch', () => {
+  assert.equal(isFramedText(caption()), false);
+  assert.equal(isFramedText(caption({ colour: '#ef4444' })), true);
+  // A plate with no border is still a frame as far as the bounds are concerned,
+  // because there is still something drawn around the words.
+  assert.equal(isFramedText(caption({ fill: '#ef4444' })), true);
+  // Turning it off is picking no colour, exactly how a fill already works.
+  assert.equal(isFramedText(caption({ colour: null, fill: null })), false);
+  assert.equal(isFramedText(caption({ colour: 'not a colour' })), false);
+});
+
+test('a framed caption is bigger than its words, an unframed one is not', () => {
+  const plain = caption();
+  assert.deepEqual(boundsOf(plain), { x: 100, y: 50, w: 200, h: 40 });
+
+  const framed = caption({ colour: '#ef4444' });
+  const pad = textPadding(framed);
+  assert.ok(pad > 0);
+  assert.deepEqual(boundsOf(framed), {
+    x: 100 - pad, y: 50 - pad, w: 200 + pad * 2, h: 40 + pad * 2,
+  });
+  // Everything that has to agree with what is drawn reads boundsOf: the
+  // selection outline, the hover outline, hit testing and the export.
+  assert.ok(hits(framed, { x: 100 - pad + 1, y: 50 - pad + 1 }, 0));
+  assert.equal(hits(plain, { x: 100 - pad + 1, y: 50 - pad + 1 }, 0), false);
+});
+
+test('clearing the frame colour returns the caption to its own size', () => {
+  const framed = caption({ colour: '#ef4444' });
+  const cleared = { ...framed, colour: null };
+  assert.deepEqual(boundsOf(cleared), glyphBoxOf(cleared));
+});
+
+test('padding and radius scale with the type, so no one has to set them', () => {
+  const small = caption({ size: 10 });
+  const large = caption({ size: 40 });
+  assert.ok(textPadding(large) > textPadding(small));
+  assert.equal(textPadding(large) / textPadding(small), 4);
+  assert.equal(textRadius(large) / textRadius(small), 4);
+});
+
+test('scaling a framed caption solves from the words, not from the padding', () => {
+  // The landmine this guards: padding is a function of the size being solved
+  // for, so scaling from the padded box feeds the answer back into the
+  // question. resizeText reads glyphBoxOf, which never includes padding.
+  const framed = caption({ colour: '#ef4444' });
+  const plain = caption();
+  const drag = { x: 500, y: 170 };
+  assert.equal(
+    resizeShape(framed, 'se', drag).size,
+    resizeShape(plain, 'se', drag).size,
+    'a frame must not change how far a corner drag scales the type',
+  );
+});
+
+test('ink is the glyphs and colour is the frame, on every shape the same way', () => {
+  // The bug this closes: `colour` used to mean the glyphs on a text shape and
+  // the stroke on everything else, so picking a border colour with a caption
+  // selected silently recoloured the words.
+  const framed = caption({ ink: '#00ff00', colour: '#ef4444' });
+  assert.equal(inkOf(framed), '#00ff00');
+  assert.equal(strokeOf(framed), '#ef4444');
+  // A shape saved before `ink` existed still reads: it falls back to colour.
+  assert.equal(inkOf({ kind: 'text', colour: '#123456' }), '#123456');
+  // And a text shape with neither is legible rather than invisible.
+  assert.equal(inkOf({ kind: 'text' }), '#18181b');
+  assert.equal(strokeOf({ kind: 'text' }), null);
 });
 
 test('moving a shape shifts every part of it', () => {

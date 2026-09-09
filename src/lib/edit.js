@@ -150,6 +150,46 @@ export function dashPattern(style, width) {
 /** The fill colour of a box shape, or null when it is an outline. */
 export const fillOf = (shape) => (isHex(shape.fill) ? shape.fill : null);
 
+/** The stroke colour of any shape, or null when it has none. */
+export const strokeOf = (shape) => (isHex(shape.colour) ? shape.colour : null);
+
+/**
+ * The colour of the glyphs in a text shape.
+ *
+ * Its own property, because `colour` is the STROKE on every shape and for text
+ * the stroke is the frame around it. Before this existed, `colour` meant the
+ * glyphs on a text shape and the stroke on everything else, so choosing a
+ * border colour with a caption selected silently recoloured the words.
+ *
+ * Not called `textColour`: that name is already a settings key, and the same
+ * name meaning a stored setting at one layer and a shape property at another is
+ * how a silent seeding bug gets written. `ink` is the glyphs, `colour` is the
+ * frame, `fill` is the plate behind them.
+ */
+export const inkOf = (shape) => (isHex(shape.ink) ? shape.ink : strokeOf(shape) ?? '#18181b');
+
+/**
+ * The padding and corner radius of a text frame, both derived from the type
+ * size rather than exposed as controls.
+ *
+ * A framed label has to look right at 12pt and at 96pt, and deriving both from
+ * the size is what makes that happen without anyone touching a second control.
+ * A padding slider is a control almost nobody moves.
+ */
+export const textPadding = (shape) => shape.size * 0.4;
+export const textRadius = (shape) => shape.size * 0.35;
+
+/**
+ * Does this text shape have anything drawn around it?
+ *
+ * A frame is on when it has a colour and off when it does not, which is exactly
+ * how a fill already works. That is the "enable and disable" without a switch to
+ * explain: the border colour popover already has a no-colour state and the
+ * button already carries a slash glyph for it.
+ */
+export const isFramedText = (shape) =>
+  shape.kind === 'text' && (strokeOf(shape) !== null || fillOf(shape) !== null);
+
 export function fillAlphaOf(shape) {
   const raw = shape.fillOpacity;
   if (!Number.isFinite(raw)) return DEFAULT_FILL_OPACITY;
@@ -447,6 +487,24 @@ export function boundsOf(shape) {
   }
   // Text is measured when it is created and re-measured on every restyle, because
   // the box cannot be derived here: only a canvas knows how wide a string is.
+  const glyphs = glyphBoxOf(shape);
+  if (!isFramedText(shape)) return glyphs;
+  // A framed caption is visibly bigger than its words by the padding, and the
+  // selection outline, the hover outline, hit testing and the export all have
+  // to agree with what is on screen.
+  const pad = textPadding(shape);
+  return { x: glyphs.x - pad, y: glyphs.y - pad, w: glyphs.w + pad * 2, h: glyphs.h + pad * 2 };
+}
+
+/**
+ * The block the glyphs themselves occupy, without any frame padding.
+ *
+ * Separate from `boundsOf` on purpose. `resizeText` solves for a new type size
+ * from the ratio between the box it is given and the box it wants, and the
+ * padding is itself a function of the size being solved for. Feeding it the
+ * padded box makes the first frame of a drag wrong, so it gets this one.
+ */
+export function glyphBoxOf(shape) {
   return { x: shape.at.x, y: shape.at.y, w: shape.w ?? 0, h: shape.h ?? 0 };
 }
 
@@ -596,13 +654,15 @@ export function resizeShape(shape, handleId, point) {
     // than approximated. `handlesFor` does not offer text an edge handle, so
     // this is a second lock on the same door.
     if (!CORNER_HANDLES.includes(handleId)) return shape;
+    // From the glyph box, never the padded one. See glyphBoxOf.
+    const g = glyphBoxOf(shape);
     const anchor = {
-      nw: { x: b.x + b.w, y: b.y + b.h },
-      ne: { x: b.x, y: b.y + b.h },
-      sw: { x: b.x + b.w, y: b.y },
-      se: { x: b.x, y: b.y },
+      nw: { x: g.x + g.w, y: g.y + g.h },
+      ne: { x: g.x, y: g.y + g.h },
+      sw: { x: g.x + g.w, y: g.y },
+      se: { x: g.x, y: g.y },
     }[handleId];
-    return resizeText(shape, handleId, point, b, anchor);
+    return resizeText(shape, handleId, point, g, anchor);
   }
 
   if (!CORNER_HANDLES.includes(handleId) && !EDGE_HANDLES.includes(handleId)) return shape;

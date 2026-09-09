@@ -950,6 +950,8 @@ async function exerciseEditor(cdp, session, log) {
   await exerciseArrowAndLine(cdp, session, check, p);
 
   // 8e. What the pointer says before the click.
+  await exerciseTextFrame(cdp, session, check, p);
+
   await exerciseShapes(cdp, session, check, p);
 
   await exerciseLoupeRedaction(cdp, session, check, p);
@@ -1177,6 +1179,90 @@ async function exerciseExportChrome(cdp, session, check, p) {
   // shape.
   await evaluate(cdp, session, `document.getElementById('undo').click()`, { userGesture: true });
   await sleep(200);
+}
+
+/**
+ * A caption can carry a frame and a plate, and choosing a frame colour must not
+ * recolour the words.
+ *
+ * That last part is the bug this workstream closes. `colour` used to mean the
+ * glyphs on a text shape and the stroke on every other shape, while the Border
+ * palette wrote `colour` on whatever was selected. So selecting a caption and
+ * picking a border colour silently changed the text colour. Now `ink` is the
+ * glyphs and `colour` is the frame, on every shape the same way.
+ */
+async function exerciseTextFrame(cdp, session, check, p) {
+  const scan = { x: 0, y: 0, w: 900, h: 600 };
+  const GREEN = [34, 197, 94];
+  const BLUE = [59, 130, 246];
+
+  const settle = async () => {
+    await evaluate(cdp, session,
+      `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+    await moveTo(cdp, session, { x: 6, y: 6 });
+    await sleep(130);
+  };
+
+  // A caption in a colour nothing else on the canvas is using, so the glyph
+  // pixels can be counted on their own.
+  await clickButton(cdp, session, '[data-pop="pop-text"]');
+  await clickButton(cdp, session, '#pop-text-colour [data-paint="text"][data-colour="#22c55e"]')
+    .catch(() => {});
+  await clickButton(cdp, session, '[data-pop="pop-text-colour"]');
+  await clickButton(cdp, session, '[data-paint="text"][data-colour="#22c55e"]');
+  await evaluate(cdp, session, 'document.body.click()');
+
+  await clickButton(cdp, session, '[data-tool="text"]');
+  await dragOn(cdp, session, p(0.30, 0.78), p(0.30, 0.78), 1);
+  await sleep(140);
+  await evaluate(cdp, session, `(() => {
+    const i = document.querySelector('.text-entry');
+    if (!i) return 'none';
+    i.value = 'Framed caption';
+    i.dispatchEvent(new Event('input', { bubbles: true }));
+    i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    return 'ok';
+  })()`);
+  await sleep(180);
+  await settle();
+
+  const glyphsPlain = await countColour(cdp, session, scan, GREEN);
+  check(glyphsPlain > 30,
+    `the caption drew only ${glyphsPlain} pixels in its own colour, so nothing below can be measured`,
+    `the caption drew ${glyphsPlain} pixels in its own ink colour`);
+  if (glyphsPlain <= 30) return;
+
+  // Select it and give it a frame colour from the Border palette.
+  await clickButton(cdp, session, '[data-tool="select"]');
+  await dragOn(cdp, session, p(0.30, 0.78), p(0.30, 0.78), 1);
+  await sleep(120);
+  const selected = await evaluate(cdp, session,
+    'document.getElementById("delete").disabled === false');
+  check(selected, 'could not select the caption to frame it', 'the caption is selectable');
+  if (!selected) return;
+
+  const blueBefore = await countColour(cdp, session, scan, BLUE);
+  await clickButton(cdp, session, '[data-pop="pop-border"]');
+  await clickButton(cdp, session, '[data-paint="border"][data-colour="#3b82f6"]');
+  await evaluate(cdp, session, 'document.body.click()');
+  await settle();
+
+  const glyphsFramed = await countColour(cdp, session, scan, GREEN);
+  const blueAfter = await countColour(cdp, session, scan, BLUE);
+
+  check(blueAfter > blueBefore + 40,
+    `choosing a border colour drew no frame (${blueBefore} to ${blueAfter} blue pixels)`,
+    `choosing a border colour drew a frame around the caption (${blueAfter - blueBefore} pixels)`);
+
+  // The words are untouched. A small change is allowed for antialiasing where
+  // the frame passes near a glyph, but the glyphs cannot have been recoloured.
+  check(glyphsFramed > glyphsPlain * 0.85,
+    `framing the caption changed its own colour: ${glyphsPlain} pixels of ink became ${glyphsFramed}`,
+    `framing the caption left the words the colour they were (${glyphsPlain} to ${glyphsFramed})`);
+
+  await clickButton(cdp, session, '#undo');
+  await clickButton(cdp, session, '#undo');
+  await settle();
 }
 
 /**

@@ -673,9 +673,9 @@ function showStyle(style, tool) {
   ui.textItalic.setAttribute('aria-pressed', String(style.text.italic));
   ui.textUnderline.setAttribute('aria-pressed', String(style.text.underline));
   markPressed('[data-align]', (b) => b.dataset.align === style.text.align);
-  markPressed('[data-paint="text"]', (b) => b.dataset.colour === style.text.colour);
-  ui.textWell.style.background = style.text.colour;
-  setHex('text', style.text.colour);
+  markPressed('[data-paint="text"]', (b) => b.dataset.colour === style.text.ink);
+  ui.textWell.style.background = style.text.ink;
+  setHex('text', style.text.ink);
 }
 
 function setHex(kind, colour) {
@@ -822,7 +822,10 @@ function applyPaint(kind, colour) {
     editor?.setColour(colour);
     saveSettings({ colour });
   } else if (kind === 'text') {
-    editor?.setTextStyle({ colour });
+    // `ink` is the glyphs. `colour` on a text shape is the frame around them,
+    // which the Border palette writes, so the two controls no longer fight over
+    // one property the way they used to.
+    editor?.setTextStyle({ ink: colour });
     saveSettings({ textColour: colour });
   } else {
     editor?.setFill(colour);
