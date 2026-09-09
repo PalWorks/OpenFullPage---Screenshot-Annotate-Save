@@ -796,6 +796,11 @@
         <button class="opt" type="button" data-align="justify" aria-pressed="false" aria-label="Justify" title="Justify"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M3 5h14"/><path d="M3 9h14"/><path d="M3 13h14"/><path d="M3 17h7"/></svg></button>
       </div>
       <p class="hint">Enter starts a new line. Escape, or clicking away, finishes the text.</p>
+      <!-- The frame is made of controls that already exist, so nothing in this
+           panel sets it and there is no way to discover it by looking. One line
+           of copy is cheaper than a second border colour control that writes the
+           same property from a different place. -->
+      <p class="hint">With text selected, Border colour draws a frame around it and Fill puts a plate behind it.</p>
     </div>
   </span>
 
