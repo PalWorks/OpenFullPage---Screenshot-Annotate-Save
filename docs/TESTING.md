@@ -36,6 +36,7 @@ node test/e2e/run.mjs --stop     # press Finish now mid capture, on a tall fixtu
 node test/e2e/run.mjs --direct   # save straight to a file, with no editor
 node test/e2e/run.mjs --deep     # with advanced access granted
 node test/e2e/run.mjs --headed   # watch it happen
+node test/e2e/run.mjs --headed --popup  # prove Chrome opens the toolbar popup
 
 FPC_URLS=https://example.com/a,https://example.com/b node test/e2e/run.mjs
 ```
@@ -98,6 +99,19 @@ popup, which headless Chrome will not open; the page and its port are identical
 either way, so it is opened as an ordinary tab. It has to be opened in the
 driver's own window: anywhere else it becomes the active tab of the window being
 captured, and `captureVisibleTab` then photographs the panel instead of the page.
+
+`--popup` is the half `--progress` cannot reach: whether the panel is ever put in
+front of the user at all. That is `chrome.action.openPopup()`, it is browser chrome
+rather than a page, and headless Chrome will not open it, so this mode requires
+`--headed` and refuses to run without it. It fails if no popup appears within
+twenty seconds of the capture starting, and fails again if a popup opens but is
+never told anything, because a panel that shows nothing is the same to the user as
+no panel. Without it the whole feature could stop working with every other check
+still passing: the popup opening was a promise, and now it is a test.
+
+Note that `--headed` on a Retina display captures at `devicePixelRatio` 2, so the
+fixture verifier's pixel expectations do not hold in headed mode. Read the named
+checks, not the band comparisons.
 
 `FPC_URLS` points the harness at pages of your choosing, comma separated. The
 pages worth testing against are long, lazy and newsworthy, which is also to say

@@ -136,9 +136,20 @@ function tellProgress(message) {
 
 async function openProgressPopup() {
   await chrome.action.setPopup({ popup: PROGRESS_PAGE });
-  // Chrome refuses this when no window is focused, and there is nothing to do
-  // about that. The toolbar icon is still reporting progress either way.
-  await chrome.action.openPopup();
+  try {
+    await chrome.action.openPopup();
+  } catch (error) {
+    // Chrome refuses this when no window is focused, which is transient: the
+    // click that started the capture is usually the thing that focuses it. One
+    // retry catches that case, and the failure is reported rather than
+    // swallowed, because a panel that silently never opens is indistinguishable
+    // from a panel that was removed. The toolbar icon is still counting either
+    // way, so a capture must never fail over this.
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    await chrome.action.openPopup().catch(() => {
+      console.warn('OpenFullPage: could not open the progress popup:', error.message);
+    });
+  }
 }
 
 async function closeProgressPopup() {

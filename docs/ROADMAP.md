@@ -151,12 +151,88 @@ The defect a real user hit on a live blog. This is a repair, not a feature.
 | F9 | **PDF export** | **shipped 2026-09-09 as F35**, ahead of this release. Hand-written in `src/lib/pdf.js`, around 200 lines with the comments. It shipped in one shape rather than two: pages at the capture's own width, no scaling and no margins, with the height divided evenly so the last page is never a sliver. Standard page sizes (A4, Letter, Legal) were **not** built, because a screenshot fitted to A4 is either letterboxed or shrunk, and neither is what the reader asked for. Revisit only if someone asks. See [DECISIONS.md](DECISIONS.md) D31 |
 | F5 | **Presentation frame** | 3d / 1h | Padding, a background, and an optional browser window frame carrying the real page title and URL. The nearest competitor offers five chrome styles (macOS, Windows, Chrome, Firefox, Edge) with editable tab name and URL, which is the level to match. Pure canvas, no fonts beyond the system stack. The rest of the treatment is Phase 3 |
 
-## Release 1.12.0: ask for the rating
+## Release 1.12.0: ask for the rating, and offer a way to say thanks
 
 | # | Item | Effort | Notes |
 |---|---|---|---|
-| F3 | **Rating nudge** | 1d / 30m | **Deliberately last in Phase 1.** Asking someone to rate the extension before long pages capture correctly is asking them to rate a product that truncates their work. One status line, never a modal, after the fifth successful capture, capped at two showings ever, with a hard "don't ask again" |
+| F3 | **Rating nudge** | 1d / 30m | **Deliberately last in Phase 1.** Asking someone to rate the extension before long pages capture correctly is asking them to rate a product that truncates their work. One status line, never a modal, after the fifth successful capture, capped at two showings ever, with a hard "don't ask again". Full design below |
+| F42 | **Donations** | 0.5d / 15m | A quiet line on the options page and a Sponsor button on the repository. Links only, opened in a tab, so no request is ever made by the extension. **Blocked on a GOVERNANCE.md amendment**, see below |
 
+### F3, the rating nudge, in detail
+
+**Where it goes.** One line at the foot of the result tab, in the same strip that
+already says "The image never leaves your computer." Never a modal, never a new
+window, never the options page opening by itself. The editor is where the value was
+just delivered, so it is where the question belongs, and a status line can be
+ignored by simply not reading it.
+
+**When it fires.** After the **fifth successful capture**, and only if that capture
+was successful. Suppress it when the last capture failed, was truncated by the tile
+cap, or was ended early with Finish now: asking for five stars immediately after
+handing someone a short image is asking to be told exactly what they think.
+
+**How often.** At most **twice ever**. A dismissal is remembered permanently. Second
+showing no earlier than the twenty-fifth capture. The counters live in
+`chrome.storage.local`, like everything else, because rule 5 bans synced storage,
+which also means the ask is per-browser rather than per-person.
+
+**What it must not do**, all three of these are Chrome Web Store policy or close
+enough to it that the distinction is not worth testing:
+
+- **No incentive.** Nothing is unlocked, granted or discounted for leaving a review.
+- **No repetition.** "Repeatedly asking users to rate" is a listed abuse.
+- **No review gating.** The common pattern is a sentiment fork: "Enjoying it?" with
+  Yes going to the store and No going to a feedback form. It measurably lifts the
+  average score, which is the reason it is popular, and that is also the reason to
+  refuse it here. It filters unhappy users out of the public record. A product sold
+  on being checkable does not get to quietly curate its own reviews. **Both answers
+  go to the store, and the feedback link sits beside the ask, not behind it.**
+
+**The link.** `https://chromewebstore.google.com/detail/<extension id>/reviews`,
+opened with `chrome.tabs.create`. The browser makes that request, not the extension,
+which is the same reasoning that lets F25 hand off an upload without a byte of
+network access of our own. `connect-src 'none'` stays literally true.
+
+**Alternatives considered.** A time-based trigger (seven days after install) rates
+patience rather than usefulness. A star widget inside the extension that posts
+nowhere is theatre. A badge on the toolbar icon competes with the progress count,
+which is the one thing that badge means.
+
+### F42, donations, in detail
+
+**The conflict, stated first.** [GOVERNANCE.md](../GOVERNANCE.md) currently reads
+"**No monetisation.** Monetisation is the pressure that pulls a tool like this
+across the network boundary", and this roadmap's own "Explicitly not planned"
+section rules out premium tiers on the same grounds. A donation link does not do any
+of what that rule was written to prevent: it needs no account, no server, no
+authentication, and no network access from the extension. But the covenant as
+written does not say that, and a reader who checks will find a contradiction between
+the promise and the product.
+
+**So F42 does not ship until GOVERNANCE.md is amended to distinguish the two**, in
+words the maintainer chooses, and the amendment lands before or with the feature and
+never quietly afterwards. The distinction to draw is between **money that creates an
+obligation** (a paid tier, which needs accounts, which needs a server) and **money
+that creates none** (a gift, which needs a link). The first is banned because it
+pulls the product across the boundary. The second cannot.
+
+**Where it goes.** A single line at the foot of the options page, near the support
+and feedback form, and a Sponsor button on the repository via
+`.github/FUNDING.yml`. Not in the editor, not in the progress panel, and not after a
+capture: the rating nudge already spends the one interruption this product is
+willing to make, and asking for money in the same breath as asking for a review
+turns both into noise.
+
+**Platforms.** The full comparison is in [DECISIONS.md](DECISIONS.md) D48. The short
+version is that **GitHub Sponsors** is the one that matters, because the repository
+is the product's shop window, and **Open Collective** is the one that fits, because
+it publishes every rupee in and out and this project's entire argument is that you
+should not have to take its word for anything.
+
+**What it must not do.** No feature is gated, delayed or degraded for anyone who
+does not pay, ever. The moment a donation buys something, the covenant above is no
+longer true, and the reason the covenant exists is that everybody who has broken it
+said the same thing first.
 
 # Phase 2: capture and share
 

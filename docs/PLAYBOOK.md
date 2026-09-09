@@ -13,6 +13,7 @@ Operational procedures. Follow step by step.
 | `node test/e2e/run.mjs --edit --shots <dir>` | The same, plus a screenshot of the toolbar and of each popover, for looking at with human eyes |
 | `node test/e2e/run.mjs --stop` | Presses Finish now partway through a capture of a 15000 pixel fixture, and checks the image comes back short, trimmed and honest about it |
 | `node test/e2e/run.mjs --direct` | Turns on straight-to-a-file, and checks a capture writes an image and closes its own tab with no editor and no click |
+| `node test/e2e/run.mjs --headed --popup` | Proves Chrome actually opens the progress panel under the toolbar button. Headless will not open one, so this is the only mode that can check it, and it refuses to run without `--headed` |
 | `node test/e2e/run.mjs --market --shots store/screenshots` | The five store screenshots at exactly 1280x800, drawn on the real product |
 | `FPC_URLS=<url> node test/e2e/run.mjs ...` | Point any of the above at a page of your choosing rather than the fixture |
 | `node tools/preview-icons.mjs` | Contact sheet of the icon at 128, 48, 32 and 16, on both Chrome toolbars |

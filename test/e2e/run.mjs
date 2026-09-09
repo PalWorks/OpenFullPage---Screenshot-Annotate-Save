@@ -248,6 +248,77 @@ async function watchProgress(cdp, driver, progressUrl, ok) {
   return problems;
 }
 
+/**
+ * The one thing headless cannot see: Chrome's own toolbar popup.
+ *
+ * `--progress` opens progress.html as an ordinary tab, which proves the panel,
+ * its port and its arithmetic but says nothing about whether the panel is ever
+ * put in front of the user. That part is `chrome.action.openPopup()`, it is
+ * browser chrome rather than a page, and headless Chrome will not open it. So
+ * this check exists, needs `--headed`, and fails if the popup does not appear.
+ *
+ * Without it the whole feature can stop working and every check still passes:
+ * the popup opening is the promise, and until now it was only a promise.
+ */
+async function watchToolbarPopup(cdp, extensionId, ok) {
+  const problems = [];
+  const url = `chrome-extension://${extensionId}/src/ui/progress.html`;
+
+  const target = await until(
+    'Chrome to open the progress popup under the toolbar button',
+    async () => {
+      const { targetInfos } = await cdp.send('Target.getTargets');
+      return targetInfos.find((t) => t.url === url);
+    },
+    { timeoutMs: 20000, everyMs: 100 },
+  ).catch((error) => {
+    problems.push(`${error.message}: chrome.action.openPopup() never produced a popup`);
+    return null;
+  });
+  if (!target) return problems;
+  ok('the toolbar popup opened by itself when the capture started');
+
+  const { sessionId } = await cdp.send('Target.attachToTarget', {
+    targetId: target.targetId,
+    flatten: true,
+  });
+  await cdp.send('Runtime.enable', {}, sessionId);
+
+  // A popup that is open but never told anything is the same to the user as no
+  // popup at all, so the check is that it counts, not merely that it exists.
+  const moving = await until(
+    'the popup to show live progress',
+    async () => {
+      const s = JSON.parse(
+        await evaluate(
+          cdp,
+          sessionId,
+          `JSON.stringify({
+            state: document.body.dataset.state ?? 'loading',
+            percent: document.getElementById('percent').textContent,
+            what: document.getElementById('what').textContent,
+          })`,
+        ),
+      );
+      return s.state === 'progress' ? s : null;
+    },
+    { timeoutMs: 30000, everyMs: 150 },
+  ).catch((error) => {
+    problems.push(`the popup opened but never counted: ${error.message}`);
+    return null;
+  });
+  if (moving) ok(`it counted in the popup, reaching ${moving.percent} (${moving.what})`);
+
+  if (process.env.FPC_SHOT_DIR) {
+    const { data } = await cdp.send('Page.captureScreenshot', { format: 'png' }, sessionId);
+    const name = join(process.env.FPC_SHOT_DIR, 'toolbar-popup.png');
+    writeFileSync(name, Buffer.from(data, 'base64'));
+    console.log(`  shot ${name}`);
+  }
+
+  return problems;
+}
+
 function serveFixture(port, indexName = 'index.html') {
   const server = createServer((req, res) => {
     const name = req.url === '/' ? `/${indexName}` : req.url.split('?')[0];
@@ -2270,6 +2341,9 @@ async function findServiceWorker(cdp, extensionId) {
 async function main() {
   if (!CHROME) throw new Error('no Chrome found, set FPC_CHROME to its path');
   const headless = !process.argv.includes('--headed');
+  if (process.argv.includes('--popup') && headless) {
+    throw new Error('--popup needs --headed: headless Chrome will not open a toolbar popup');
+  }
   const downloadDir = mkdtempSync(join(tmpdir(), 'fpc-downloads-'));
   const server = await serveFixture(PORT);
   const crossOrigin = await serveFixture(CROSS_ORIGIN_PORT, 'cross.html');
@@ -2404,6 +2478,16 @@ async function main() {
         `chrome.runtime.sendMessage({ type: 'start', tabId: ${tabId} })`,
       );
       if (!started?.started) throw new Error(`capture did not start: ${JSON.stringify(started)}`);
+
+      // Before anything waits on the capture: the popup opens at the very start
+      // and is gone once the result tab takes focus, so there is no later moment
+      // to look for it.
+      if (process.argv.includes('--popup')) {
+        console.log('\n  the toolbar popup:');
+        const problems = await watchToolbarPopup(cdp, extensionId, (m) => console.log(`  ok   ${m}`));
+        for (const problem of problems) console.log(`  FAIL ${problem}`);
+        if (problems.length) process.exitCode = 1;
+      }
 
       // The whole point of this mode is that nothing needs looking at, so there
       // is no result tab to attach to: wait for the file, then prove the tab

@@ -25,7 +25,7 @@ import { applyTheme, startTheme } from '../lib/theme.js';
  * the person presses send in their own mail app, which also means attachments
  * are theirs to add and we never touch their files.
  */
-const SUPPORT_EMAIL = 'connectwithpalani@gmail.com';
+const SUPPORT_EMAIL = 'support@palworks.ai';
 
 const el = (id) => document.getElementById(id);
 const deepFrames = el('deepFrames');

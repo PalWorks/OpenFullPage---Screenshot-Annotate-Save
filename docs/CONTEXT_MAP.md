@@ -59,7 +59,7 @@ fifteen.
 | `src/ui/result.js` | Stitching, filename, format menu, export, keyboard. The most churned file | ARCHITECTURE, LIMITATIONS |
 | `src/ui/editor.js` | Canvas rendering and pointer input for the editor | DOMAIN, DECISIONS |
 | `src/ui/options.js` | Settings page, the optional permission toggle | ADVANCED-ACCESS |
-| `src/ui/progress.js` | The capture progress popup | nothing |
+| `src/ui/progress.js` | The capture progress popup. Whether Chrome opens it is checked by `--headed --popup` | TESTING |
 | `src/content/measure.js` | Page metrics, injected | DOMAIN |
 | `src/content/prepare.js` | Sticky and fixed handling, scrolling, lazy loading, frames | ARCHITECTURE, DOMAIN |
 | `src/content/pick.js` | The element picker | nothing |

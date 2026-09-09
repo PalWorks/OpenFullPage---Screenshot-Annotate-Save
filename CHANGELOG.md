@@ -13,6 +13,29 @@ a clean checkout with `./tools/pack.sh`, not merely checkable against one downlo
 Everything below is on `main` and not yet packaged. It covers the toolbar rework
 and the capture reliability work of 2026-09-08 and 2026-09-09.
 
+### Added: the progress popup opening is now a test, not a promise
+The animated panel under the toolbar button had no check that it ever appears.
+`--progress` opened `progress.html` as an ordinary tab, which proves the panel, its
+port and its arithmetic, and says nothing about `chrome.action.openPopup()`. That
+call is browser chrome, headless Chrome will not open it, so the feature could have
+stopped working with every check still green.
+
+`node test/e2e/run.mjs --headed --popup` now fails if no popup appears within twenty
+seconds of a capture starting, and fails again if one appears but is never told
+anything. Verified by mutation in both directions: with the popup disabled the run
+reports the failure and exits 1.
+
+The panel itself was found to be working correctly on Chrome 152, unchanged since
+1.6.1. What changed is that a failure to open is no longer swallowed: it is retried
+once, because Chrome refuses the call while no window is focused and the click that
+starts a capture is usually the thing that focuses it, and then reported to the
+console. A capture never fails over this, and the toolbar icon counts either way.
+
+### Changed: support and feedback goes to a project address
+`SUPPORT_EMAIL` in `src/ui/options.js` was a personal address. It is now
+`support@palworks.ai`, which is the item `store/LISTING.md` held open for the store
+submission.
+
 ### Added: twelve shapes, drawn from one description each
 The Shapes popover carries twelve tools: arrow, line, box, ellipse, callout,
 loupe, highlighter, rhombus, hexagon, parallelogram, triangle and cylinder. The

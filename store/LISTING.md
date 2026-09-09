@@ -322,7 +322,7 @@ extension in this category can show. Only the second half is ours.
 Listing:
 
 - [ ] Confirm the SVG Repo icon licence on its own page, see [`NOTICE.md`](../NOTICE.md)
-- [ ] Set a support email that is not a personal address, `SUPPORT_EMAIL` in `src/ui/options.js`
+- [x] Set a support email that is not a personal address. `SUPPORT_EMAIL` in `src/ui/options.js` is `support@palworks.ai`
 - [ ] Re-read the detailed description against the code, since it is the one claim
       a reviewer can check in five minutes and the whole product rests on it
 - [ ] Regenerate the screenshots if any interface has moved:

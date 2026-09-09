@@ -1202,3 +1202,50 @@ candidate sources disagree. It is verified by mutation in both directions.
 been observed to fail is not a check. Every guarantee in this repository that
 would be expensive to break should be broken on purpose once, to watch the suite
 catch it.
+
+## D48: How the project would accept money, if it accepts money at all
+
+**Date.** 2026-09-10. **Status.** Recorded for F42, not yet decided. Blocked on
+whether [GOVERNANCE.md](../GOVERNANCE.md) is amended, see the F42 entry in
+[ROADMAP.md](ROADMAP.md).
+
+**Context.** The maintainer asked what the options are. This records them once so
+the answer does not have to be re-derived, and so the reasoning is visible to
+anyone reading the repository rather than living in a chat log.
+
+**The constraint that eliminates most of the question.** Every platform below is a
+URL. The extension opens it in a tab with `chrome.tabs.create` and makes no request
+itself, exactly as F25 hands off an upload. So the choice is not a technical one and
+cannot break rule 1. It is a question of fees, of who has to trust whom, and of what
+the presence of the link says about the project.
+
+| Platform | Recurring | One off | Fee | The reason to pick it |
+|---|---|---|---|---|
+| **GitHub Sponsors** | yes | yes | none taken by GitHub, payment processing only | The repository is the shop window. `.github/FUNDING.yml` puts a Sponsor button at the top of the page with no code and no account for the visitor to create. If only one is chosen, this is the one |
+| **Open Collective** | yes | yes | fiscal host fee, commonly 5 to 10 per cent | **The one that fits this project.** Every payment in and every expense out is published. A project whose entire argument is "do not take our word for it, check" should not have a private bank balance attached to it. Needs a fiscal host, which is the setup cost |
+| **Liberapay** | yes | no | none, payment processing only | Non profit, open source itself, recurring only. Small audience, but the values match and it costs nothing to list |
+| **Ko-fi** | yes | yes | none on one off donations | The lowest friction way for someone to give five dollars once without making an account |
+| **Buy Me a Coffee** | yes | yes | around 5 per cent | Same shape as Ko-fi, better known, takes a cut. Pick one of the two, not both |
+| **Patreon** | yes | no | 8 to 12 per cent plus processing | Built for tiered membership with rewards. Rewards are exactly what F42 must never offer, so this is the wrong shape |
+| **Polar** | yes | yes | around 4 per cent | Developer focused, newer, handles merchant of record duties including sales tax |
+| **PayPal.me or a Stripe payment link** | no | yes | processing only | No platform in the middle. Also no page explaining what the money is for, which is most of the value |
+| **thanks.dev, Tidelift** | yes | no | varies | Both pay maintainers of **dependencies**. This project has zero dependencies and is nobody's dependency, so neither applies |
+| **A crypto wallet address** | no | yes | none | **Refused.** It invites a category of correspondence this project does not want, it cannot be reversed when someone sends the wrong thing, and on a repository selling caution it reads as the opposite |
+
+**For a maintainer paid in India specifically.** GitHub Sponsors pays out through
+Stripe Connect, which supports India. Open Collective needs a fiscal host willing to
+take an Indian maintainer, which is the item to check before committing to it. For
+domestic donors a UPI handle is by far the lowest friction, and Razorpay will issue
+a payment page for one, but a UPI handle alone has the same weakness as PayPal.me:
+no page saying what it funds.
+
+**Recommendation, if F42 goes ahead.** GitHub Sponsors for the repository, Ko-fi
+for the one off case, and Open Collective if and only if the transparency is
+actually wanted, because a public ledger that nobody maintains is worse than no
+ledger. Three links is already one more than most people will read; five is a
+donation page, and this project is not asking for one.
+
+**What is refused in every case.** No feature gated, delayed or degraded for
+anyone who does not pay. No reward for paying. No count of donors displayed inside
+the extension. The moment money buys anything, the non transfer covenant is a
+promise made by someone with an incentive to break it.

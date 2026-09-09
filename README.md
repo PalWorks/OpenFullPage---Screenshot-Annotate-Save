@@ -477,6 +477,7 @@ node test/e2e/run.mjs --direct    # save straight to a file, no editor
 node test/e2e/run.mjs --progress  # watch the progress panel through a capture
 node test/e2e/run.mjs --deep      # with advanced access granted
 node test/e2e/run.mjs --headed    # watch it happen
+node test/e2e/run.mjs --headed --popup   # prove Chrome opens the toolbar popup
 ```
 
 The harness launches real Chrome, installs the extension over `Extensions.loadUnpacked`, captures pages, drives the result tab with real mouse events, and inspects what was saved. The Download button is clicked with `Runtime.evaluate({ userGesture: true })` so `chrome.permissions.request` sees a genuine gesture. Saved PDFs are parsed back and their page and image counts checked against what `planPdfPages` says they should be.

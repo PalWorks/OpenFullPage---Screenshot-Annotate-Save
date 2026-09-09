@@ -50,9 +50,19 @@ implements them twice. Every one has tests.
 | | A frame and a plate for text, out of the border colour, the fill and the stroke width. `colour` is the stroke on every shape and `ink` is the glyphs | `src/lib/edit.js`, D46 |
 | | Every shape can be switched off individually on the options page | `src/lib/settings.js`, `src/ui/options.js` |
 | **T19** | The content security policy names every directive. `connect-src 'none'` never covered a remote subresource, and an absent directive with no `default-src` is unrestricted | `manifest.json`, `test/lib/scan.js`, D15 |
+| **T29** | The progress popup opening is now checked. `--headed --popup` fails if `chrome.action.openPopup()` never produces a panel, or produces one that is never told anything | `test/e2e/run.mjs`, `src/background.js` |
+| | Support and feedback goes to `support@palworks.ai` rather than a personal address | `src/ui/options.js` |
 
 **Still open from the 1.7.0 list below:** T2, T11, F1, F21, F2, F26.
 **Still open from 1.8.0:** F6, F4, and the two remaining pieces of F27 (the right click z-order menu, and shortcut keys in every tooltip).
+
+**Queued by the maintainer on 2026-09-10:** F3, the rating nudge, and F42,
+donations. Both are designed in [docs/ROADMAP.md](docs/ROADMAP.md) under release
+1.12.0, and the platform comparison behind F42 is D48. **F42 does not start until
+[GOVERNANCE.md](GOVERNANCE.md) is amended**, because that document currently says
+"No monetisation" without distinguishing a gift from a paid tier, and shipping a
+donate link against it would put the product in contradiction with its own
+covenant. That amendment is the maintainer's to write.
 
 # Release 1.7.0: the repairs, and the free wins
 
