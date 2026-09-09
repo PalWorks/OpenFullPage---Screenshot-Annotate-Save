@@ -13,6 +13,22 @@ a clean checkout with `./tools/pack.sh`, not merely checkable against one downlo
 Everything below is on `main` and not yet packaged. It covers the toolbar rework
 and the capture reliability work of 2026-09-08 and 2026-09-09.
 
+### Fixed: the hover outline could be baked into an exported file
+`flatten()` hides the editing chrome by dropping the selection before it renders,
+which covered the dashed box and the resize handles. Nothing cleared the hover
+outline, so exporting with the pointer resting on a shape wrote a thin indigo
+rectangle into the saved PNG and PDF.
+
+It stayed invisible because reaching a toolbar button moves the pointer off the
+canvas on the way, and that clears the hover. A keyboard export, Cmd+C or Cmd+S
+with the pointer where it was, does not.
+
+The end to end suite now exports twice, once with the pointer on a shape and once
+with it away, and compares the two. The check draws its own shape rather than
+reusing one an earlier check left behind: the first version of it leaned on the
+existing canvas, the pointer turned out not to be over anything, and it passed
+against the bug it was written to catch.
+
 ### Fixed: the content security policy left every subresource unrestricted
 `connect-src 'none'` blocks `fetch`, `XMLHttpRequest`, WebSocket and
 `sendBeacon`, and the scanner banned all four by name. It does nothing about a

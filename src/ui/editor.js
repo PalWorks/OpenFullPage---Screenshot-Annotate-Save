@@ -381,6 +381,15 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
    * eye.
    */
   function drawHover(shape, crop) {
+    // Chrome is for the person editing, never for the file. `flatten()` drops the
+    // selection before it renders, which covered the dashed box and the handles,
+    // but nothing cleared the hover, so an export with the pointer resting on a
+    // shape baked this outline into the saved PNG and PDF. It went unseen because
+    // reaching a toolbar button moves the pointer off the canvas on the way,
+    // which fires `pointerleave` and clears the hover; a keyboard export does not.
+    // Guarded here rather than at the call site so every future chrome mark
+    // inherits it.
+    if (hideChrome) return;
     const b = boundsOf(shape);
     const scale = screenScale();
     const pad = 3 * scale;
@@ -392,6 +401,11 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
   }
 
   function drawSelection(shape, crop) {
+    // Belt and braces: `flatten()` also nulls the selection, so this is
+    // unreachable today. It stays because "the selection is empty" and "chrome is
+    // suppressed" are two different facts, and only one of them is what this
+    // function should depend on.
+    if (hideChrome) return;
     const b = boundsOf(shape);
     const scale = screenScale();
     const size = HANDLE_SIZE * scale;

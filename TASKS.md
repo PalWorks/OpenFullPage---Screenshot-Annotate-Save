@@ -43,6 +43,7 @@ implements them twice. Every one has tests.
 | **F40** | The text colour is a well beside the font menu, opening the same palette the border and fill controls open | `src/ui/result.*`, D40 |
 | **T27** | Picking Arrow could still draw a line. The tool and the arrowheads are reconciled in both directions | `src/ui/editor.js`, D41 |
 | **F41** | Hover cursors, a hover outline, and Escape to abandon a drag. Part of F27 | `src/ui/editor.js`, D42 |
+| **T28** | The hover outline could be baked into an exported PNG or PDF. `flatten()` dropped the selection but never the hover, and only a pointer-driven export cleared it on the way to the button | `src/ui/editor.js` |
 | **T19** | The content security policy names every directive. `connect-src 'none'` never covered a remote subresource, and an absent directive with no `default-src` is unrestricted | `manifest.json`, `test/lib/scan.js`, D15 |
 
 **Still open from the 1.7.0 list below:** T2, T11, F1, F21, F2, F26.

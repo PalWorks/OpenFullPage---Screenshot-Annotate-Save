@@ -951,6 +951,7 @@ async function exerciseEditor(cdp, session, log) {
 
   // 8e. What the pointer says before the click.
   await exercisePointerFeedback(cdp, session, check, p);
+  await exerciseExportChrome(cdp, session, check, p);
 
   // 9. What the browser actually drew: contrast, overflow, broken images.
   //
@@ -1094,6 +1095,86 @@ async function exerciseTheme(cdp, session, check) {
  * changed. These are the three answers a click can have, and the cursor has to
  * give the right one before the click rather than after it.
  */
+/**
+ * What the export contains, and what it must not.
+ *
+ * `flatten()` hides the chrome by nulling the selection, which covers the dashed
+ * box and the handles. It never cleared `hoverId`, so the hover outline was
+ * still drawn, and an export with the pointer resting on a shape baked a 1.5px
+ * indigo rectangle into the saved PNG and PDF. Nothing caught it because every
+ * export in this harness, and most by hand, is reached by moving the pointer to
+ * a button, which fires `pointerleave` on the way and clears the hover.
+ *
+ * The click and the read happen in one evaluated statement, and that is the
+ * whole trick. `encode()` calls `flatten()` in its synchronous prefix, before
+ * its first await, so the canvas holds the pixels being encoded when the next
+ * line runs. Reading it in a second round trip does not work: the clipboard
+ * write fails immediately in a headless profile, `finally` calls
+ * `restoreSelection()`, and the canvas is back to normal before the message
+ * arrives. That version of this check passed against the bug.
+ *
+ * One check stands in for every chrome bug of this shape, including the ones not
+ * written yet: multi-selection member outlines and the marquee draw in the same
+ * place and would both fail it.
+ */
+async function exportSignature(cdp, session) {
+  return evaluate(cdp, session, `(() => {
+    document.getElementById('copy').click();
+    const c = document.getElementById('canvas');
+    const g = c.getContext('2d', { willReadFrequently: true });
+    const { data } = g.getImageData(0, 0, Math.min(900, c.width), Math.min(600, c.height));
+    let hash = 2166136261;
+    for (let i = 0; i < data.length; i += 4) {
+      hash ^= data[i] + data[i + 1] * 3 + data[i + 2] * 7;
+      hash = Math.imul(hash, 16777619);
+    }
+    return hash >>> 0;
+  })()`);
+}
+
+async function exerciseExportChrome(cdp, session, check, p) {
+  // Self contained: it draws the shape it hovers. Leaning on shapes an earlier
+  // check happened to leave behind is how this check first passed against the
+  // bug it exists to catch.
+  await clickButton(cdp, session, '[data-tool="rect"]');
+  await dragOn(cdp, session, p(0.25, 0.30), p(0.45, 0.45));
+  await sleep(150);
+
+  // Drawing selects the new shape, and hover is suppressed on the selection, so
+  // it has to be dropped before the pointer goes back over it.
+  await clickButton(cdp, session, '[data-tool="select"]');
+  await evaluate(cdp, session,
+    `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+  await moveTo(cdp, session, p(0.9, 0.95));
+  await sleep(150);
+
+  // Prove the pointer is actually over the shape. Without this the check passes
+  // when the hover never happened, which is a green run that tested nothing.
+  await moveTo(cdp, session, p(0.35, 0.375));
+  await sleep(150);
+  const cursor = await evaluate(cdp, session, `document.getElementById('canvas').style.cursor`);
+  check(cursor === 'move',
+    `the pointer was not over a shape (cursor "${cursor}"), so the export check proved nothing`,
+    'the pointer is resting on an unselected shape, which draws a hover outline');
+
+  // Export without moving the pointer, the way a keyboard user reaches it.
+  const hovered = await exportSignature(cdp, session);
+  await sleep(400);
+  await moveTo(cdp, session, p(0.9, 0.95));
+  await sleep(250);
+  const clean = await exportSignature(cdp, session);
+  await sleep(400);
+
+  check(hovered === clean,
+    'exporting with the pointer resting on a shape baked the hover outline into the file',
+    'the export contains no chrome, wherever the pointer happens to be');
+
+  // Leave the canvas as it was found, so later checks are not reading this one's
+  // shape.
+  await evaluate(cdp, session, `document.getElementById('undo').click()`, { userGesture: true });
+  await sleep(200);
+}
+
 async function exercisePointerFeedback(cdp, session, check, p) {
   const cursor = () => evaluate(cdp, session, `document.getElementById('canvas').style.cursor`);
 
