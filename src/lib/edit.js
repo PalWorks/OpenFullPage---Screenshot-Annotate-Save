@@ -14,12 +14,28 @@
 // Every coordinate is in pixels of the *original* capture, never of the cropped
 // view, so cropping twice, or cropping and undoing, moves nothing.
 
+import {
+  CORNERS,
+  CORNERED_KINDS,
+  cornerOf,
+  outlineHit,
+} from './geometry.js';
+
+export { CORNERS, CORNERED_KINDS, cornerOf };
+
 export const TOOLS = [
   'select',
   'arrow',
   'line',
   'rect',
   'ellipse',
+  'rhombus',
+  'hexagon',
+  'parallelogram',
+  'triangle',
+  'cylinder',
+  'callout',
+  'loupe',
   'highlight',
   'pixelate',
   'text',
@@ -27,8 +43,37 @@ export const TOOLS = [
   'crop',
 ];
 
+/**
+ * The shapes behind the Shapes chevron, in the order the popover lists them.
+ *
+ * Derived from one list rather than repeated in the markup and in result.js,
+ * because two hand maintained lists of twelve shapes will drift. The groups are
+ * the headings the popover draws.
+ */
+export const SHAPE_GROUPS = [
+  ['Lines', ['arrow', 'line']],
+  ['Boxes', ['rect', 'ellipse', 'callout', 'loupe', 'highlight']],
+  ['Flowchart', ['rhombus', 'hexagon', 'parallelogram', 'triangle', 'cylinder']],
+];
+
+export const SHAPE_TOOLS = SHAPE_GROUPS.flatMap(([, kinds]) => kinds);
+
+/**
+ * Box shapes that can carry a fill.
+ *
+ * A highlighter is already a fill, a redaction has to stay opaque to be a
+ * redaction, and a loupe shows what is under it, so filling any of the three
+ * would either do nothing or break the thing they exist for.
+ */
+export const FILLABLE_TOOLS = [
+  'rect', 'ellipse', 'rhombus', 'hexagon', 'parallelogram', 'triangle', 'cylinder', 'callout',
+];
+
 /** Tools whose shape is defined by a dragged box. */
-export const BOX_TOOLS = ['rect', 'ellipse', 'highlight', 'pixelate'];
+export const BOX_TOOLS = [
+  'rect', 'ellipse', 'rhombus', 'hexagon', 'parallelogram', 'triangle',
+  'cylinder', 'callout', 'loupe', 'highlight', 'pixelate',
+];
 /** Tools whose shape is defined by two endpoints. */
 export const LINE_TOOLS = ['arrow', 'line'];
 /** Tools that place something at a single point. */
@@ -414,52 +459,109 @@ const distanceToSegment = (p, a, b) => {
   return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
 };
 
-export function hits(shape, point) {
+/**
+ * Is the point on this shape?
+ *
+ * `tolerance` is required and is in pixels of the original capture. It is not
+ * optional and it has no default on purpose. Chrome is divided by the screen
+ * scale (DECISIONS.md D19) precisely because a fixed count of image pixels is a
+ * different distance under the pointer at every display scale: on a capture
+ * shown at 12%, four image pixels of slop is less than half a screen pixel, and
+ * selection stops working. A default here would be correct at 100% zoom and
+ * quietly useless on exactly the long captures this extension exists to take,
+ * so the caller has to convert from screen space and say what it means.
+ *
+ * Passing `undefined` compares against NaN, which is false everywhere. That is
+ * the intended behaviour: a caller that forgot the tolerance selects nothing,
+ * which is obvious, rather than selecting slightly wrongly, which is not.
+ */
+export function hits(shape, point, tolerance) {
   if (LINE_TOOLS.includes(shape.kind)) {
-    return distanceToSegment(point, shape.from, shape.to) <= Math.max(shape.width * 2, 10);
+    return distanceToSegment(point, shape.from, shape.to) <= shape.width / 2 + tolerance;
   }
-  const box = boundsOf(shape);
-  const pad = shape.kind === 'counter' ? 0 : 4;
-  return (
-    point.x >= box.x - pad &&
-    point.x <= box.x + box.w + pad &&
-    point.y >= box.y - pad &&
-    point.y <= box.y + box.h + pad
-  );
+  if (shape.kind === 'counter') {
+    return Math.hypot(point.x - shape.at.x, point.y - shape.at.y) <= shape.radius + tolerance;
+  }
+  // Text is a run of glyphs, not an outline: its box is the thing you click.
+  if (shape.kind === 'text') {
+    const box = boundsOf(shape);
+    return (
+      point.x >= box.x - tolerance &&
+      point.x <= box.x + box.w + tolerance &&
+      point.y >= box.y - tolerance &&
+      point.y <= box.y + box.h + tolerance
+    );
+  }
+  // Everything else has an outline in the geometry table, so the empty corner
+  // of a rhombus is a miss and clicking inside an unfilled box is a hit.
+  return outlineHit(shape.kind, boundsOf(shape), point, tolerance, shape);
 }
 
 /** Topmost shape under the point, later shapes are drawn over earlier ones. */
-export function shapeAt(shapes, point) {
+export function shapeAt(shapes, point, tolerance) {
   for (let i = shapes.length - 1; i >= 0; i -= 1) {
-    if (hits(shapes[i], point)) return shapes[i];
+    if (hits(shapes[i], point, tolerance)) return shapes[i];
   }
   return null;
 }
 
-/** Draggable handles. Lines get their endpoints; boxes get their corners. */
-export function handlesFor(shape) {
+/** The corner handles, in the order the crop region already uses them. */
+export const CORNER_HANDLES = ['nw', 'ne', 'se', 'sw'];
+/** The four edge midpoints, which only a box shape gets. */
+export const EDGE_HANDLES = ['n', 'e', 's', 'w'];
+
+/**
+ * Draggable handles.
+ *
+ * Boxes get eight, the four corners and the four edge midpoints, which is what
+ * the crop region has always had and what makes it possible to change one edge
+ * without touching the other three.
+ *
+ * `minEdge` is in image pixels and is required for the same reason `tolerance`
+ * is on `hits`: eight handles on a shape that is thirty screen pixels wide is
+ * four overlapping targets, and whether a shape is small is a fact about the
+ * screen, not about the image. Below it the midpoints are dropped and the
+ * corners stay, so a small shape is still resizable, just less finely.
+ *
+ * Text keeps its four corners only. Dragging a corner scales the type, and an
+ * edge handle would have to stretch the glyphs, which type editors never do.
+ * A numbered step is a fixed radius circle, so a handle would have nothing to
+ * change.
+ */
+export function handlesFor(shape, minEdge) {
   if (LINE_TOOLS.includes(shape.kind)) {
     return [
       { id: 'from', x: shape.from.x, y: shape.from.y },
       { id: 'to', x: shape.to.x, y: shape.to.y },
     ];
   }
-  // A numbered step is a fixed radius circle, so a corner would have nothing to
-  // change. Text is the other point tool and does: dragging a corner scales the
-  // type. Bundling the two together is what left text with no handles at all.
   if (shape.kind === 'counter') return [];
 
   const b = boundsOf(shape);
-  return [
+  const right = b.x + b.w;
+  const bottom = b.y + b.h;
+  const midX = b.x + b.w / 2;
+  const midY = b.y + b.h / 2;
+  const corners = [
     { id: 'nw', x: b.x, y: b.y },
-    { id: 'ne', x: b.x + b.w, y: b.y },
-    { id: 'sw', x: b.x, y: b.y + b.h },
-    { id: 'se', x: b.x + b.w, y: b.y + b.h },
+    { id: 'ne', x: right, y: b.y },
+    { id: 'se', x: right, y: bottom },
+    { id: 'sw', x: b.x, y: bottom },
   ];
+  if (shape.kind === 'text') return corners;
+  if (!(Math.min(b.w, b.h) >= minEdge)) return corners;
+  return corners.concat([
+    { id: 'n', x: midX, y: b.y },
+    { id: 'e', x: right, y: midY },
+    { id: 's', x: midX, y: bottom },
+    { id: 'w', x: b.x, y: midY },
+  ]);
 }
 
-export function handleAt(shape, point, tolerance) {
-  for (const handle of handlesFor(shape)) {
+/** The handle under the pointer. Takes the same `minEdge` as `handlesFor`, so
+    the two can never disagree about which handles exist. */
+export function handleAt(shape, point, tolerance, minEdge) {
+  for (const handle of handlesFor(shape, minEdge)) {
     if (Math.hypot(point.x - handle.x, point.y - handle.y) <= tolerance) return handle.id;
   }
   return null;
@@ -474,22 +576,47 @@ export function moveShape(shape, dx, dy) {
   return moved;
 }
 
-/** Drag a handle to a new position. Boxes may be dragged inside out. */
+/**
+ * Drag a handle to a new position. Boxes may be dragged inside out.
+ *
+ * A corner moves two edges, an edge midpoint moves exactly one and leaves the
+ * other three where they were. That is the whole point of the midpoints: today
+ * making a box shorter without also making it narrower means dragging a corner
+ * and then dragging it back.
+ */
 export function resizeShape(shape, handleId, point) {
   if (handleId === 'from') return { ...shape, from: point };
   if (handleId === 'to') return { ...shape, to: point };
 
   const b = boundsOf(shape);
-  const anchor = {
-    nw: { x: b.x + b.w, y: b.y + b.h },
-    ne: { x: b.x, y: b.y + b.h },
-    sw: { x: b.x + b.w, y: b.y },
-    se: { x: b.x, y: b.y },
-  }[handleId];
-  if (!anchor) return shape;
 
-  if (shape.kind === 'text') return resizeText(shape, handleId, point, b, anchor);
-  return { ...shape, rect: normalizeRect(anchor, point) };
+  if (shape.kind === 'text') {
+    // Text scales from a corner only. An edge handle would set one axis
+    // independently, which is stretching the glyphs, so it is ignored rather
+    // than approximated. `handlesFor` does not offer text an edge handle, so
+    // this is a second lock on the same door.
+    if (!CORNER_HANDLES.includes(handleId)) return shape;
+    const anchor = {
+      nw: { x: b.x + b.w, y: b.y + b.h },
+      ne: { x: b.x, y: b.y + b.h },
+      sw: { x: b.x + b.w, y: b.y },
+      se: { x: b.x, y: b.y },
+    }[handleId];
+    return resizeText(shape, handleId, point, b, anchor);
+  }
+
+  if (!CORNER_HANDLES.includes(handleId) && !EDGE_HANDLES.includes(handleId)) return shape;
+
+  let left = b.x;
+  let top = b.y;
+  let right = b.x + b.w;
+  let bottom = b.y + b.h;
+  if (handleId.includes('w')) left = point.x;
+  if (handleId.includes('e')) right = point.x;
+  if (handleId.includes('n')) top = point.y;
+  if (handleId.includes('s')) bottom = point.y;
+
+  return { ...shape, rect: normalizeRect({ x: left, y: top }, { x: right, y: bottom }) };
 }
 
 /**

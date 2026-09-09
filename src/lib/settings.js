@@ -13,6 +13,15 @@
 // could disagree with reality after the user revokes access in chrome://extensions,
 // and the disagreement would always favour us.
 
+// The tool list comes from the editing model rather than being repeated here.
+// This file already restates DASH_STYLES, LINE_ENDS and the two text lists,
+// which is tolerable for four short lists that never change. The tools are now
+// seventeen entries and grow every time a shape is added, and a second copy is
+// how "parallelogram" ends up valid in one file and rejected in the other.
+import { TOOLS } from './edit.js';
+
+export { TOOLS };
+
 export const CAPTURE_MODES = ['full', 'visible', 'element'];
 export const DOWNLOAD_FORMATS = ['png', 'jpeg', 'pdf'];
 
@@ -82,7 +91,7 @@ export const TOOLBAR_GROUPS = [
  * settings. Those are separate choices and resetting them would be a surprise.
  */
 export const STYLE_KEYS = [
-  'tool', 'colour', 'strokeWidth', 'dash', 'lineEnds', 'fill', 'fillOpacity',
+  'tool', 'colour', 'strokeWidth', 'dash', 'lineEnds', 'corner', 'fill', 'fillOpacity',
   'textSize', 'textFamily', 'textBold', 'textItalic', 'textUnderline',
   'textAlign', 'textColour',
 ];
@@ -107,6 +116,8 @@ export const DEFAULTS = {
   // Shape style, remembered so the next capture opens where the last left off.
   dash: 'solid',
   lineEnds: 'end',
+  // Corner radius for the Box, in image pixels. Zero is square.
+  corner: 0,
   // null is a value here: it means an outlined shape with nothing behind it.
   fill: null,
   fillOpacity: 0.35,
@@ -180,7 +191,12 @@ export function sanitise(raw) {
   clean.directDownload = raw.directDownload === true;
   if (DOWNLOAD_FORMATS.includes(raw.format)) clean.format = raw.format;
 
-  if (typeof raw.tool === 'string' && /^[a-z]{2,12}$/.test(raw.tool)) clean.tool = raw.tool;
+  // Against the actual list, not against a pattern that describes it. The
+  // pattern was /^[a-z]{2,12}$/, and "parallelogram" is thirteen characters, so
+  // the remembered tool would have been thrown away on every reload and the
+  // editor would have opened on the default with no way to tell why. Checking
+  // membership is both correct and stricter than any regex could be.
+  if (TOOLS.includes(raw.tool)) clean.tool = raw.tool;
   if (typeof raw.colour === 'string' && /^#[0-9a-f]{6}$/i.test(raw.colour)) {
     clean.colour = raw.colour.toLowerCase();
   }
@@ -190,6 +206,7 @@ export function sanitise(raw) {
 
   if (DASH_STYLES.includes(raw.dash)) clean.dash = raw.dash;
   if (LINE_ENDS.includes(raw.lineEnds)) clean.lineEnds = raw.lineEnds;
+  if (Number.isFinite(raw.corner)) clean.corner = Math.min(9999, Math.max(0, Math.round(raw.corner)));
   if (TEXT_FAMILIES.includes(raw.textFamily)) clean.textFamily = raw.textFamily;
 
   // No fill is the default, so anything that is not a hex colour becomes null

@@ -950,6 +950,10 @@ async function exerciseEditor(cdp, session, log) {
   await exerciseArrowAndLine(cdp, session, check, p);
 
   // 8e. What the pointer says before the click.
+  await exerciseShapes(cdp, session, check, p);
+
+  await exerciseLoupeRedaction(cdp, session, check, p);
+
   await exercisePointerFeedback(cdp, session, check, p);
   await exerciseExportChrome(cdp, session, check, p);
 
@@ -1173,6 +1177,405 @@ async function exerciseExportChrome(cdp, session, check, p) {
   // shape.
   await evaluate(cdp, session, `document.getElementById('undo').click()`, { userGesture: true });
   await sleep(200);
+}
+
+/**
+ * The twelve shapes, drawn for real and then clicked for real.
+ *
+ * Two questions per shape, and only the second one needs a geometry table: does
+ * it put ink on the canvas, and does clicking its middle select it. The third
+ * question is the one that justifies the whole table, and only the shapes with
+ * an empty bounding box corner can answer it.
+ */
+async function exerciseShapes(cdp, session, check, p) {
+  const SHAPES = [
+    'arrow', 'line', 'rect', 'ellipse', 'callout', 'loupe', 'highlight',
+    'rhombus', 'hexagon', 'parallelogram', 'triangle', 'cylinder',
+  ];
+
+  // A corner of the capture nothing else in this run has drawn in. Every check
+  // below asserts the area is empty BEFORE it draws, because an earlier version
+  // of this test clicked where a previous check had left an arrow and reported
+  // that a rhombus was selectable in its empty corner. A check that passes
+  // because of someone else's shape is worse than no check.
+  const NW = [0.56, 0.74];
+  const SE = [0.92, 0.95];
+  const mid = (a, b, f) => a + (b - a) * f;
+  const at = (fx, fy) => p(mid(NW[0], SE[0], fx), mid(NW[1], SE[1], fy));
+
+  const selectedNow = () => evaluate(cdp, session,
+    'document.getElementById("delete").disabled === false');
+  const clickAt = async (point) => {
+    await dragOn(cdp, session, point, point, 1);
+    await sleep(60);
+  };
+  const deselect = async () => {
+    await evaluate(cdp, session, 'document.body.click()');
+    await sleep(60);
+  };
+  const pick = async (kind) => {
+    await clickButton(cdp, session, '[data-pop="pop-shapes"]');
+    await clickButton(cdp, session, `#pop-shapes [data-shape="${kind}"]`);
+    await deselect();
+  };
+  const useSelect = async () => {
+    await clickButton(cdp, session, '[data-tool="select"]');
+    await deselect();
+  };
+
+  // The area is clear. If this fails nothing below it means anything.
+  await useSelect();
+  await clickAt(at(0.5, 0.5));
+  const clear = !(await selectedNow());
+  check(clear,
+    'the corner this check draws in already had a shape in it, so its results would be meaningless',
+    'the test area is empty before the shapes are drawn');
+  if (!clear) return;
+  await deselect();
+
+  const missed = [];
+  for (const kind of SHAPES) {
+    const before = await canvasSignature(cdp, session);
+    await pick(kind);
+    await dragOn(cdp, session, at(0.08, 0.12), at(0.92, 0.88));
+    const after = await canvasSignature(cdp, session);
+    // Signature rather than a colour count: a highlighter lays down a wash at
+    // a third alpha and a loupe magnifies rather than painting, so neither puts
+    // down the stroke colour and counting red says they drew nothing.
+    if (after === before) missed.push(`${kind} put nothing on the canvas`);
+
+    await useSelect();
+    await clickAt(at(0.5, 0.5));
+    if (!(await selectedNow())) missed.push(`${kind} not selectable at its centre`);
+    await deselect();
+    await clickButton(cdp, session, '#undo');
+    await sleep(90);
+  }
+  check(missed.length === 0,
+    `shape problems: ${missed.join('; ')}`,
+    `all ${SHAPES.length} shapes drew, and every one was selectable by a click in its middle`);
+
+  // The empty corner. A rhombus covers half its bounding box and a triangle
+  // half of it too, so the top left of the box is inside the box and outside
+  // the shape. A bounding box hit test calls that a hit, and that single case
+  // is what the geometry table exists to get right.
+  for (const kind of ['rhombus', 'triangle']) {
+    await pick(kind);
+    await dragOn(cdp, session, at(0.08, 0.12), at(0.92, 0.88));
+    await useSelect();
+
+    await clickAt(at(0.11, 0.15));
+    const grabbedCorner = await selectedNow();
+    await deselect();
+    await clickAt(at(0.5, 0.62));
+    const grabbedCentre = await selectedNow();
+    await deselect();
+
+    check(!grabbedCorner && grabbedCentre,
+      `${kind}: empty corner selected=${grabbedCorner} (want false), centre selected=${grabbedCentre} (want true)`,
+      `a ${kind} is selectable in its middle and not in the empty corner of its box`);
+    await clickButton(cdp, session, '#undo');
+    await sleep(90);
+  }
+
+  const offered = Number(await evaluate(cdp, session,
+    'document.querySelectorAll("#pop-shapes [data-shape]").length'));
+  check(offered === 12,
+    `the shapes popover offered ${offered} shapes, expected 12`,
+    'the shapes popover offers all twelve shapes');
+}
+
+/**
+ * The loupe must not un-redact a redaction.
+ *
+ * The hostile test for the one feature that could have turned the redaction
+ * tool into a lie. A loupe magnifies what is under it, so if it sampled the
+ * original capture, dragging one over a pixelated region would reproduce the
+ * hidden pixels inside the ring, at twice the size, in the exported file.
+ *
+ * It does not measure "detail", which two earlier versions of this check tried
+ * and which does not work: this fixture is a plain page, and pixelating a flat
+ * area ADDS block edges rather than removing them, so both a leak and a success
+ * can raise the number. It asks the decidable question instead.
+ *
+ * Three snapshots of the canvas: before the redaction, after it, and after the
+ * loupe. The loupe's own circle is found by diffing the last two, so nothing is
+ * assumed about where the drag landed. Then, for every point inside the ring,
+ * the pixel that is actually there is compared against what a 2x magnification
+ * would have produced from each of the two possible sources. Whichever source
+ * it matches is the one it read. Correct behaviour matches the redacted
+ * snapshot; a leak matches the original.
+ */
+async function exerciseLoupeRedaction(cdp, session, check, p) {
+  // The pointer has to be off the canvas for every snapshot. A drag leaves it
+  // resting on the shape it just drew, and `drawHover` puts a hairline
+  // rectangle around whatever is under it. That outline is a bigger change to
+  // the canvas than the loupe's contents, and an earlier version of this check
+  // was measuring it: it passed with the loupe's drawing disabled entirely.
+  // Every snapshot has to show the canvas with NOTHING on it but the image and
+  // the shapes: no selection outline, no handles, no hover. Finishing a shape
+  // leaves it selected, and a drag leaves the pointer resting on it, so both
+  // kinds of chrome are present by default. Two earlier versions of this check
+  // were fooled by exactly this: the chrome around the redaction spans the
+  // whole redaction, so the diff that was supposed to find the loupe found the
+  // dashed outline instead, and the check passed against a loupe that leaked.
+  const settle = async () => {
+    await evaluate(cdp, session,
+      `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+    await moveTo(cdp, session, { x: 6, y: 6 });
+    await sleep(140);
+  };
+
+  const snap = async (tag) => {
+    await settle();
+    return evaluate(cdp, session, `(() => {
+    const c = document.getElementById('canvas');
+    const g = c.getContext('2d', { willReadFrequently: true });
+    window.__loupeProbe = window.__loupeProbe || {};
+    window.__loupeProbe['${tag}'] = g.getImageData(0, 0, c.width, Math.min(c.height, 700));
+    return 'ok';
+  })()`);
+  };
+
+  await snap('original');
+
+  await clickButton(cdp, session, '[data-tool="pixelate"]');
+  await dragOn(cdp, session, p(0.10, 0.18), p(0.70, 0.72));
+  await sleep(150);
+  await snap('redacted');
+
+  // WHERE to put the loupe matters, and getting it wrong makes this check
+  // vacuous. An earlier version dropped it in the middle of the redaction and
+  // passed against a loupe that read the original capture, because the patch it
+  // happened to land on was blank page: pixelating white gives white, so the
+  // two candidate sources were the same image there and nothing could tell them
+  // apart. So the page is asked where the redaction actually changed pixels,
+  // and the loupe goes there.
+  const spot = JSON.parse(await evaluate(cdp, session, `(() => {
+    const P = window.__loupeProbe;
+    const a = P.original;
+    const b = P.redacted;
+    const W = a.width;
+    const H = a.height;
+    const diff = (x, y) => {
+      const i = (y * W + x) * 4;
+      return Math.abs(a.data[i] - b.data[i])
+        + Math.abs(a.data[i + 1] - b.data[i + 1])
+        + Math.abs(a.data[i + 2] - b.data[i + 2]);
+    };
+    let x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1;
+    for (let y = 0; y < H; y += 1) {
+      for (let x = 0; x < W; x += 1) {
+        if (diff(x, y) <= 30) continue;
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (y < y0) y0 = y;
+        if (y > y1) y1 = y;
+      }
+    }
+    if (x1 < 0) return JSON.stringify({ ok: false });
+
+    // The biggest circle that fits inside the redaction, placed where the
+    // redaction changed the most of what the loupe will actually READ.
+    //
+    // That last part matters and cost two rounds of this check to get right. A
+    // loupe magnifies by two, so it reads a disc of half its radius. Scoring the
+    // full radius picks a spot whose EDGES have content and whose middle, the
+    // part the loupe samples, is blank page that pixelated to itself. The two
+    // candidate sources are then the same image and the comparison decides
+    // nothing while appearing to pass.
+    const radius = Math.max(12, Math.min(70, (x1 - x0) / 4, (y1 - y0) / 4));
+    const source = radius / 2;
+    let best = -1;
+    let bx = (x0 + x1) / 2;
+    let by = (y0 + y1) / 2;
+    for (let cy = y0 + radius; cy <= y1 - radius; cy += 5) {
+      for (let cx = x0 + radius; cx <= x1 - radius; cx += 5) {
+        let changed = 0;
+        for (let dy = -source; dy <= source; dy += 2) {
+          for (let dx = -source; dx <= source; dx += 2) {
+            if (dx * dx + dy * dy > source * source) continue;
+            if (diff(Math.round(cx + dx), Math.round(cy + dy)) > 30) changed += 1;
+          }
+        }
+        if (changed > best) { best = changed; bx = cx; by = cy; }
+      }
+    }
+
+    const c = document.getElementById('canvas');
+    const box = c.getBoundingClientRect();
+    const sx = (x) => box.left + (x / c.width) * box.width;
+    const sy = (y) => box.top + (y / c.height) * box.height;
+    return JSON.stringify({
+      ok: true,
+      score: best,
+      radius: Math.round(radius),
+      // Where the loupe will sit, in canvas pixels. The measurement below uses
+      // these rather than deriving a radius from a changed-pixel bounding box:
+      // that box is much larger than the ring (it includes the loupe's handle),
+      // so sampling it put most of the samples OUTSIDE the loupe, where the two
+      // candidate sources differ for reasons that have nothing to do with the
+      // loupe. That version passed against a loupe that leaked.
+      canvas: { cx: Math.round(bx), cy: Math.round(by), r: Math.round(radius) },
+      from: { x: Math.round(sx(bx - radius)), y: Math.round(sy(by - radius)) },
+      to: { x: Math.round(sx(bx + radius)), y: Math.round(sy(by + radius)) },
+    });
+  })()`));
+
+  check(spot.ok && spot.score > 20,
+    `no spot in the redaction has enough changed pixels under a loupe to tell a leak from a success (best ${spot.score})`,
+    `placing the loupe where the redaction changed most (radius ${spot.radius}px, ${spot.score} changed source pixels)`);
+  if (!spot.ok) return;
+
+  await clickButton(cdp, session, '[data-pop="pop-shapes"]');
+  await clickButton(cdp, session, '#pop-shapes [data-shape="loupe"]');
+  await evaluate(cdp, session, 'document.body.click()');
+  await dragOn(cdp, session, spot.from, spot.to);
+  await sleep(150);
+  await snap('withLoupe');
+
+  const stillSelected = await evaluate(cdp, session,
+    'document.getElementById("delete").disabled === false');
+  check(!stillSelected,
+    'a shape was still selected when the canvas was sampled, so its chrome is in the measurement',
+    'nothing was selected when the canvas was sampled, so only the shapes are in it');
+
+  const stats = JSON.parse(await evaluate(cdp, session, `(() => {
+    const CX = ${spot.canvas.cx};
+    const CY = ${spot.canvas.cy};
+    const R = ${spot.canvas.r};
+    const P = window.__loupeProbe;
+    const before = P.original;
+    const redacted = P.redacted;
+    const after = P.withLoupe;
+    const W = before.width;
+    const H = before.height;
+    const at = (img, x, y) => {
+      const i = (y * W + x) * 4;
+      return [img.data[i], img.data[i + 1], img.data[i + 2]];
+    };
+    const moved = (a, b, x, y, threshold) => {
+      const p1 = at(a, x, y);
+      const p2 = at(b, x, y);
+      return Math.abs(p1[0] - p2[0]) > threshold
+        || Math.abs(p1[1] - p2[1]) > threshold
+        || Math.abs(p1[2] - p2[2]) > threshold;
+    };
+
+    const bbox = (a, b, threshold) => {
+      let x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1;
+      for (let y = 0; y < H; y += 1) {
+        for (let x = 0; x < W; x += 1) {
+          if (!moved(a, b, x, y, threshold)) continue;
+          if (x < x0) x0 = x;
+          if (x > x1) x1 = x;
+          if (y < y0) y0 = y;
+          if (y > y1) y1 = y;
+        }
+      }
+      return { x0, y0, x1, y1, found: x1 >= 0 };
+    };
+
+    const redaction = bbox(before, redacted, 10);
+    const ring = bbox(redacted, after, 10);
+    if (!redaction.found || !ring.found) {
+      return JSON.stringify({ found: false, redaction, ring });
+    }
+
+    const cx = CX;
+    const cy = CY;
+    const r = R;
+
+    // How far the pixels actually drawn sit from each hypothesis, sampled over
+    // the inner 70% of the disc so the ring stroke itself is never included.
+    let errRedacted = 0;
+    let errOriginal = 0;
+    let sampled = 0;
+    // Strictly inside the ring. Every sample must be a pixel the loupe itself
+    // painted, or the comparison is answering a different question.
+    const reach = r * 0.75;
+    for (let dy = -reach; dy <= reach; dy += 2) {
+      for (let dx = -reach; dx <= reach; dx += 2) {
+        if (dx * dx + dy * dy > reach * reach) continue;
+        const px = Math.round(cx + dx);
+        const py = Math.round(cy + dy);
+        if (px < 1 || py < 1 || px >= W - 1 || py >= H - 1) continue;
+        // The loupe magnifies by 2 about its centre, so the pixel shown at
+        // (px, py) was read from halfway back towards the centre.
+        const sx = Math.round(cx + dx / 2);
+        const sy = Math.round(cy + dy / 2);
+        if (sx < 0 || sy < 0 || sx >= W || sy >= H) continue;
+        const shown = at(after, px, py);
+        const fromRedacted = at(redacted, sx, sy);
+        const fromOriginal = at(before, sx, sy);
+        // Only score where the two candidate sources actually disagree. Most of
+        // this capture is blank page, and blank page pixelates to blank page:
+        // at those points both hypotheses predict the same colour and scoring
+        // them buries the signal under a pile of ties.
+        const disagree = Math.abs(fromRedacted[0] - fromOriginal[0])
+          + Math.abs(fromRedacted[1] - fromOriginal[1])
+          + Math.abs(fromRedacted[2] - fromOriginal[2]);
+        if (disagree < 25) continue;
+        for (let ch = 0; ch < 3; ch += 1) {
+          errRedacted += Math.abs(shown[ch] - fromRedacted[ch]);
+          errOriginal += Math.abs(shown[ch] - fromOriginal[ch]);
+        }
+        sampled += 1;
+      }
+    }
+    // How different the two hypotheses are IN THE AREA THE LOUPE READS. This
+    // has to be measured over the source disc, not over the whole redaction: a
+    // redaction can change plenty at its edges while the patch under the loupe
+    // is blank in both versions, and then matching one of them proves nothing.
+    let separation = 0;
+    let cells = 0;
+    const sourceReach = r / 2;
+    for (let dy = -sourceReach; dy <= sourceReach; dy += 1) {
+      for (let dx = -sourceReach; dx <= sourceReach; dx += 1) {
+        if (dx * dx + dy * dy > sourceReach * sourceReach) continue;
+        const x = Math.round(cx + dx);
+        const y = Math.round(cy + dy);
+        if (x < 0 || y < 0 || x >= W || y >= H) continue;
+        const a1 = at(before, x, y);
+        const b1 = at(redacted, x, y);
+        separation += Math.abs(a1[0] - b1[0]) + Math.abs(a1[1] - b1[1]) + Math.abs(a1[2] - b1[2]);
+        cells += 1;
+      }
+    }
+    cells = Math.max(1, cells);
+    return JSON.stringify({
+      found: true,
+      radius: Math.round(r),
+      askedFor: { cx: CX, cy: CY, r: R },
+      ringBox: ring,
+      redactionBox: redaction,
+      sampled,
+      errRedacted: sampled ? Number((errRedacted / sampled).toFixed(2)) : -1,
+      errOriginal: sampled ? Number((errOriginal / sampled).toFixed(2)) : -1,
+      separation: Number((separation / cells).toFixed(2)),
+    });
+  })()`));
+
+  check(stats.found && stats.radius > 8,
+    `could not locate the redaction and the loupe to compare them (${JSON.stringify(stats)})`,
+    `located the loupe, radius ${stats.radius}px, ${stats.sampled} points sampled inside it`);
+  if (!stats.found) return;
+
+  // Enough points where the redaction genuinely changed what is underneath. If
+  // there are too few, the two hypotheses are the same picture and matching one
+  // of them proves nothing, so the check says so instead of passing.
+  check(stats.sampled >= 40,
+    `only ${stats.sampled} points under the loupe distinguish the redacted capture from the original, which is too few to conclude anything`,
+    `${stats.sampled} points under the loupe can tell the two sources apart`);
+
+  check(stats.errRedacted < stats.errOriginal,
+    `the loupe matched the ORIGINAL capture better than the redacted one (${stats.errOriginal} vs ${stats.errRedacted}): it is magnifying pixels the redaction was supposed to destroy`,
+    `the loupe magnified the redacted base, not the original (error ${stats.errRedacted} against it, ${stats.errOriginal} against the original)`);
+
+  await evaluate(cdp, session, 'delete window.__loupeProbe');
+  await clickButton(cdp, session, '#undo');
+  await clickButton(cdp, session, '#undo');
+  await sleep(150);
 }
 
 async function exercisePointerFeedback(cdp, session, check, p) {

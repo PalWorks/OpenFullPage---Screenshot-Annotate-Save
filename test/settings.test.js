@@ -15,6 +15,7 @@ import {
   THEMES,
   TOOLBAR_BUTTONS,
   TOOLBAR_GROUPS,
+  TOOLS,
   defaultStyle,
   sanitise,
   saveSettings,
@@ -125,7 +126,7 @@ test('every key sanitise knows about is one DEFAULTS declares', () => {
     defaultMode: 'visible', extraModes: true, tool: 'rect', colour: '#123456',
     strokeWidth: 8, captureDelay: 3, progressPopup: false, directDownload: true,
     theme: 'dark', format: 'jpeg',
-    dash: 'dashed', lineEnds: 'none', fill: '#abcdef', fillOpacity: 0.5,
+    dash: 'dashed', lineEnds: 'none', corner: 12, fill: '#abcdef', fillOpacity: 0.5,
     textSize: 40, textFamily: 'serif', textBold: false, textItalic: true,
     textUnderline: true, textAlign: 'justify', textColour: '#00ff88',
     hiddenButtons: ['crop'],
@@ -148,6 +149,16 @@ test('the text colour is a hex colour or it is the default', () => {
   for (const junk of ['red', '#fff', 'rgb(0,0,0)', '#12345g', 42, null]) {
     assert.equal(sanitise({ textColour: junk }).textColour, DEFAULTS.textColour, String(junk));
   }
+});
+
+test('a stored tool name is checked against the real list, not a pattern', () => {
+  // The pattern this replaced was /^[a-z]{2,12}$/. "parallelogram" is thirteen
+  // characters, so a user who last drew one would have had it thrown away on
+  // every reload and the editor would have opened on the default instead.
+  assert.equal(sanitise({ tool: 'parallelogram' }).tool, 'parallelogram');
+  for (const kind of TOOLS) assert.equal(sanitise({ tool: kind }).tool, kind);
+  // Membership is also stricter than the pattern was: this passed it.
+  assert.equal(sanitise({ tool: 'banana' }).tool, DEFAULTS.tool);
 });
 
 test('a stored tool name cannot be arbitrary text', () => {

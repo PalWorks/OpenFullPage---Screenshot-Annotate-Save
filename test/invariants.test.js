@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { TOOLS } from '../src/lib/edit.js';
+import { SHAPE_GROUPS, SHAPE_TOOLS, TOOLS } from '../src/lib/edit.js';
 import { TOOLBAR_BUTTONS } from '../src/lib/settings.js';
 import { makeZip } from '../tools/lib/zip.mjs';
 import {
@@ -206,6 +206,27 @@ test('every tool named in the markup is a tool that exists', () => {
   const named = [...markup.matchAll(/data-tool="([\w-]+)"/g)].map((m) => m[1]);
   assert.ok(named.length > 0, 'no tools in the markup at all');
   for (const tool of new Set(named)) assert.ok(TOOLS.includes(tool), `unknown tool "${tool}"`);
+});
+
+test('the shapes popover and the model agree about which shapes exist', () => {
+  // Three lists used to describe the shapes: the markup, a hardcoded array in
+  // result.js, and TOOLS in the model. Twelve shapes across three hand
+  // maintained lists drift, and the failure is silent: a shape in the popover
+  // that the model does not know, or a shape in the model with no way to reach
+  // it. result.js now imports the list, so this checks the remaining pair.
+  const markup = readFileSync(join(REPO_ROOT, 'src/ui/result.html'), 'utf8');
+  const popover = markup.slice(markup.indexOf('id="pop-shapes"'), markup.indexOf('id="pop-text"'));
+  const inMarkup = [...popover.matchAll(/data-shape="([\w-]+)"/g)].map((m) => m[1]);
+
+  assert.deepEqual(inMarkup, SHAPE_TOOLS, 'the popover order must match SHAPE_TOOLS exactly');
+  for (const kind of SHAPE_TOOLS) {
+    assert.ok(TOOLS.includes(kind), `"${kind}" is in the popover but not in TOOLS`);
+  }
+  // Every group in the model has a heading in the markup, so a group cannot be
+  // added to the model and silently render as a run of unlabelled buttons.
+  for (const [name] of SHAPE_GROUPS) {
+    assert.ok(popover.includes(`>${name}<`), `the "${name}" group has no heading in the popover`);
+  }
 });
 
 test('every toolbar control in the markup can be switched off on the settings page', () => {

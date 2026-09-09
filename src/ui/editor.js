@@ -13,8 +13,16 @@
 // undo is exact and repeated edits never degrade the image.
 
 import {
+  decorationOps,
+  outlineOps,
+} from '../lib/geometry.js';
+
+import {
   BOX_TOOLS,
+  CORNERED_KINDS,
+  FILLABLE_TOOLS,
   POINT_TOOLS,
+  cornerOf,
   DEFAULT_FILL_OPACITY,
   MAX_STROKE,
   MAX_TEXT_SIZE,
@@ -70,6 +78,8 @@ const DASH = [8, 6];
 const HANDLE_SIZE = 9;
 const HIGHLIGHT_ALPHA = 0.35;
 const PIXELATE_BLOCKS = 14;
+/** How much a loupe magnifies what is under it. */
+const LOUPE_ZOOM = 2;
 
 export function createEditor({ base, canvas, onChange, initial = {} }) {
   const ctx = canvas.getContext('2d');
@@ -84,6 +94,8 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
   let ends = initial.lineEnds ?? 'end';
   let fill = initial.fill ?? null;
   let fillOpacity = initial.fillOpacity ?? DEFAULT_FILL_OPACITY;
+  // Corner radius is a property of the Box, not three separate tools.
+  let corner = initial.corner ?? 0;
   let text = {
     size: initial.textSize ?? 24,
     family: initial.textFamily ?? 'system',
@@ -164,6 +176,9 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
     return box.width ? canvas.width / box.width : 1;
   }
 
+  /** Arrow and line are the two shapes defined by two endpoints rather than a box. */
+  const isLine = (shape) => shape.kind === 'arrow' || shape.kind === 'line';
+
   function applyDash(shape) {
     ctx.setLineDash(dashPattern(dashOf(shape), shape.width));
   }
@@ -187,6 +202,90 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
     ctx.globalAlpha = fillAlphaOf(shape);
     ctx.fillStyle = colourIn;
     path();
+    ctx.restore();
+  }
+
+  /**
+   * Replay a list of geometry operations onto the context.
+   *
+   * The other reader of the same list is `flatten()` in src/lib/geometry.js,
+   * which turns it into a polygon for hit testing. Two readers, one description:
+   * a shape cannot be drawn as one thing and clicked as another.
+   */
+  function traceOps(ops, dx, dy) {
+    ctx.beginPath();
+    for (const op of ops) {
+      const code = op[0];
+      if (code === 'M') ctx.moveTo(op[1] + dx, op[2] + dy);
+      else if (code === 'L') ctx.lineTo(op[1] + dx, op[2] + dy);
+      else if (code === 'Q') ctx.quadraticCurveTo(op[1] + dx, op[2] + dy, op[3] + dx, op[4] + dy);
+      else if (code === 'A') {
+        ctx.ellipse(op[1] + dx, op[2] + dy, Math.max(op[3], 0), Math.max(op[4], 0), 0, op[5], op[6], op[7]);
+      } else if (code === 'Z') ctx.closePath();
+    }
+  }
+
+  /** A shape with a closed outline: fill it if it has one, stroke it, then add
+      any decoration that belongs to the picture but not to the outline. */
+  function drawOutlined(shape, dx, dy) {
+    const ops = outlineOps(shape.kind, shape.rect, shape);
+    if (!ops) return;
+    paintFill(shape, () => {
+      traceOps(ops, dx, dy);
+      ctx.fill();
+    });
+    applyDash(shape);
+    traceOps(ops, dx, dy);
+    ctx.stroke();
+    for (const decoration of decorationOps(shape.kind, shape.rect)) {
+      traceOps(decoration, dx, dy);
+      ctx.stroke();
+    }
+  }
+
+  /**
+   * A loupe: a circular window that magnifies what is under it.
+   *
+   * It samples the REDACTED base, never the original. A magnifier drawn over a
+   * pixelated region would otherwise reproduce the original pixels inside the
+   * ring, in the exported file, and hand back exactly the thing the person was
+   * trying to hide. The comment on the redaction tool promises the pixels are
+   * gone from the output; this is the one feature that could have made that a
+   * lie, so it reads from `redactedBase()` and there is a test that draws a
+   * loupe over a redaction and asserts the secret does not come back.
+   */
+  function drawLoupe(shape, dx, dy) {
+    const { x, y, w, h } = shape.rect;
+    const r = Math.max(Math.min(w, h) / 2, 1);
+    const cx = x + w / 2;
+    const cy = y + h / 2;
+    const half = r / LOUPE_ZOOM;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx + dx, cy + dy, r, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.drawImage(
+      redactedBase(),
+      cx - half, cy - half, half * 2, half * 2,
+      cx - r + dx, cy - r + dy, r * 2, r * 2,
+    );
+    ctx.restore();
+
+    ctx.save();
+    ctx.strokeStyle = shape.colour;
+    ctx.lineWidth = shape.width;
+    applyDash(shape);
+    ctx.beginPath();
+    ctx.arc(cx + dx, cy + dy, r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    for (const decoration of decorationOps('loupe', shape.rect)) {
+      ctx.lineWidth = shape.width * 1.6;
+      ctx.lineCap = 'round';
+      traceOps(decoration, dx, dy);
+      ctx.stroke();
+    }
     ctx.restore();
   }
 
@@ -220,27 +319,6 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
 
       if (atStart) head(shape.to, shape.from, shape.width, dx, dy);
       if (atEnd) head(shape.from, shape.to, shape.width, dx, dy);
-    } else if (shape.kind === 'rect') {
-      const { x, y, w, h } = shape.rect;
-      paintFill(shape, () => ctx.fillRect(x + dx, y + dy, w, h));
-      applyDash(shape);
-      ctx.strokeRect(x + dx, y + dy, w, h);
-    } else if (shape.kind === 'ellipse') {
-      const cx = shape.rect.x + shape.rect.w / 2 + dx;
-      const cy = shape.rect.y + shape.rect.h / 2 + dy;
-      const rx = Math.max(1, shape.rect.w / 2);
-      const ry = Math.max(1, shape.rect.h / 2);
-      const trace = () => {
-        ctx.beginPath();
-        ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-      };
-      paintFill(shape, () => {
-        trace();
-        ctx.fill();
-      });
-      applyDash(shape);
-      trace();
-      ctx.stroke();
     } else if (shape.kind === 'highlight') {
       ctx.globalAlpha = HIGHLIGHT_ALPHA;
       ctx.fillRect(shape.rect.x + dx, shape.rect.y + dy, shape.rect.w, shape.rect.h);
@@ -257,6 +335,13 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(String(shape.number), shape.at.x + dx, shape.at.y + dy + 1);
+    } else if (shape.kind === 'loupe') {
+      drawLoupe(shape, dx, dy);
+    } else {
+      // Everything else with a closed outline: box, ellipse, rhombus, hexagon,
+      // parallelogram, triangle, cylinder, callout. One branch, because the
+      // shape is described in src/lib/geometry.js and nowhere else.
+      drawOutlined(shape, dx, dy);
     }
 
     ctx.restore();
@@ -342,7 +427,15 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
    * The export is flat, so what is saved genuinely has no original underneath ,
    * this is not a blur laid over recoverable pixels in a layered file.
    */
-  function drawPixelated(shape, dx, dy) {
+  /**
+   * Draw one redaction into any context.
+   *
+   * Split out from `drawPixelated` so that the redacted base below can be built
+   * with exactly the same code path as the screen. If the two ever diverged,
+   * the loupe would magnify a redaction that had been computed slightly
+   * differently from the one the user is looking at.
+   */
+  function pixelateInto(target, shape, dx, dy) {
     const { x, y, w, h } = shape.rect;
     if (w < 1 || h < 1) return;
 
@@ -356,9 +449,45 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
     small.imageSmoothingEnabled = true;
     small.drawImage(base, x, y, w, h, 0, 0, cols, rows);
 
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(scratch, 0, 0, cols, rows, x + dx, y + dy, w, h);
-    ctx.imageSmoothingEnabled = true;
+    target.imageSmoothingEnabled = false;
+    target.drawImage(scratch, 0, 0, cols, rows, x + dx, y + dy, w, h);
+    target.imageSmoothingEnabled = true;
+  }
+
+  function drawPixelated(shape, dx, dy) {
+    pixelateInto(ctx, shape, dx, dy);
+  }
+
+  // THE REDACTED BASE
+  //
+  // The capture with every redaction already burned in. Only the loupe reads it,
+  // and it exists so that magnifying a redacted region cannot un-redact it.
+  //
+  // Cached, because it is rebuilt from the full size capture and a loupe is
+  // redrawn on every frame of a drag. The key is the list of redaction
+  // rectangles, so moving, resizing, adding, deleting or undoing a redaction all
+  // invalidate it, and nothing else does.
+  let redacted = null;
+  let redactedKey = '';
+
+  function redactedBase() {
+    const marks = doc.present.shapes.filter((shape) => shape.kind === 'pixelate');
+    if (marks.length === 0) return base;
+
+    const key = marks.map((s) => `${s.rect.x},${s.rect.y},${s.rect.w},${s.rect.h}`).join('|');
+    if (redacted && redactedKey === key) return redacted;
+
+    if (!redacted) {
+      redacted = document.createElement('canvas');
+      redacted.width = base.width;
+      redacted.height = base.height;
+    }
+    const into = redacted.getContext('2d');
+    into.clearRect(0, 0, redacted.width, redacted.height);
+    into.drawImage(base, 0, 0);
+    for (const mark of marks) pixelateInto(into, mark, 0, 0);
+    redactedKey = key;
+    return redacted;
   }
 
   /**
@@ -390,13 +519,25 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
     // Guarded here rather than at the call site so every future chrome mark
     // inherits it.
     if (hideChrome) return;
-    const b = boundsOf(shape);
     const scale = screenScale();
-    const pad = 3 * scale;
     ctx.save();
     ctx.strokeStyle = 'rgba(99, 102, 241, 0.55)';
     ctx.lineWidth = 1.5 * scale;
-    ctx.strokeRect(b.x - crop.x - pad, b.y - crop.y - pad, b.w + pad * 2, b.h + pad * 2);
+    if (isLine(shape)) {
+      // A rectangle around a line is a lie about what is under the pointer: it
+      // claims the whole diagonal box, including two large empty corners the
+      // click would miss. Trace the segment instead, which is the shape.
+      ctx.lineWidth = Math.max(shape.width + 4 * scale, 3 * scale);
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(shape.from.x - crop.x, shape.from.y - crop.y);
+      ctx.lineTo(shape.to.x - crop.x, shape.to.y - crop.y);
+      ctx.stroke();
+    } else {
+      const b = boundsOf(shape);
+      const pad = 3 * scale;
+      ctx.strokeRect(b.x - crop.x - pad, b.y - crop.y - pad, b.w + pad * 2, b.h + pad * 2);
+    }
     ctx.restore();
   }
 
@@ -406,19 +547,28 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
     // suppressed" are two different facts, and only one of them is what this
     // function should depend on.
     if (hideChrome) return;
-    const b = boundsOf(shape);
     const scale = screenScale();
     const size = HANDLE_SIZE * scale;
 
     ctx.save();
     ctx.strokeStyle = '#6366f1';
     ctx.lineWidth = 1.5 * scale;
-    ctx.setLineDash(DASH.map((step) => step * scale));
-    const pad = 3 * scale;
-    ctx.strokeRect(b.x - crop.x - pad, b.y - crop.y - pad, b.w + pad * 2, b.h + pad * 2);
-    ctx.setLineDash([]);
 
-    for (const handle of handlesFor(shape)) {
+    // A line gets its two endpoints and no box. The dashed rectangle that used
+    // to be drawn here connected the endpoints as though the line were a
+    // rectangle, which is not what a line is: the box is mostly empty space the
+    // shape does not occupy, and on a diagonal arrow it is almost all empty
+    // space. The endpoints already say where the shape is and what can be
+    // dragged, which is everything the outline was there to say.
+    if (!isLine(shape)) {
+      const b = boundsOf(shape);
+      const pad = 3 * scale;
+      ctx.setLineDash(DASH.map((step) => step * scale));
+      ctx.strokeRect(b.x - crop.x - pad, b.y - crop.y - pad, b.w + pad * 2, b.h + pad * 2);
+      ctx.setLineDash([]);
+    }
+
+    for (const handle of handlesFor(shape, minEdgeForHandles())) {
       ctx.fillStyle = '#ffffff';
       ctx.strokeStyle = '#6366f1';
       ctx.lineWidth = 2 * scale;
@@ -540,6 +690,18 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
     return HANDLE_SIZE * screenScale();
   }
 
+  /**
+   * The shortest edge, in image pixels, that can carry the four edge midpoints.
+   *
+   * A midpoint sits half an edge away from each corner, so the edge needs about
+   * three handle widths before the three targets stop overlapping. Like every
+   * other measurement about a shape rather than of it, this is in screen terms
+   * and converted, because a 100 pixel box is roomy at 100% and cramped at 12%.
+   */
+  function minEdgeForHandles() {
+    return HANDLE_SIZE * 3 * screenScale();
+  }
+
   function buildShape(from, to, shifted) {
     const crop = effectiveCrop(doc);
     const end = shifted && tool !== 'crop' ? constrain(from, to, tool) : to;
@@ -551,15 +713,17 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
       const shape = {
         id: newId(), kind: tool, rect: clampRect(normalizeRect(from, end), crop), colour, width,
       };
-      // Only the outlined boxes take a fill. A highlighter is already a fill and
-      // a redaction has to stay opaque to be a redaction.
-      if (tool === 'rect' || tool === 'ellipse') {
+      // Only the outlined boxes take a fill. A highlighter is already a fill, a
+      // redaction has to stay opaque to be a redaction, and a loupe shows what
+      // is underneath it.
+      if (FILLABLE_TOOLS.includes(tool)) {
         shape.dash = dash;
         if (fill) {
           shape.fill = fill;
           shape.fillOpacity = fillOpacity;
         }
       }
+      if (CORNERED_KINDS.includes(tool) && corner > 0) shape.corner = corner;
       return shape;
     }
     return { id: newId(), kind: tool, from, to: end, colour, width, dash, ends };
@@ -649,7 +813,7 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
     // a box hands the toolbar back to select anyway, which is where you already
     // are the moment you might want to change what you just typed.
     if (tool !== 'select') return;
-    const hit = shapeAt(doc.present.shapes, toImage(event));
+    const hit = shapeAt(doc.present.shapes, toImage(event), pickTolerance());
     if (!hit || hit.kind !== 'text') return;
     event.preventDefault();
     startTextEntry(hit.at, hit);
@@ -689,14 +853,14 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
     }
 
     const chosen = selectedShape(doc);
-    const handle = chosen ? handleAt(chosen, at, pickTolerance()) : null;
+    const handle = chosen ? handleAt(chosen, at, pickTolerance(), minEdgeForHandles()) : null;
     if (handle) {
       canvas.style.cursor = handleCursor(handle);
       setHover(null);
       return;
     }
 
-    const under = shapeAt(doc.present.shapes, at);
+    const under = shapeAt(doc.present.shapes, at, pickTolerance());
     canvas.style.cursor = under ? 'move' : 'default';
     setHover(under ? under.id : null);
   }
@@ -734,14 +898,14 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
 
     if (tool === 'select') {
       const chosen = selectedShape(doc);
-      const handle = chosen ? handleAt(chosen, point, pickTolerance()) : null;
+      const handle = chosen ? handleAt(chosen, point, pickTolerance(), minEdgeForHandles()) : null;
 
       if (handle) {
         drag = { mode: 'resize', handle, shape: chosen, before: doc.present };
         return;
       }
 
-      const hit = shapeAt(doc.present.shapes, point);
+      const hit = shapeAt(doc.present.shapes, point, pickTolerance());
       doc = amend(doc, { ...doc.present, selected: hit ? hit.id : null });
       drag = hit ? { mode: 'move', shape: hit, last: point, before: doc.present } : null;
       render();
@@ -1063,13 +1227,21 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
   function currentStyle() {
     const chosen = selectedShape(doc);
     if (!chosen) {
-      return { colour, width, dash, ends, fill, fillOpacity, text: { ...text } };
+      return {
+        colour, width, dash, ends, corner, fill, fillOpacity,
+        selectedKind: null,
+        text: { ...text },
+      };
     }
     return {
       colour: chosen.colour ?? colour,
       width: chosen.width ?? width,
       dash: dashOf(chosen),
       ends: chosen.kind === 'arrow' || chosen.kind === 'line' ? endsOf(chosen) : ends,
+      corner: CORNERED_KINDS.includes(chosen.kind) ? cornerOf(chosen) : corner,
+      // Which kind is selected, so the toolbar can grey out a control that
+      // means nothing for it without reaching into the document.
+      selectedKind: chosen.kind,
       fill: fillOf(chosen),
       fillOpacity: fillOf(chosen) ? fillAlphaOf(chosen) : fillOpacity,
       text: chosen.kind === 'text'
@@ -1150,11 +1322,28 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
       render();
       notify();
     },
+    /**
+     * Corner radius, in image pixels. Zero is square.
+     *
+     * A property rather than three tools. Rounded rectangle and stadium were
+     * going to be two more entries in a popover that is already twelve, and at
+     * nineteen pixels a square corner and a 1.5 pixel radius are the same
+     * picture, so the icons would have been indistinguishable from the Box.
+     */
+    setCorner(next) {
+      corner = Math.max(0, Number(next) || 0);
+      const chosen = selectedShape(doc);
+      if (chosen && CORNERED_KINDS.includes(chosen.kind)) {
+        restyleSelection({ corner });
+      }
+      render();
+      notify();
+    },
     /** `null` means no fill, which is a value rather than an absence. */
     setFill(next) {
       fill = next;
       const chosen = selectedShape(doc);
-      if (chosen && (chosen.kind === 'rect' || chosen.kind === 'ellipse')) {
+      if (chosen && FILLABLE_TOOLS.includes(chosen.kind)) {
         restyleSelection(next ? { fill: next, fillOpacity } : { fill: null });
       }
       notify();
@@ -1251,6 +1440,8 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
       return doc;
     },
     get state() {
+      // `selectedKind` so the toolbar can disable a control that means nothing
+      // for what is selected, without reaching into the document itself.
       return { tool, edited: isEdited(doc), ...currentStyle() };
     },
     /**
@@ -1267,6 +1458,7 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
       dash = next.dash ?? dash;
       ends = next.lineEnds ?? ends;
       fill = next.fill ?? null;
+      corner = Math.max(0, Number(next.corner) || 0);
       fillOpacity = Number.isFinite(next.fillOpacity) ? next.fillOpacity : fillOpacity;
       text = {
         size: clamp(Math.round(next.textSize ?? text.size), MIN_TEXT_SIZE, MAX_TEXT_SIZE),

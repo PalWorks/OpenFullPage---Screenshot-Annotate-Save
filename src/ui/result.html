@@ -342,8 +342,30 @@
      win and the popover would never hide. Adding #toolbar makes this (1,2,0),
      which beats all of them whatever order they end up in. */
   #toolbar .pop[hidden] { display: none; }
-  .pop.row { display: flex; flex-direction: column; gap: 5px; }
-  .pop.row .opts { display: flex; align-items: center; gap: 6px; }
+  /* THE SHAPES POPOVER
+     Twelve shapes will not sit in one row: that is 442px, wider than the group
+     the popover hangs off and twice any other popover here. Five tracks at the
+     same 216px the two colour popovers use, which makes each cell 35.2 by 28,
+     nineteen percent WIDER than the 30 by 28 of a toolbar button rather than
+     narrower. Seven tracks was the first proposal and gives 23.4px, under the
+     size LIMITATIONS.md L15 already logs as too small.
+
+     Headings rather than hairline rules between the groups. A rule says a
+     boundary exists; a heading says what is on each side of it, and someone
+     opening this for the first time does not yet know that a rhombus and a
+     cylinder are the same kind of thing. */
+  .pop.shapes { width: 216px; display: flex; flex-direction: column; gap: 2px; }
+  .pop.shapes .grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 6px;
+    margin-bottom: 4px;
+  }
+  #toolbar .pop.shapes .grid button.icon { width: 100%; min-width: 0; }
+  .pop.shapes .pop-title.sub { margin-top: 3px; }
+  /* A group whose shapes are all switched off on the options page loses its
+     heading with them, so a label never sits above an empty row. */
+  .pop.shapes .grp-block[hidden] { display: none; }
 
   /* Every popover says what it is. Without it the two colour panels are the same
      grid of swatches twice and nothing on screen distinguishes border from fill.
@@ -684,14 +706,34 @@
             aria-haspopup="true" aria-expanded="false" aria-label="Choose a shape" title="Choose a shape">
       <svg class="caret" viewBox="0 0 8 8" aria-hidden="true" focusable="false"><path d="M1.4 2.9 4 5.5l2.6-2.6"/></svg>
     </button>
-    <div class="pop row" id="pop-shapes" role="group" aria-labelledby="pop-shapes-title" hidden>
+    <div class="pop shapes" id="pop-shapes" role="group" aria-labelledby="pop-shapes-title" hidden>
       <p class="pop-title" id="pop-shapes-title">Shapes</p>
-      <div class="opts">
-      <button class="icon" type="button" data-tool="arrow" aria-pressed="true" aria-label="Arrow" title="Arrow (A)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M4 16 16 4"/><path d="M10.2 4H16v5.8"/></svg></button>
-      <button class="icon" type="button" data-tool="line" aria-pressed="false" aria-label="Line" title="Line (L)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M4 16 16 4"/></svg></button>
-      <button class="icon" type="button" data-tool="rect" aria-pressed="false" aria-label="Box" title="Box (R)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect x="3.5" y="5" width="13" height="10" rx="1.5"/></svg></button>
-      <button class="icon" type="button" data-tool="ellipse" aria-pressed="false" aria-label="Ellipse" title="Ellipse (O)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><ellipse cx="10" cy="10" rx="6.6" ry="5.4"/></svg></button>
-      <button class="icon" type="button" data-tool="highlight" aria-pressed="false" aria-label="Highlighter" title="Highlighter (H)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M11.8 3.4 16.6 8.2l-6.2 6.2H5.6V9.6z"/><path d="M3.5 17.5h13"/></svg></button>
+      <div class="grp-block" data-group="lines">
+        <p class="pop-title sub" id="pop-shapes-lines">Lines</p>
+        <div class="grid" role="group" aria-labelledby="pop-shapes-lines">
+        <button class="icon" type="button" data-tool="arrow" data-shape="arrow" aria-pressed="true" aria-label="Arrow" title="Arrow (A)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M4 16 16 4"/><path d="M10.2 4H16v5.8"/></svg></button>
+        <button class="icon" type="button" data-tool="line" data-shape="line" aria-pressed="false" aria-label="Line" title="Line (L)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M4 16 16 4"/></svg></button>
+        </div>
+      </div>
+      <div class="grp-block" data-group="boxes">
+        <p class="pop-title sub" id="pop-shapes-boxes">Boxes</p>
+        <div class="grid" role="group" aria-labelledby="pop-shapes-boxes">
+        <button class="icon" type="button" data-tool="rect" data-shape="rect" aria-pressed="false" aria-label="Box" title="Box (R)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect id="box-glyph" x="3.5" y="5" width="13" height="10" rx="0"/></svg></button>
+        <button class="icon" type="button" data-tool="ellipse" data-shape="ellipse" aria-pressed="false" aria-label="Ellipse" title="Ellipse (O)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><ellipse cx="10" cy="10" rx="6.6" ry="5.4"/></svg></button>
+        <button class="icon" type="button" data-tool="callout" data-shape="callout" aria-pressed="false" aria-label="Callout" title="Callout"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M4.4 3.8h11.2a1.8 1.8 0 0 1 1.8 1.8v6.2a1.8 1.8 0 0 1-1.8 1.8H9.4l-3.6 3.4v-3.4H4.4a1.8 1.8 0 0 1-1.8-1.8V5.6a1.8 1.8 0 0 1 1.8-1.8Z"/></svg></button>
+        <button class="icon" type="button" data-tool="loupe" data-shape="loupe" aria-pressed="false" aria-label="Loupe" title="Loupe"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="8.7" cy="8.7" r="5.3"/><path d="M12.6 12.6 17.3 17.3"/></svg></button>
+        <button class="icon" type="button" data-tool="highlight" data-shape="highlight" aria-pressed="false" aria-label="Highlighter" title="Highlighter (H)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M11.8 3.4 16.6 8.2l-6.2 6.2H5.6V9.6z"/><path d="M3.5 17.5h13"/></svg></button>
+        </div>
+      </div>
+      <div class="grp-block" data-group="flowchart">
+        <p class="pop-title sub" id="pop-shapes-flowchart">Flowchart</p>
+        <div class="grid" role="group" aria-labelledby="pop-shapes-flowchart">
+        <button class="icon" type="button" data-tool="rhombus" data-shape="rhombus" aria-pressed="false" aria-label="Rhombus" title="Rhombus (D)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M10 3.6 16.4 10 10 16.4 3.6 10Z"/></svg></button>
+        <button class="icon" type="button" data-tool="hexagon" data-shape="hexagon" aria-pressed="false" aria-label="Hexagon" title="Hexagon (G)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M6.5 4.7h7L17 10l-3.5 5.3h-7L3 10Z"/></svg></button>
+        <button class="icon" type="button" data-tool="parallelogram" data-shape="parallelogram" aria-pressed="false" aria-label="Parallelogram" title="Parallelogram"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M6.9 5h10.2l-4 10H2.9Z"/></svg></button>
+        <button class="icon" type="button" data-tool="triangle" data-shape="triangle" aria-pressed="false" aria-label="Triangle" title="Triangle"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M10 4 17 16H3Z"/></svg></button>
+        <button class="icon" type="button" data-tool="cylinder" data-shape="cylinder" aria-pressed="false" aria-label="Cylinder" title="Cylinder"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><ellipse cx="10" cy="6.1" rx="5" ry="1.9"/><path d="M5 6.1v7.8c0 1.05 2.24 1.9 5 1.9s5-.85 5-1.9V6.1"/></svg></button>
+        </div>
       </div>
     </div>
   </span>
@@ -785,6 +827,16 @@
       <button class="opt" type="button" data-ends="start" aria-pressed="false" aria-label="Arrow at the start" title="Arrow at the start"><svg viewBox="0 0 104 18" aria-hidden="true" focusable="false"><path d="M6 9h92" stroke-width="2.4"/><path d="M17 3.5 6 9l11 5.5" stroke-width="2.4"/></svg></button>
       <button class="opt" type="button" data-ends="end" aria-pressed="true" aria-label="Arrow at the end" title="Arrow at the end"><svg viewBox="0 0 104 18" aria-hidden="true" focusable="false"><path d="M6 9h92" stroke-width="2.4"/><path d="M87 3.5 98 9l-11 5.5" stroke-width="2.4"/></svg></button>
       <button class="opt" type="button" data-ends="both" aria-pressed="false" aria-label="Arrows at both ends" title="Arrows at both ends"><svg viewBox="0 0 104 18" aria-hidden="true" focusable="false"><path d="M6 9h92" stroke-width="2.4"/><path d="M17 3.5 6 9l11 5.5" stroke-width="2.4"/><path d="M87 3.5 98 9l-11 5.5" stroke-width="2.4"/></svg></button>
+      <hr>
+      <!-- Corner radius. A property of the Box rather than two more tools:
+           rounded rectangle and stadium would have been two more cells in a
+           popover that is already twelve, and at nineteen pixels a square
+           corner and a small radius are the same picture. Disabled, not hidden,
+           when the current tool has no corners, so the popover does not change
+           height as the tool changes. -->
+      <button class="opt" type="button" data-corner="0" aria-pressed="true" aria-label="Square corners" title="Square corners"><svg viewBox="0 0 104 18" aria-hidden="true" focusable="false"><rect x="27" y="2.6" width="50" height="12.8" rx="0" stroke-width="2.4"/></svg></button>
+      <button class="opt" type="button" data-corner="12" aria-pressed="false" aria-label="Rounded corners" title="Rounded corners"><svg viewBox="0 0 104 18" aria-hidden="true" focusable="false"><rect x="27" y="2.6" width="50" height="12.8" rx="4" stroke-width="2.4"/></svg></button>
+      <button class="opt" type="button" data-corner="9999" aria-pressed="false" aria-label="Pill" title="Pill"><svg viewBox="0 0 104 18" aria-hidden="true" focusable="false"><rect x="27" y="2.6" width="50" height="12.8" rx="6.4" stroke-width="2.4"/></svg></button>
       <hr>
       <div class="numrow">
         <label for="stroke-px">Exact</label>

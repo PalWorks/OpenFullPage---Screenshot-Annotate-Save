@@ -12,6 +12,7 @@
 
 import { applyFilename, captureBasename } from '../lib/plan.js';
 import { buildPdf, deflate, planPdfPages, rgbaToRgb } from '../lib/pdf.js';
+import { CORNERED_KINDS, SHAPE_TOOLS } from '../lib/edit.js';
 import { createEditor } from './editor.js';
 import { defaultStyle, saveSettings } from '../lib/settings.js';
 import { THEME_STATE, cycleTheme, startTheme, themeLabel } from '../lib/theme.js';
@@ -59,13 +60,16 @@ const ui = {
   textUnderline: el('text-underline'),
 };
 
-/** The tools that live behind the Shapes chevron, in popover order. */
-const SHAPE_TOOLS = ['arrow', 'line', 'rect', 'ellipse', 'highlight'];
-
 // Single-key tool shortcuts, which is how tool palettes are normally driven.
+//
+// Only the two new shapes with a real mnemonic get a key: d for diamond and g
+// for hexagon. The other five would need arbitrary letters, and inventing five
+// arbitrary letters now makes ROADMAP F27, a discoverable shortcut for every
+// tool, harder rather than easier.
 const TOOL_KEYS = {
   v: 'select', a: 'arrow', l: 'line', r: 'rect', o: 'ellipse',
   h: 'highlight', p: 'pixelate', t: 'text', n: 'counter', c: 'crop',
+  d: 'rhombus', g: 'hexagon',
 };
 
 const JPEG_QUALITY = 0.92;
@@ -604,6 +608,28 @@ const normaliseHex = (raw) => {
   return /^[0-9a-f]{6}$/i.test(value) ? `#${value.toLowerCase()}` : null;
 };
 
+/**
+ * The corner controls, and the Box glyph that has to agree with them.
+ *
+ * The Box icon has carried `rx="1.5"` since it was drawn while the tool drew
+ * square corners, so the icon has always been slightly wrong. Now that the
+ * radius is a real property the glyph shows it, which fixes the old lie and
+ * makes the current radius visible without opening anything.
+ *
+ * The row is disabled rather than hidden when the tool has no corners. Hiding
+ * it would change the popover's height as the tool changes, which moves the
+ * Exact field under the pointer.
+ */
+function showCorner(radius, tool, selectedKind) {
+  const applies = CORNERED_KINDS.includes(tool)
+    || CORNERED_KINDS.includes(selectedKind ?? '');
+  for (const button of ui.toolbar.querySelectorAll('[data-corner]')) {
+    button.disabled = !applies;
+  }
+  const glyph = el('box-glyph');
+  if (glyph) glyph.setAttribute('rx', radius <= 0 ? '0' : radius > 100 ? '5' : '2.6');
+}
+
 /** Push the editor's current style back onto every glyph and pressed state. */
 function showStyle(style, tool) {
   if (!style) return;
@@ -625,6 +651,8 @@ function showStyle(style, tool) {
   markPressed('[data-width]', (b) => Number(b.dataset.width) === style.width);
   markPressed('[data-dash]', (b) => b.dataset.dash === style.dash);
   markPressed('[data-ends]', (b) => b.dataset.ends === style.ends);
+  markPressed('[data-corner]', (b) => Number(b.dataset.corner) === (style.corner ?? 0));
+  showCorner(style.corner ?? 0, tool, style.selectedKind);
 
   ui.borderGlyph.setAttribute('stroke', style.colour);
   markPressed('[data-paint="border"]', (b) => b.dataset.colour === style.colour);
@@ -767,6 +795,13 @@ for (const button of ui.toolbar.querySelectorAll('[data-dash]')) {
   button.addEventListener('click', () => {
     editor?.setDash(button.dataset.dash);
     saveSettings({ dash: button.dataset.dash });
+  });
+}
+
+for (const button of ui.toolbar.querySelectorAll('[data-corner]')) {
+  button.addEventListener('click', () => {
+    editor?.setCorner(Number(button.dataset.corner));
+    saveSettings({ corner: Number(button.dataset.corner) });
   });
 }
 

@@ -139,17 +139,53 @@ test('reset clears shapes and crop together', () => {
 test('clicking picks the topmost shape under the point', () => {
   const under = box('under', 0, 0, 200, 200);
   const over = box('over', 50, 50, 50, 50);
-  assert.equal(shapeAt([under, over], { x: 60, y: 60 }).id, 'over');
-  assert.equal(shapeAt([under, over], { x: 10, y: 10 }).id, 'under');
-  assert.equal(shapeAt([under, over], { x: 900, y: 900 }), null);
+  assert.equal(shapeAt([under, over], { x: 60, y: 60 }, 4).id, 'over');
+  assert.equal(shapeAt([under, over], { x: 10, y: 10 }, 4).id, 'under');
+  assert.equal(shapeAt([under, over], { x: 900, y: 900 }, 4), null);
 });
 
 test('a thin line is still clickable near it, not only exactly on it', () => {
   const line = arrow('a', 0, 0, 200, 0);
-  assert.ok(hits(line, { x: 100, y: 4 }));
-  assert.ok(!hits(line, { x: 100, y: 60 }));
+  assert.ok(hits(line, { x: 100, y: 4 }, 9));
+  assert.ok(!hits(line, { x: 100, y: 60 }, 9));
   // Past the end of the segment, not just off its axis.
-  assert.ok(!hits(line, { x: 400, y: 0 }));
+  assert.ok(!hits(line, { x: 400, y: 0 }, 9));
+});
+
+test('hit testing has no default tolerance, because there is no safe one', () => {
+  // DECISIONS.md D19: chrome is divided by the screen scale because a fixed
+  // count of image pixels is a different distance under the pointer at every
+  // display scale. A default here would work at 100% and fail on a capture
+  // shown at 12%, which is the case this extension exists for. A caller that
+  // forgets selects nothing, which is visible, instead of selecting almost
+  // right, which is not.
+  const line = arrow('a', 0, 0, 200, 0);
+  assert.equal(hits(line, { x: 100, y: 4 }, undefined), false);
+  assert.equal(hits(box('a', 0, 0, 100, 60), { x: 104, y: 30 }, undefined), false);
+  // The tolerance genuinely scales: what misses at 2 hits at 40.
+  assert.equal(hits(box('a', 0, 0, 100, 60), { x: 130, y: 30 }, 2), false);
+  assert.equal(hits(box('a', 0, 0, 100, 60), { x: 130, y: 30 }, 40), true);
+});
+
+test('a click inside an unfilled shape selects it, and the empty corner does not', () => {
+  // The rhombus is the reason the geometry table exists: a bounding box test
+  // says its empty corner is a hit, and every user who clicks there disagrees.
+  const rhombus = { ...box('a', 0, 0, 200, 200), kind: 'rhombus' };
+  assert.ok(hits(rhombus, { x: 100, y: 100 }, 4), 'centre should hit');
+  assert.equal(hits(rhombus, { x: 4, y: 4 }, 4), false, 'empty corner should miss');
+  // A rectangle of the same bounds does take the corner, so this is testing the
+  // shape and not just an unreachable point.
+  assert.ok(hits(box('a', 0, 0, 200, 200), { x: 4, y: 4 }, 4));
+});
+
+test('a counter is a circle, not the square it sits in', () => {
+  const counter = {
+    id: 'c', kind: 'counter', at: { x: 100, y: 100 }, radius: 20, colour: '#ef4444', width: 4,
+  };
+  assert.ok(hits(counter, { x: 100, y: 100 }, 0));
+  assert.ok(hits(counter, { x: 118, y: 100 }, 0));
+  // The corner of its bounding box is outside the circle by about 8 pixels.
+  assert.equal(hits(counter, { x: 84, y: 84 }, 0), false);
 });
 
 test('moving a shape shifts every part of it', () => {
@@ -160,15 +196,68 @@ test('moving a shape shifts every part of it', () => {
   assert.deepEqual(moved.to, { x: 13, y: 14 });
 });
 
-test('a box has four corner handles, a line has its two ends', () => {
-  assert.deepEqual(handlesFor(box('a', 0, 0, 100, 60)).map((h) => h.id), ['nw', 'ne', 'sw', 'se']);
-  assert.deepEqual(handlesFor(arrow('a', 1, 2, 3, 4)).map((h) => h.id), ['from', 'to']);
+test('a box has eight handles, a line has its two ends', () => {
+  assert.deepEqual(
+    handlesFor(box('a', 0, 0, 100, 60), 40).map((h) => h.id),
+    ['nw', 'ne', 'se', 'sw', 'n', 'e', 's', 'w'],
+  );
+  assert.deepEqual(handlesFor(arrow('a', 1, 2, 3, 4), 40).map((h) => h.id), ['from', 'to']);
+});
+
+test('a shape too small for eight handles keeps its corners and drops the midpoints', () => {
+  // Whether a shape is small is a fact about the screen, so the caller passes
+  // the threshold in image pixels. The same 100 by 60 box is roomy at one
+  // display scale and cramped at another, and only the corners survive.
+  const small = box('a', 0, 0, 100, 60);
+  assert.deepEqual(handlesFor(small, 61).map((h) => h.id), ['nw', 'ne', 'se', 'sw']);
+  assert.deepEqual(handlesFor(small, 60).map((h) => h.id).length, 8);
+  // It is the short side that decides, not the long one.
+  assert.deepEqual(handlesFor(box('a', 0, 0, 900, 10), 40).map((h) => h.id), ['nw', 'ne', 'se', 'sw']);
+});
+
+test('text keeps four corners however roomy it is, because an edge would stretch it', () => {
+  const text = {
+    id: 't', kind: 'text', at: { x: 0, y: 0 }, w: 400, h: 300, text: 'hello',
+    size: 24, colour: '#18181b', width: 4,
+  };
+  assert.deepEqual(handlesFor(text, 1).map((h) => h.id), ['nw', 'ne', 'se', 'sw']);
+});
+
+test('handleAt and handlesFor agree about which handles exist', () => {
+  // Two functions deciding separately is how you get a handle you can see and
+  // cannot grab, so they take the same threshold and one calls the other.
+  const shape = box('a', 0, 0, 100, 60);
+  for (const minEdge of [10, 60, 61, 200]) {
+    for (const handle of handlesFor(shape, minEdge)) {
+      assert.equal(handleAt(shape, { x: handle.x, y: handle.y }, 6, minEdge), handle.id);
+    }
+  }
+  // The midpoint is not grabbable once it is not offered.
+  assert.equal(handleAt(shape, { x: 50, y: 0 }, 6, 61), null);
+  assert.equal(handleAt(shape, { x: 50, y: 0 }, 6, 60), 'n');
+});
+
+test('an edge handle moves one edge and leaves the other three alone', () => {
+  const start = box('a', 10, 20, 100, 60);
+  assert.deepEqual(resizeShape(start, 'n', { x: 999, y: 0 }).rect, { x: 10, y: 0, w: 100, h: 80 });
+  assert.deepEqual(resizeShape(start, 's', { x: 999, y: 200 }).rect, { x: 10, y: 20, w: 100, h: 180 });
+  assert.deepEqual(resizeShape(start, 'e', { x: 200, y: 999 }).rect, { x: 10, y: 20, w: 190, h: 60 });
+  assert.deepEqual(resizeShape(start, 'w', { x: 0, y: 999 }).rect, { x: 0, y: 20, w: 110, h: 60 });
+});
+
+test('resizing text ignores an edge handle', () => {
+  const text = {
+    id: 't', kind: 'text', at: { x: 0, y: 0 }, w: 100, h: 30, text: 'hello',
+    size: 24, colour: '#18181b', width: 4,
+  };
+  assert.equal(resizeShape(text, 'e', { x: 400, y: 0 }), text, 'an edge handle must be a no-op');
+  assert.notEqual(resizeShape(text, 'se', { x: 400, y: 120 }).size, text.size);
 });
 
 test('handles are only picked up when the pointer is near them', () => {
   const shape = box('a', 0, 0, 100, 60);
-  assert.equal(handleAt(shape, { x: 100, y: 60 }, 10), 'se');
-  assert.equal(handleAt(shape, { x: 50, y: 30 }, 10), null);
+  assert.equal(handleAt(shape, { x: 100, y: 60 }, 10, 40), 'se');
+  assert.equal(handleAt(shape, { x: 50, y: 30 }, 10, 40), null);
 });
 
 test('dragging a corner resizes against the opposite corner', () => {
