@@ -432,7 +432,7 @@ function selectTool(name) {
   // Picking Arrow or Line is also a statement about the arrowheads, and the
   // editor reconciles the two. Persist what it settled on rather than what was
   // asked for, or the next capture opens on the pair that disagreed.
-  saveSettings({ tool: editor.state.tool, lineEnds: editor.state.style.ends });
+  saveSettings({ tool: editor.state.tool, lineEnds: editor.state.ends });
 }
 
 /** Every tool is inert until there is an image to use it on. */
@@ -776,7 +776,7 @@ for (const button of ui.toolbar.querySelectorAll('[data-ends]')) {
     editor.setEnds(button.dataset.ends);
     // Taking the arrowheads off turns the tool into Line, and putting one back
     // turns it into Arrow, so both halves are saved together.
-    saveSettings({ lineEnds: editor.state.style.ends, tool: editor.state.tool });
+    saveSettings({ lineEnds: editor.state.ends, tool: editor.state.tool });
   });
 }
 

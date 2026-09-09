@@ -1482,15 +1482,26 @@ async function main() {
 
   let cdp;
   const sessionNames = new Map();
+  // Every uncaught page exception seen during the run. Not empty means failed.
+  const uncaught = [];
+
   try {
     cdp = await Cdp.connect(version.webSocketDebuggerUrl);
     await cdp.send('Target.setDiscoverTargets', { discover: true });
 
     // Surface anything the extension throws, instead of waiting for a timeout
     // and guessing. This is the difference between "it hung" and a stack trace.
+    //
+    // And FAIL on it. This used to print the exception and let the run exit 0,
+    // which is how the bug above survived: the suite reported every check
+    // passing over thirty three uncaught TypeErrors, run after run. A check
+    // that cannot fail is a comment.
     cdp.on('Runtime.exceptionThrown', ({ exceptionDetails }, frame) => {
       const where = sessionNames.get(frame.sessionId) ?? frame.sessionId?.slice(0, 6) ?? 'browser';
-      console.log(`  !! uncaught (${where}): ${exceptionDetails.exception?.description ?? exceptionDetails.text}`);
+      const detail = exceptionDetails.exception?.description ?? exceptionDetails.text;
+      console.log(`  !! uncaught (${where}): ${detail}`);
+      uncaught.push(`${where}: ${detail}`);
+      process.exitCode = 1;
     });
     cdp.on('Runtime.consoleAPICalled', ({ type, args }) => {
       if (type !== 'error' && type !== 'warning') return;
