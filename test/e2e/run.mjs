@@ -319,6 +319,23 @@ async function dragOn(cdp, session, from, to, steps = 8) {
   await sleep(120);
 }
 
+/**
+ * A real double click, so the editor's own `dblclick` listener fires.
+ *
+ * `clickCount` is what makes the browser call the second press a double click,
+ * and it has to be on the press and the release of both, or Chrome counts two
+ * separate clicks and no `dblclick` is ever dispatched.
+ */
+async function doubleClickOn(cdp, session, at) {
+  for (const clickCount of [1, 2]) {
+    await cdp.send('Input.dispatchMouseEvent',
+      { type: 'mousePressed', ...at, button: 'left', buttons: 1, clickCount }, session);
+    await cdp.send('Input.dispatchMouseEvent',
+      { type: 'mouseReleased', ...at, button: 'left', buttons: 0, clickCount }, session);
+  }
+  await sleep(120);
+}
+
 const canvasState = (cdp, session) =>
   evaluate(cdp, session, `(() => {
     const c = document.getElementById('canvas');
@@ -482,6 +499,7 @@ async function exerciseTextEntry(cdp, session, check, p, problems) {
     if (!i) return JSON.stringify({ missing: true });
     const r = i.getBoundingClientRect();
     return JSON.stringify({
+      tag: i.tagName,
       position: getComputedStyle(i).position,
       onScreen: r.top > -4 && r.bottom < innerHeight + 4 && r.left > -4 && r.width > 0,
       focused: document.activeElement === i,
@@ -510,19 +528,137 @@ async function exerciseTextEntry(cdp, session, check, p, problems) {
     `focusing the text box scrolled the page to the bottom (${box.scrollY} of ${box.maxScroll})`,
     'focusing it does not throw the page to the bottom');
 
-  // Type something and commit it, then prove it reached the canvas.
-  const before = await countColour(cdp, session, { x: 0, y: 0, w: 900, h: 600 }, [239, 68, 68]);
-  await evaluate(cdp, session, `(() => {
+  check(box.tag === 'TEXTAREA',
+    `the text box is a <${box.tag.toLowerCase()}>, which cannot hold a second line`,
+    'the text box is a textarea, so a caption can be more than one line');
+
+  // Two lines. The box has to grow to show the second one: a box that hides the
+  // line being typed is worse than the single line box it replaced.
+  const grown = JSON.parse(await evaluate(cdp, session, `(() => {
     const i = document.querySelector('.text-entry');
-    i.value = 'Hello';
-    i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    const one = i.getBoundingClientRect().height;
+    i.value = 'Hi there\\nHello wide world\\nEnd';
+    i.dispatchEvent(new Event('input', { bubbles: true }));
+    return JSON.stringify({ one, two: i.getBoundingClientRect().height });
+  })()`));
+  check(grown.two > grown.one + 4,
+    `the text box did not grow for a second line (${grown.one} then ${grown.two})`,
+    `the text box grows with what is typed (${Math.round(grown.one)} to ${Math.round(grown.two)}px)`);
+
+  // Enter is a newline now, so it must NOT commit. This is the regression that
+  // would make multi-line text impossible to type.
+  const beforeEnter = await countColour(cdp, session, { x: 0, y: 0, w: 900, h: 600 }, [239, 68, 68]);
+  await evaluate(cdp, session, `(() => {
+    document.querySelector('.text-entry')
+      .dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
   })()`);
-  await sleep(200);
+  await sleep(120);
+  const stillOpen = await evaluate(cdp, session, `String(!!document.querySelector('.text-entry'))`);
+  check(stillOpen === 'true', 'Enter closed the text box, so a second line cannot be typed',
+    'Enter does not commit, it starts a new line');
+
+  // Escape does commit, and both lines have to reach the canvas.
+  await evaluate(cdp, session, `(() => {
+    document.querySelector('.text-entry')
+      .dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  })()`);
+  await sleep(220);
   const after = await countColour(cdp, session, { x: 0, y: 0, w: 900, h: 600 }, [239, 68, 68]);
-  check(after > before,
-    `committing the text drew nothing (${before} then ${after} red pixels)`,
-    `the typed text was drawn onto the canvas (${after - before} pixels)`);
-  await clickButton(cdp, session, '#undo');
+  check(after > beforeEnter,
+    `committing the text drew nothing (${beforeEnter} then ${after} red pixels)`,
+    `the typed text was drawn onto the canvas (${after - beforeEnter} pixels)`);
+  check(!(await evaluate(cdp, session, `String(!!document.querySelector('.text-entry'))`) === 'true'),
+    'Escape left the text box open', 'Escape finishes the text');
+
+  // Double click reopens it with the words already in it, which is the whole
+  // difference between restyling text and editing it.
+  await clickButton(cdp, session, '[data-tool="select"]');
+  await doubleClickOn(cdp, session, p(0.33, 0.31));
+  await sleep(200);
+  const reopened = await evaluate(cdp, session,
+    `JSON.stringify(document.querySelector('.text-entry')?.value ?? null)`).then(JSON.parse);
+  check(reopened === 'Hi there\nHello wide world\nEnd',
+    `double clicking the text reopened it holding ${JSON.stringify(reopened)}`,
+    'double clicking a text shape reopens it with its own words');
+
+  // Alignment moves the pixels. Centre the block and the shorter line has to
+  // shift right, which no amount of restyling would do on its own.
+  if (reopened !== null) {
+    await evaluate(cdp, session, `(() => {
+      document.querySelector('.text-entry')
+        .dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    })()`);
+    await sleep(200);
+  }
+  const flush = await canvasSignature(cdp, session);
+  await clickButton(cdp, session, '[data-pop="pop-text"]');
+  await clickButton(cdp, session, '[data-align="center"]');
+  await sleep(220);
+  const centred = await canvasSignature(cdp, session);
+  check(centred !== flush, 'centring the text changed nothing on the canvas',
+    'centring redraws the block, so the setting reaches the pixels');
+
+  // Justify needs a line that is not the last one and has more than one word in
+  // it, which is why the typed text is three lines. The last line of a justified
+  // block is set flush left, exactly as it is in print, so a two line block would
+  // draw identically to left aligned and prove nothing.
+  await clickButton(cdp, session, '[data-align="justify"]');
+  await sleep(220);
+  // Justification is the one alignment whose result is worth looking at rather
+  // than only measuring, so it is offered to the shot directory like the rest.
+  if (process.env.FPC_SHOT_DIR) {
+    await shoot(cdp, session, join(process.env.FPC_SHOT_DIR, 'text-justified.png'));
+  }
+  const justified = await canvasSignature(cdp, session);
+  check(justified !== centred && justified !== flush,
+    'justify drew what left or centre drew, so the words were not spread',
+    'justify spreads the words, and draws something neither of the others do');
+
+  // And back. Left align has to reproduce the original rendering exactly, which
+  // is a stronger statement than "it changed": it says nothing else moved.
+  await clickButton(cdp, session, '[data-align="left"]');
+  await sleep(220);
+  check(await canvasSignature(cdp, session) === flush,
+    'going back to left align did not reproduce the original drawing',
+    'left align draws exactly what it drew before, so nothing else was disturbed');
+  await evaluate(cdp, session, `document.body.click()`);
+
+  // Undo back to where this function found the canvas, and no further: undoing
+  // blind would take the shapes the earlier checks drew with it. The step count
+  // is asserted as well as the outcome, so a stray extra commit is caught rather
+  // than quietly absorbed by a longer loop.
+  let steps = 0;
+  const red = () => countColour(cdp, session, { x: 0, y: 0, w: 900, h: 600 }, [239, 68, 68]);
+  while (steps < 10 && await red() > beforeEnter) {
+    await clickButton(cdp, session, '#undo');
+    await sleep(90);
+    steps += 1;
+  }
+  check(await red() <= beforeEnter && steps <= 6,
+    `undoing the text took ${steps} steps and left ${(await red()) - beforeEnter} of its pixels behind`,
+    `undo removed the text in ${steps} steps and left the shapes drawn before it`);
+}
+
+/**
+ * A cheap checksum of what is actually painted on the canvas.
+ *
+ * Used where the question is "did this setting reach the pixels", which counting
+ * a colour cannot answer once more than one shape uses that colour. It also lets
+ * a check say something stronger than "something changed": setting the alignment
+ * back has to reproduce the original signature exactly.
+ */
+async function canvasSignature(cdp, session) {
+  return evaluate(cdp, session, `(() => {
+    const c = document.getElementById('canvas');
+    const g = c.getContext('2d', { willReadFrequently: true });
+    const { data } = g.getImageData(0, 0, Math.min(900, c.width), Math.min(600, c.height));
+    let hash = 2166136261;
+    for (let i = 0; i < data.length; i += 4) {
+      hash ^= data[i] + data[i + 1] * 3 + data[i + 2] * 7;
+      hash = Math.imul(hash, 16777619);
+    }
+    return String(hash >>> 0);
+  })()`);
 }
 
 /**
@@ -743,7 +879,12 @@ async function exerciseEditor(cdp, session, log) {
   check(afterMove > 200, 'the arrow vanished when moved', 'the selected arrow moved');
 
   // 3. Restyle the selection: changing colour must repaint the existing shape.
-  await clickButton(cdp, session, '[data-colour="#3b82f6"]');
+  //
+  // Qualified by palette. `[data-colour]` alone was ambiguous the moment the text
+  // inspector grew a colour row of its own: `querySelector` takes the first match
+  // in the document, the text row comes first, and this quietly started recolouring
+  // text that was not there instead of the selected arrow.
+  await clickButton(cdp, session, '[data-paint="border"][data-colour="#3b82f6"]');
   const blue = await countColour(cdp, session, scanRect, BLUE);
   const redLeft = await countColour(cdp, session, scanRect, RED);
   check(blue > 200 && redLeft < 200,
@@ -765,7 +906,7 @@ async function exerciseEditor(cdp, session, log) {
     'delete restored the original pixels exactly');
 
   // 6. A box, then redaction over it, redaction must change pixels for real.
-  await clickButton(cdp, session, '[data-colour="#ef4444"]');
+  await clickButton(cdp, session, '[data-paint="border"][data-colour="#ef4444"]');
   await clickButton(cdp, session, '[data-tool="rect"]');
   await dragOn(cdp, session, p(0.1, 0.1), p(0.45, 0.4));
   const boxed = await countColour(cdp, session, scanRect, RED);

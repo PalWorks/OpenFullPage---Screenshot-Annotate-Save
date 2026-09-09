@@ -20,6 +20,8 @@ import {
   MAX_TEXT_SIZE,
   MIN_STROKE,
   MIN_TEXT_SIZE,
+  TEXT_LINE_RATIO,
+  alignOf,
   amend,
   arrowGeometry,
   boundsOf,
@@ -46,6 +48,8 @@ import {
   isEdited,
   isUsableCrop,
   isUsableDrag,
+  linesOf,
+  measureText,
   moveCrop,
   moveShape,
   newId,
@@ -66,7 +70,6 @@ const DASH = [8, 6];
 const HANDLE_SIZE = 9;
 const HIGHLIGHT_ALPHA = 0.35;
 const PIXELATE_BLOCKS = 14;
-const TEXT_LINE_RATIO = 1.25;
 
 export function createEditor({ base, canvas, onChange, initial = {} }) {
   const ctx = canvas.getContext('2d');
@@ -87,10 +90,19 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
     bold: initial.textBold !== false,
     italic: initial.textItalic === true,
     underline: initial.textUnderline === true,
+    align: initial.textAlign ?? 'left',
+    // Text keeps its own colour rather than borrowing the stroke colour. An
+    // arrow pointing at a thing and a caption naming it are rarely wanted in the
+    // same colour, and the default matches the stroke so nothing changes for
+    // anyone who never opens the control.
+    colour: initial.textColour ?? initial.colour ?? '#ef4444',
   };
 
   let drag = null;
   let editing = null;
+  // The shape currently open in the text box, hidden from the canvas while its
+  // own words sit over it. Null while a new box is being typed into.
+  let editingId = null;
 
   /**
    * A crop that has been drawn but not applied.
@@ -252,27 +264,73 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
    */
   function drawText(shape, dx, dy) {
     ctx.font = fontOf(shape);
+    // Every line is placed by hand from the block's own left edge, so the canvas
+    // alignment is left throughout and `align` is applied as an offset. Letting
+    // the canvas align would need a different origin per line and would put the
+    // underline in the wrong place, since that is drawn from the same origin.
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
 
-    const lines = String(shape.text).split('\n');
+    const lines = linesOf(shape);
+    const align = alignOf(shape);
+    const widths = lines.map((line) => ctx.measureText(line).width);
+    const block = Math.max(0, ...widths);
+    const left = shape.at.x + dx;
+
     lines.forEach((line, i) => {
       const y = shape.at.y + dy + i * shape.size * TEXT_LINE_RATIO;
-      ctx.fillText(line, shape.at.x + dx, y);
+      // The last line of a justified block is set flush left, which is what
+      // justification means everywhere it is done. Justifying it too would space
+      // out a three word closing line across the whole block.
+      const spread = align === 'justify' && i < lines.length - 1;
+      const x = left + indentFor(align, block, widths[i]);
+      const run = spread
+        ? drawJustified(line, x, y, block)
+        : (ctx.fillText(line, x, y), widths[i]);
 
       if (shape.underline === true && line.length > 0) {
-        const run = ctx.measureText(line).width;
         ctx.save();
         ctx.strokeStyle = shape.colour;
         ctx.lineWidth = Math.max(1, shape.size / 14);
         ctx.setLineDash([]);
         ctx.beginPath();
-        ctx.moveTo(shape.at.x + dx, y + shape.size * 1.06);
-        ctx.lineTo(shape.at.x + dx + run, y + shape.size * 1.06);
+        ctx.moveTo(x, y + shape.size * 1.06);
+        ctx.lineTo(x + run, y + shape.size * 1.06);
         ctx.stroke();
         ctx.restore();
       }
     });
+  }
+
+  /** How far into the block a line of `width` starts, for a given alignment. */
+  function indentFor(align, block, width) {
+    if (align === 'center') return (block - width) / 2;
+    if (align === 'right') return block - width;
+    return 0;
+  }
+
+  /**
+   * Draw one justified line and return the width it actually covered.
+   *
+   * The gaps between words carry the slack, which is how justification is done:
+   * stretching the glyphs themselves would distort the type. A line with one word
+   * has nowhere to put the slack, so it is drawn flush left, which is also what a
+   * typesetter would do with it.
+   */
+  function drawJustified(line, x, y, block) {
+    const words = line.split(' ').filter((word) => word.length > 0);
+    if (words.length < 2) {
+      ctx.fillText(line, x, y);
+      return ctx.measureText(line).width;
+    }
+    const ink = words.reduce((total, word) => total + ctx.measureText(word).width, 0);
+    const gap = (block - ink) / (words.length - 1);
+    let at = x;
+    for (const word of words) {
+      ctx.fillText(word, at, y);
+      at += ctx.measureText(word).width + gap;
+    }
+    return block;
   }
 
   /**
@@ -399,7 +457,9 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
     }
 
     ctx.drawImage(base, crop.x, crop.y, crop.w, crop.h, 0, 0, crop.w, crop.h);
-    for (const shape of doc.present.shapes) drawShape(shape, crop);
+    for (const shape of doc.present.shapes) {
+      if (shape.id !== editingId) drawShape(shape, crop);
+    }
 
     if (preview) {
       if (preview.kind === 'crop') drawCropOverlay(preview.rect, crop, false);
@@ -503,6 +563,27 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
     }
     return null;
   }
+
+  /**
+   * Double click a text shape to edit its words.
+   *
+   * Restyling an existing text shape already worked; changing what it said meant
+   * deleting it and typing again. `dblclick` rather than a second pointerdown,
+   * because the browser already tracks what counts as a double click and doing
+   * it by hand means inventing a timing threshold that will be wrong somewhere.
+   */
+  canvas.addEventListener('dblclick', (event) => {
+    if (editing || pendingCrop) return;
+    // Select only. With the text tool live, the first click of a double click has
+    // already opened a new box, so re-editing there would fight itself. Finishing
+    // a box hands the toolbar back to select anyway, which is where you already
+    // are the moment you might want to change what you just typed.
+    if (tool !== 'select') return;
+    const hit = shapeAt(doc.present.shapes, toImage(event));
+    if (!hit || hit.kind !== 'text') return;
+    event.preventDefault();
+    startTextEntry(hit.at, hit);
+  });
 
   canvas.addEventListener('pointerdown', (event) => {
     if (event.button !== 0 || editing) return;
@@ -614,7 +695,15 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
 
     if (drag.mode === 'resize') {
       const resized = resizeShape(drag.shape, drag.handle, point);
-      doc = amend(doc, replaceShape(doc.present, resized));
+      // Scaling text changes the point size, and only the canvas knows how wide
+      // the words are at the new size. `resizeShape` scales the old box as an
+      // estimate; this replaces the estimate with the measurement, so the
+      // selection outline and the handles track the glyphs rather than drifting
+      // a little further from them with every frame of the drag.
+      doc = amend(doc, replaceShape(
+        doc.present,
+        resized.kind === 'text' ? remeasure(resized) : resized,
+      ));
       render();
     }
   });
@@ -659,8 +748,31 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
     }
 
     // A move or resize became final: make the state before it undoable.
+    //
+    // Unless nothing actually moved. Selecting a shape is a press and a release
+    // on it, which is a move drag of zero distance, so every click on the canvas
+    // was pushing an undo step that undid nothing visible. Click three shapes and
+    // the next three presses of Cmd+Z appear to do nothing at all, which reads as
+    // undo being broken rather than as the history being full of no-ops.
+    if (!shapeChanged(finished.before, doc.present, finished.shape?.id)) {
+      render();
+      return;
+    }
     doc = { ...doc, past: [...doc.past, finished.before].slice(-60), future: [] };
     render();
+  }
+
+  /**
+   * Did the drag leave the shape any different?
+   *
+   * Shapes are plain data, so comparing their serialisations is both correct and
+   * obvious. It runs once per pointerup on one small object, which is nowhere
+   * near often enough to be worth anything cleverer.
+   */
+  function shapeChanged(before, after, id) {
+    if (!id) return true;
+    const find = (present) => present.shapes.find((shape) => shape.id === id);
+    return JSON.stringify(find(before)) !== JSON.stringify(find(after));
   }
 
   canvas.addEventListener('pointerup', endDrag);
@@ -671,26 +783,77 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
 
   // TEXT ENTRY
 
-  /** An input positioned over the canvas, committed on Enter or blur. */
-  function startTextEntry(at) {
+  /** Re-measure a text shape against the real canvas. Only it knows the width. */
+  function remeasure(shape) {
+    ctx.save();
+    ctx.font = fontOf(shape);
+    const box = measureText(shape, (line) => ctx.measureText(line).width);
+    ctx.restore();
+    return { ...shape, ...box };
+  }
+
+  /**
+   * The inline text box.
+   *
+   * A `textarea`, not an `input`, so a caption can be more than one line. That
+   * changes what Enter means: it inserts a newline, and the box is committed by
+   * clicking away or by pressing Escape. Escape finishing rather than abandoning
+   * is the convention in every canvas editor that has multi-line text, for the
+   * plain reason that Enter is no longer available to do it. Nothing is lost by
+   * it either: a commit is one undo step, and an empty box commits nothing.
+   *
+   * @param {{x:number, y:number}} at where the block's top left corner sits
+   * @param {object} [existing] a text shape being re-edited, replaced on commit
+   */
+  function startTextEntry(at, existing) {
     const box = canvas.getBoundingClientRect();
     const crop = effectiveCrop(doc);
     const shown = box.width / crop.w;
-    const size = text.size;
+    const style = existing
+      ? {
+        size: existing.size,
+        family: existing.family ?? text.family,
+        bold: existing.bold !== false,
+        italic: existing.italic === true,
+        underline: existing.underline === true,
+        align: alignOf(existing),
+        colour: existing.colour ?? text.colour,
+      }
+      : { ...text };
+    const size = style.size;
 
-    const input = document.createElement('input');
-    input.type = 'text';
+    const input = document.createElement('textarea');
     input.className = 'text-entry';
+    input.rows = 1;
+    input.spellcheck = false;
+    input.value = existing ? String(existing.text) : '';
     input.style.left = `${box.left + window.scrollX + (at.x - crop.x) * shown}px`;
     input.style.top = `${box.top + window.scrollY + (at.y - crop.y) * shown}px`;
     // What is typed should look like what will be drawn, so the entry box takes
-    // the same family, weight and slant, scaled to however the canvas is shown.
-    input.style.font = fontOf({ ...text, size: Math.max(12, size * shown) });
-    input.style.color = colour;
-    if (text.underline) input.style.textDecoration = 'underline';
+    // the same family, weight, slant and alignment, scaled to however the canvas
+    // is shown. `justify` is a real CSS value, so the preview holds there too.
+    input.style.font = fontOf({ ...style, size: Math.max(12, size * shown) });
+    input.style.lineHeight = String(TEXT_LINE_RATIO);
+    input.style.textAlign = style.align;
+    input.style.color = style.colour;
+    if (style.underline) input.style.textDecoration = 'underline';
     document.body.append(input);
 
+    // Grow with the content. A textarea does not do this on its own, and a box
+    // that hides the line you are typing is worse than the single line it
+    // replaced. Height is reset first so deleting a line shrinks it back.
+    const grow = () => {
+      input.style.height = 'auto';
+      input.style.height = `${input.scrollHeight}px`;
+    };
+    grow();
+
     editing = input;
+    // The shape being re-edited is hidden while its own text sits over it, so
+    // the reader is not looking at two copies half a pixel apart.
+    editingId = existing ? existing.id : null;
+    if (editingId) render();
+
     // Focus on the next frame, once the browser has finished its own handling of
     // the click that created this. Focusing inside the same task is what let the
     // default action take focus away again.
@@ -701,48 +864,62 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
       input.select();
     });
 
-    const finish = (keep) => {
+    const finish = () => {
       if (!editing) return;
       editing = null;
-      const value = input.value.trim();
+      editingId = null;
+      // Trailing blank lines are almost always a stray Enter, and they would
+      // silently inflate the block's height and therefore its selection box.
+      const value = input.value.replace(/\s+$/, '');
       input.remove();
 
-      if (!keep || !value) {
+      // Nothing typed. For a new box that means no shape, and for one being
+      // re-edited it means the reader emptied it, which is a delete.
+      if (!value) {
+        if (existing) {
+          doc = commit(doc, removeShape(doc.present, existing.id));
+          handBackToSelection();
+        }
         render();
         return;
       }
 
-      const shape = {
-        id: newId(), kind: 'text', at, text: value, size, colour, width,
-        family: text.family,
-        bold: text.bold,
-        italic: text.italic,
-        underline: text.underline,
-        w: 0, h: size * TEXT_LINE_RATIO,
-      };
-
-      ctx.save();
-      ctx.font = fontOf(shape);
-      shape.w = ctx.measureText(value).width;
-      ctx.restore();
-
-      doc = commit(doc, {
-        ...doc.present,
-        shapes: [...doc.present.shapes, shape],
-        selected: shape.id,
+      const shape = remeasure({
+        ...(existing ?? {}),
+        id: existing ? existing.id : newId(),
+        kind: 'text',
+        at,
+        text: value,
+        size,
+        colour: style.colour,
+        width,
+        family: style.family,
+        bold: style.bold,
+        italic: style.italic,
+        underline: style.underline,
+        align: style.align,
       });
+
+      doc = commit(doc, existing
+        ? { ...replaceShape(doc.present, shape), selected: shape.id }
+        : { ...doc.present, shapes: [...doc.present.shapes, shape], selected: shape.id });
       handBackToSelection();
       render();
     };
 
+    input.addEventListener('input', grow);
     // A blur before the box has been focused is the browser settling the click,
     // not the user leaving. Committing there would delete the box immediately.
     input.addEventListener('blur', () => {
-      if (focused) finish(true);
+      if (focused) finish();
     });
     input.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') finish(true);
-      if (event.key === 'Escape') finish(false);
+      // Enter is a newline now. Escape finishes, and so does the accelerator
+      // people reach for out of habit from single line boxes.
+      if (event.key === 'Escape' || (event.key === 'Enter' && (event.metaKey || event.ctrlKey))) {
+        event.preventDefault();
+        finish();
+      }
       event.stopPropagation();
     });
   }
@@ -781,6 +958,8 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
           bold: chosen.bold !== false,
           italic: chosen.italic === true,
           underline: chosen.underline === true,
+          align: alignOf(chosen),
+          colour: chosen.colour ?? text.colour,
         }
         : { ...text },
     };
@@ -838,15 +1017,10 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
       text = { ...text, ...patch };
       const chosen = selectedShape(doc);
       if (chosen && chosen.kind === 'text') {
-        const restyled = { ...chosen, ...patch };
-        // The stored width is what hit testing and the selection box use, so it
-        // has to be re-measured whenever anything about the type changes.
-        ctx.save();
-        ctx.font = fontOf(restyled);
-        restyled.w = ctx.measureText(String(restyled.text)).width;
-        ctx.restore();
-        restyled.h = restyled.size * TEXT_LINE_RATIO;
-        doc = commit(doc, replaceShape(doc.present, restyled));
+        // The stored box is what hit testing, the selection outline and the
+        // resize handles all read, so it is re-measured whenever anything about
+        // the type changes, the words included.
+        doc = commit(doc, replaceShape(doc.present, remeasure({ ...chosen, ...patch })));
         render();
       }
       notify();
@@ -945,6 +1119,8 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
         bold: next.textBold !== false,
         italic: next.textItalic === true,
         underline: next.textUnderline === true,
+        align: next.textAlign ?? text.align,
+        colour: next.textColour ?? text.colour,
       };
       render();
     },

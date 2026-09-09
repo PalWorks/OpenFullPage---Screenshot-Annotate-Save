@@ -466,6 +466,35 @@
 
   /* Text inspector. */
   .pop.text { width: 244px; display: flex; flex-direction: column; gap: 7px; }
+  /* Four alignments in one row, sized like the stroke and dash options so the
+     popovers do not each invent their own button. */
+  .pop.text .aligns { display: flex; gap: 4px; }
+  #toolbar .pop.text .aligns button.opt {
+    flex: 1;
+    min-width: 0;
+    height: 26px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+  /* The paths carry no presentation attributes, so the stroke has to come from
+     CSS. `#toolbar button.icon svg` does that job elsewhere and these are `.opt`
+     buttons, not `.icon` ones, so it does not reach them: with only a size set
+     they render as four empty boxes. */
+  #toolbar .pop.text .aligns button.opt svg {
+    width: 17px;
+    height: 17px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+  }
+  #toolbar .pop.text .aligns button.opt[aria-pressed="true"] {
+    background: color-mix(in srgb, var(--indigo) 16%, transparent);
+    border-color: var(--indigo);
+    color: var(--indigo);
+  }
   .pop.text select { width: 100%; padding: 5px 7px; font-size: 12.5px; border-radius: 6px; }
   .pop.text .r2 { display: flex; gap: 6px; }
   .stepper {
@@ -539,6 +568,13 @@
     background: color-mix(in srgb, var(--surface) 88%, transparent);
     box-shadow: 0 2px 12px rgb(0 0 0 / 0.18);
     caret-color: var(--indigo-bright);
+    /* A textarea, so a caption can be more than one line. Its own scrollbar and
+       resize grip are both off: the box grows to fit what is typed, from
+       scrollHeight, so there is never anything to scroll to and a manual grip
+       would set a size that the commit throws away. */
+    overflow: hidden;
+    resize: none;
+    white-space: pre;
   }
   .text-entry:focus { outline: 2px solid var(--indigo-bright); outline-offset: 1px; }
 
@@ -665,7 +701,21 @@
           <button class="u" type="button" id="text-underline" aria-pressed="false" title="Underline">U</button>
         </span>
       </div>
-      <p class="hint">Colour comes from Border colour. Alignment needs more than one line and the text box holds one, so it arrives with multi-line text.</p>
+      <div class="aligns" role="group" aria-label="Alignment">
+        <button class="opt" type="button" data-align="left" aria-pressed="true" aria-label="Align left" title="Align left"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M3 5h14"/><path d="M3 9h9"/><path d="M3 13h12"/><path d="M3 17h7"/></svg></button>
+        <button class="opt" type="button" data-align="center" aria-pressed="false" aria-label="Align centre" title="Align centre"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M3 5h14"/><path d="M5.5 9h9"/><path d="M4 13h12"/><path d="M6.5 17h7"/></svg></button>
+        <button class="opt" type="button" data-align="right" aria-pressed="false" aria-label="Align right" title="Align right"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M3 5h14"/><path d="M8 9h9"/><path d="M5 13h12"/><path d="M10 17h7"/></svg></button>
+        <button class="opt" type="button" data-align="justify" aria-pressed="false" aria-label="Justify" title="Justify"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M3 5h14"/><path d="M3 9h14"/><path d="M3 13h14"/><path d="M3 17h7"/></svg></button>
+      </div>
+      <hr>
+      <p class="pop-title">Text colour</p>
+      <div class="quickrow" data-quick="text"></div>
+      <div class="custom">
+        <input type="color" id="text-picker" value="#ef4444" aria-label="Custom text colour" title="Custom colour">
+        <input type="text" id="text-hex" value="#EF4444" spellcheck="false" autocomplete="off"
+               pattern="#?[0-9a-fA-F]{6}" aria-label="Text colour as hex" placeholder="#RRGGBB">
+      </div>
+      <p class="hint">Enter starts a new line. Escape, or clicking away, finishes the text.</p>
     </div>
   </span>
 

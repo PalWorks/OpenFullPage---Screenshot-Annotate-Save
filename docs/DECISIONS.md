@@ -371,6 +371,11 @@ panel is wanted later for visual consistency across platforms, it replaces the
 
 ## D21: Text alignment waits for multi-line text
 
+**Superseded by D39 on 2026-09-09.** Kept because the reasoning still holds and
+explains why the control was absent for a while: the answer was to make the
+condition true, not to ship the buttons anyway.
+
+
 **Date.** 2026-09-09.
 
 **Decision.** The text inspector ships family, size, bold, italic and underline.
@@ -885,4 +890,64 @@ not there.
 Any container that holds one has to let its overflow show, so `overflow: hidden` on
 an ancestor of a `.pop` is a bug even when it looks like styling. Clip the children
 instead, or move the popover out.
+
+## D39: Text is a first class shape, not a label you get one attempt at
+
+**Date.** 2026-09-09. Taken after the maintainer reported, in three separate
+messages, that the text tool looked unfinished. It was.
+
+**Context.** Text could be placed, and after that almost nothing. It could not be
+re-edited, so changing a word meant deleting the shape and typing it again. It had
+no resize handles, because `handlesFor` returned an empty set for both point
+tools and only one of them deserved that. The entry box was a single line
+`<input>`, which is why D21 held back alignment. And its colour came from the
+Border control, which is defensible and was written down nowhere a user would look.
+
+Every one of those is defensible on its own. Together they made text the one shape
+in the editor that behaves like a label rather than an object, in a product whose
+whole editing model is that shapes stay live.
+
+**Decision.** Four changes, taken together because they are the same two functions.
+
+1. **Multi-line entry.** The box is a `textarea` that grows with what is typed.
+2. **Double click to re-edit.** On the select tool, a text shape reopens with its
+   own words in the box. Committing replaces it, keeping its id, so it is one undo
+   step and not a delete followed by an add. Emptying it deletes the shape, which
+   is what emptying a text box means everywhere else.
+3. **Corner handles that scale the type.** Text is a point and a font size, not a
+   box, so a corner drag sets one number: the point size, from whichever axis moved
+   further. Stretching a glyph is something image editors do to bitmaps and type
+   editors never do to type. The opposite corner stays put.
+4. **Four alignments and a colour of its own**, which is what D21 was waiting for.
+
+**What Enter now means.** A newline. It used to commit, and it cannot do both. The
+box is finished by clicking away or by pressing Escape, which is the convention in
+every canvas editor that has multi-line text, for the plain reason that Enter is no
+longer available to do it. The inspector says so, because a key changing meaning is
+exactly the kind of thing a person should not have to discover.
+
+**Why Escape finishes rather than abandons.** Nothing is lost by it: a commit is one
+undo step, and an empty box commits nothing, so the two things a cancel would have
+protected are both already covered.
+
+**Why justify was included.** It was in the reference the maintainer worked from,
+and it is the one alignment that is real work rather than an offset: the words of
+every line except the last are spread to the width of the widest line. A text block
+drawn straight onto a screenshot has no column to justify to except itself, and the
+last line is set flush left exactly as it is in print.
+
+**Why the text colour is separate from the stroke colour.** An arrow pointing at a
+thing and a caption naming it are rarely wanted in the same colour. It defaults to
+the stroke colour, so nothing changes for anyone who never opens the control, and
+the inspector carries the ten quick colours and the system picker rather than the
+sixty step grid: the panel already holds a family, a size, three type toggles and
+four alignments, and sixty swatches in it would bury all of them.
+
+**Found on the way.** A move or resize drag pushed an undo step even when nothing
+moved, and selecting a shape is a press and a release on it, so every click on the
+canvas was one. Click three shapes and the next three presses of Cmd+Z appear to do
+nothing. `endDrag` now compares the shape before and after and pushes nothing if it
+is unchanged. It surfaced because an end to end check asserted how many undo steps
+a piece of work should cost, which is a more useful thing to assert than that undo
+merely works.
 

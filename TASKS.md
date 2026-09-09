@@ -36,6 +36,10 @@ implements them twice. Every one has tests.
 | **F38** | An index down the side of the settings page, built from the sections, with both numbered from the same order | `src/ui/options.*` |
 | **T22** | Overlapping settings writes no longer overwrite each other | `src/lib/settings.js`, L34 |
 | **T23** | The shipped surface names no other product, and CI keeps it that way | `test/lib/scan.js`, D34 |
+| **F39** | Text is a first class shape: multi-line entry, double click to re-edit, corner handles that scale the point size, four alignments including justify, and its own colour | `src/lib/edit.js`, `src/ui/editor.js`, D39 |
+| **T24** | A move or resize that changed nothing no longer pushes an undo step, so clicking a shape to select it stops filling the history | `src/ui/editor.js`, D39 |
+| **T25** | Three glyphs were toggled with `element.hidden`, which SVG does not have, so none of them ever changed | `src/ui/result.js`, D37 |
+| **T26** | The Shapes and Text chevrons opened a popover their own group was clipping | `src/ui/result.html`, D38 |
 
 **Still open from the 1.7.0 list below:** T19, T2, T11, F1, F21, F2, F26.
 **Still open from 1.8.0:** F6, F4, F27.

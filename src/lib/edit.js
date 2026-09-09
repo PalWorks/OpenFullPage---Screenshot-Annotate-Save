@@ -55,6 +55,19 @@ export const TEXT_FAMILIES = {
   mono: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace',
 };
 
+/**
+ * How the lines of a text block sit relative to each other.
+ *
+ * Meaningless while the entry box held one line, which is why this was taken out
+ * once and is back now that it holds many. `justify` spreads the words of every
+ * line except the last across the width of the widest line, because a text block
+ * drawn straight onto a screenshot has no column to justify to except itself.
+ */
+export const TEXT_ALIGNS = ['left', 'center', 'right', 'justify'];
+
+/** Line height as a multiple of the point size. Shared by drawing and measuring. */
+export const TEXT_LINE_RATIO = 1.25;
+
 export const DEFAULT_FILL_OPACITY = 0.35;
 export const MIN_STROKE = 1;
 export const MAX_STROKE = 64;
@@ -99,6 +112,32 @@ export function fillAlphaOf(shape) {
 }
 
 /** The resolved CSS font for a text shape, defaults included. */
+export const alignOf = (shape) =>
+  (TEXT_ALIGNS.includes(shape.align) ? shape.align : 'left');
+
+/** The lines of a text shape, always at least one so callers need no guard. */
+export const linesOf = (shape) => String(shape.text ?? '').split('\n');
+
+/**
+ * Measure a text shape into `w` and `h`.
+ *
+ * The stored box is what hit testing, the selection outline and the resize
+ * handles all read, so it has to be recomputed whenever the words, the size or
+ * anything about the type changes. `measure` is a function that returns the width
+ * of a string in the shape's own font, which is `ctx.measureText` in the browser
+ * and anything at all in a test.
+ *
+ * @param {object} shape
+ * @param {(line: string) => number} measure
+ */
+export function measureText(shape, measure) {
+  const lines = linesOf(shape);
+  return {
+    w: Math.max(0, ...lines.map((line) => measure(line))),
+    h: lines.length * shape.size * TEXT_LINE_RATIO,
+  };
+}
+
 export function fontOf(shape) {
   const family = TEXT_FAMILIES[shape.family] ?? TEXT_FAMILIES.system;
   const weight = shape.bold === false ? '400' : '600';
@@ -346,7 +385,8 @@ export function boundsOf(shape) {
     const r = shape.radius;
     return { x: shape.at.x - r, y: shape.at.y - r, w: r * 2, h: r * 2 };
   }
-  // Text is measured when it is created; without that we cannot know its box.
+  // Text is measured when it is created and re-measured on every restyle, because
+  // the box cannot be derived here: only a canvas knows how wide a string is.
   return { x: shape.at.x, y: shape.at.y, w: shape.w ?? 0, h: shape.h ?? 0 };
 }
 
@@ -389,7 +429,10 @@ export function handlesFor(shape) {
       { id: 'to', x: shape.to.x, y: shape.to.y },
     ];
   }
-  if (POINT_TOOLS.includes(shape.kind)) return [];
+  // A numbered step is a fixed radius circle, so a corner would have nothing to
+  // change. Text is the other point tool and does: dragging a corner scales the
+  // type. Bundling the two together is what left text with no handles at all.
+  if (shape.kind === 'counter') return [];
 
   const b = boundsOf(shape);
   return [
@@ -430,8 +473,54 @@ export function resizeShape(shape, handleId, point) {
   }[handleId];
   if (!anchor) return shape;
 
+  if (shape.kind === 'text') return resizeText(shape, handleId, point, b, anchor);
   return { ...shape, rect: normalizeRect(anchor, point) };
 }
+
+/**
+ * Scale text by dragging a corner.
+ *
+ * Text is not a box, it is a point and a font size, so a corner drag cannot set
+ * two dimensions independently: stretching a glyph is a thing image editors do to
+ * bitmaps and type editors never do to type. The drag therefore sets one number,
+ * the point size, from whichever axis moved further in proportion. The corner
+ * opposite the one being dragged stays put, which is the behaviour a person
+ * expects from a handle.
+ *
+ * The caller re-measures afterwards, because only a canvas knows the new width.
+ * `w` and `h` are scaled here so that a caller which cannot measure, and a frame
+ * drawn mid-drag, both still have a box that is about right.
+ */
+function resizeText(shape, handleId, point, bounds, anchor) {
+  if (!(bounds.w > 0) || !(bounds.h > 0)) return shape;
+
+  const wanted = normalizeRect(anchor, point);
+  // The larger of the two ratios, so the type follows the corner rather than
+  // lagging behind whichever axis the pointer happened to move less on.
+  const factor = Math.max(wanted.w / bounds.w, wanted.h / bounds.h);
+  const size = Math.round(clampSize(shape.size * factor));
+  if (size === shape.size) return shape;
+
+  const scale = size / shape.size;
+  const w = bounds.w * scale;
+  const h = bounds.h * scale;
+  // Anchor the corner opposite the handle. `at` is the top left of the block, so
+  // dragging a west handle moves it and dragging an east one does not.
+  const west = handleId === 'nw' || handleId === 'sw';
+  const north = handleId === 'nw' || handleId === 'ne';
+  return {
+    ...shape,
+    size,
+    w,
+    h,
+    at: {
+      x: west ? bounds.x + bounds.w - w : bounds.x,
+      y: north ? bounds.y + bounds.h - h : bounds.y,
+    },
+  };
+}
+
+const clampSize = (size) => Math.min(MAX_TEXT_SIZE, Math.max(MIN_TEXT_SIZE, size));
 
 export function replaceShape(present, shape) {
   return { ...present, shapes: present.shapes.map((s) => (s.id === shape.id ? shape : s)) };

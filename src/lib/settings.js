@@ -30,6 +30,7 @@ export const THEMES = ['system', 'light', 'dark'];
 export const DASH_STYLES = ['solid', 'dashed', 'dotted'];
 export const LINE_ENDS = ['none', 'start', 'end', 'both'];
 export const TEXT_FAMILIES = ['system', 'sans', 'serif', 'mono'];
+export const TEXT_ALIGNS = ['left', 'center', 'right', 'justify'];
 
 /**
  * Every toolbar control the options page can hide, grouped the way the toolbar
@@ -83,6 +84,7 @@ export const TOOLBAR_GROUPS = [
 export const STYLE_KEYS = [
   'tool', 'colour', 'strokeWidth', 'dash', 'lineEnds', 'fill', 'fillOpacity',
   'textSize', 'textFamily', 'textBold', 'textItalic', 'textUnderline',
+  'textAlign', 'textColour',
 ];
 
 /** A fresh copy of the shipped style. */
@@ -115,6 +117,12 @@ export const DEFAULTS = {
   textBold: true,
   textItalic: false,
   textUnderline: false,
+  textAlign: 'left',
+  // Text keeps its own colour rather than sharing the stroke colour. They are
+  // separate choices: an arrow pointing at a thing and a caption naming it are
+  // rarely wanted in the same colour. The default matches the stroke colour, so
+  // nothing changes for anyone who never opens the control.
+  textColour: '#ef4444',
   // Toolbar controls the user has switched off. Empty means the curated set.
   hiddenButtons: [],
   // Seconds to wait before capturing, for menus and hover states.
@@ -198,6 +206,10 @@ export function sanitise(raw) {
     clean.textSize = Math.min(200, Math.max(8, Math.round(raw.textSize)));
   }
 
+  if (TEXT_ALIGNS.includes(raw.textAlign)) clean.textAlign = raw.textAlign;
+  if (typeof raw.textColour === 'string' && /^#[0-9a-f]{6}$/i.test(raw.textColour)) {
+    clean.textColour = raw.textColour.toLowerCase();
+  }
   clean.textBold = raw.textBold !== false;
   clean.textItalic = raw.textItalic === true;
   clean.textUnderline = raw.textUnderline === true;

@@ -49,9 +49,11 @@ Status key: **open** (a real gap, unfixed), **by design** (a deliberate trade),
 | L15 | Toolbar buttons are 30 x 28px, below the 44px touch target guideline. Defensible on a desktop only extension | **by design**, and less pressing since the grouped toolbar cut 26 controls to 16 |
 | L16 | There is no pixel eraser, and there will not be one: it would have to bake pixels into the base image, which breaks exact undo and the immutable original | **by design** |
 | L17 | Inline text entry positions its `<input>` once, from the canvas bounding box. Correct today because the canvas scrolls with the document. A zoom feature that puts the canvas in its own scrolling container will detach the input mid typing | **watch**, blocking for F6 |
-| L22 | Text entry is a single-line `<input>`, so alignment would have nothing to align. The inspector says so rather than showing four buttons that cannot do anything | **open**, D21, lands with multi-line entry |
+| L22 | Text entry was a single-line `<input>`, so alignment had nothing to align | **closed** 2026-09-09, D39. The box is a textarea and the four alignments are in the inspector |
 | L23 | The custom colour control is the operating system's picker. It looks different on macOS, Windows and Linux, which is the price of getting an eyedropper, keyboard support and a recent-colours list rather than building worse versions of all three | **by design**, D20 |
 | L24 | The mark is teal and the editor interface is still indigo. Incoherent, and deliberately not fixed yet: recolouring the interface is a visible change and those need a before and after preview first | **open**, D22 |
+| L37 | Committed text could not be re-edited: changing a word meant deleting the shape and typing it again | **closed** 2026-09-09, D39. Double click a text shape with the select tool |
+| L38 | Text carried no resize handles, because `handlesFor` treated it like a numbered step | **closed** 2026-09-09, D39. Corner handles scale the point size, and the numbered step still has none because a fixed radius circle has nothing a corner could change |
 | L18 | Undo history is capped at 60 states | **by design** |
 | L30 | Exporting while a crop region is pending exports the uncropped image. The region is a proposal and applying it is one keystroke, but nothing stops a save in between | **by design**, D30 |
 | L31 | A crop region can only be adjusted with the pointer. Arrow keys do not nudge its edges, which is the same gap as L14 and lands with the same fix | **open**, D30 |

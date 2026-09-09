@@ -109,7 +109,7 @@ The capture opens in a tab with a real editor. Shapes stay **live objects**: sel
 | Editing | Finishing a shape selects it and returns to the selection tool, drag to move, corner handles to resize, `Backspace` to delete, `Esc` to deselect |
 | Stroke | Five weights plus an exact pixel box, solid, dashed and dotted, arrowheads on either end, both ends or neither |
 | Colour | Border and fill are separate controls. Ten quick colours, a sixty step grid, and any colour through the system picker or a hex field. Fill carries an opacity |
-| Text | Family, size in points, bold, italic and underline, stored on the shape, so text drawn ten minutes ago can be restyled |
+| Text | Multi-line. Family, size in points, bold, italic, underline, four alignments including justify, and its own colour, all stored on the shape, so text drawn ten minutes ago can be restyled. Enter starts a new line; Escape or clicking away finishes. Double click a text shape to change its words, and drag a corner to scale the type |
 | Crop | Dragging **proposes** a region. The surround dims, the region carries eight handles and can be slid whole, and a tick and cross confirm or abandon it. `Enter` and `Esc` do the same. The bar is fixed to the viewport, so it stays reachable on a capture ten screens tall |
 | History | `Cmd`/`Ctrl`+`Z`, add `Shift` to redo. Covers moves and resizes, not only drawing |
 | Reset | Removes your edits when there are some, and restores the default tools and colours when there are none |

@@ -11,6 +11,7 @@ import {
   DEFAULTS,
   DOWNLOAD_FORMATS,
   STYLE_KEYS,
+  TEXT_ALIGNS,
   THEMES,
   TOOLBAR_BUTTONS,
   TOOLBAR_GROUPS,
@@ -126,12 +127,27 @@ test('every key sanitise knows about is one DEFAULTS declares', () => {
     theme: 'dark', format: 'jpeg',
     dash: 'dashed', lineEnds: 'none', fill: '#abcdef', fillOpacity: 0.5,
     textSize: 40, textFamily: 'serif', textBold: false, textItalic: true,
-    textUnderline: true, hiddenButtons: ['crop'],
+    textUnderline: true, textAlign: 'justify', textColour: '#00ff88',
+    hiddenButtons: ['crop'],
   };
   const clean = sanitise(sample);
   assert.deepEqual(Object.keys(clean).sort(), Object.keys(DEFAULTS).sort());
   // And every one of them actually took the value it was given.
   assert.deepEqual(clean, sample);
+});
+
+test('text alignment has to be one we can actually draw', () => {
+  for (const known of TEXT_ALIGNS) assert.equal(sanitise({ textAlign: known }).textAlign, known);
+  for (const junk of ['start', 'end', 'middle', 'JUSTIFY', 7, null]) {
+    assert.equal(sanitise({ textAlign: junk }).textAlign, DEFAULTS.textAlign, String(junk));
+  }
+});
+
+test('the text colour is a hex colour or it is the default', () => {
+  assert.equal(sanitise({ textColour: '#AABBCC' }).textColour, '#aabbcc');
+  for (const junk of ['red', '#fff', 'rgb(0,0,0)', '#12345g', 42, null]) {
+    assert.equal(sanitise({ textColour: junk }).textColour, DEFAULTS.textColour, String(junk));
+  }
 });
 
 test('a stored tool name cannot be arbitrary text', () => {

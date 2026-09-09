@@ -568,13 +568,24 @@ function swatchButton(colour, kind) {
   return button;
 }
 
+/**
+ * Fill the colour palettes.
+ *
+ * Text is in the list but has no `data-grid`, so it gets the ten quick colours
+ * and the system picker and not the sixty step grid. Border and fill each own a
+ * whole popover and can afford one; the text inspector is a mixed panel that
+ * already carries a family, a size, three type toggles and four alignments, and
+ * sixty more swatches in it would bury all of them. Arbitrary colour is still
+ * one click away through the picker and the hex field.
+ */
 function buildPalettes() {
-  for (const kind of ['border', 'fill']) {
+  for (const kind of ['border', 'fill', 'text']) {
     const quick = ui.toolbar.querySelector(`[data-quick="${kind}"]`);
     const grid = ui.toolbar.querySelector(`[data-grid="${kind}"]`);
     if (!quick || quick.childElementCount > 0) continue;
 
     for (const colour of QUICK_COLOURS) quick.append(swatchButton(colour, kind));
+    if (!grid) continue;
     for (let row = 0; row < GREYS.length; row += 1) {
       grid.append(swatchButton(GREYS[row], kind));
       for (const colour of QUICK_COLOURS.slice(0, 9)) {
@@ -629,6 +640,9 @@ function showStyle(style, tool) {
   ui.textBold.setAttribute('aria-pressed', String(style.text.bold));
   ui.textItalic.setAttribute('aria-pressed', String(style.text.italic));
   ui.textUnderline.setAttribute('aria-pressed', String(style.text.underline));
+  markPressed('[data-align]', (b) => b.dataset.align === style.text.align);
+  markPressed('[data-paint="text"]', (b) => b.dataset.colour === style.text.colour);
+  setHex('text', style.text.colour);
 }
 
 function setHex(kind, colour) {
@@ -761,13 +775,18 @@ function applyPaint(kind, colour) {
   if (kind === 'border') {
     editor?.setColour(colour);
     saveSettings({ colour });
+  } else if (kind === 'text') {
+    editor?.setTextStyle({ colour });
+    saveSettings({ textColour: colour });
   } else {
     editor?.setFill(colour);
     saveSettings({ fill: colour });
   }
 }
 
-for (const pop of ui.toolbar.querySelectorAll('.pop.paint')) {
+// `.pop.paint` is the two colour popovers; the text inspector carries a colour
+// row too, so it is included by name rather than by class.
+for (const pop of [...ui.toolbar.querySelectorAll('.pop.paint'), ui.toolbar.querySelector('#pop-text')]) {
   pop.addEventListener('click', (event) => {
     const swatch = event.target.closest?.('[data-paint]');
     if (swatch) applyPaint(swatch.dataset.paint, swatch.dataset.colour);
@@ -786,7 +805,7 @@ ui.fillOpacity.addEventListener('input', () => {
   saveSettings({ fillOpacity: percent / 100 });
 });
 
-for (const kind of ['border', 'fill']) {
+for (const kind of ['border', 'fill', 'text']) {
   // The native colour input is the operating system's own picker, which is where
   // a "more colours" control normally leads. It brings an eyedropper and keyboard
   // support that a hand-drawn spectrum would have to reimplement badly.
@@ -822,6 +841,13 @@ ui.textSize.addEventListener('keydown', (event) => event.stopPropagation());
 for (const button of ui.toolbar.querySelectorAll('[data-size-step]')) {
   button.addEventListener('click', () => {
     setTextSize(Number(ui.textSize.value) + Number(button.dataset.sizeStep));
+  });
+}
+
+for (const button of ui.toolbar.querySelectorAll('[data-align]')) {
+  button.addEventListener('click', () => {
+    editor?.setTextStyle({ align: button.dataset.align });
+    saveSettings({ textAlign: button.dataset.align });
   });
 }
 

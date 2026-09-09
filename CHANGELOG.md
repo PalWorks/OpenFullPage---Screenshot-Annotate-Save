@@ -88,6 +88,40 @@ Saving is read-modify-write over the whole settings object, so two overlapping s
 each put back what the other had just changed. Dragging the fill opacity slider
 fires one per step. Writes are now serialised.
 
+### Added: text is a first class shape now
+It could be placed and after that almost nothing: no re-editing, no resize
+handles, one line only, and no alignment. Four changes, taken together because
+they are the same two functions. D39.
+
+- **The entry box is a textarea** and grows with what is typed, so a caption can
+  be more than one line.
+- **Double click a text shape** with the select tool and it reopens with its own
+  words in the box. Committing replaces it, so it is one undo step rather than a
+  delete and an add, and emptying the box deletes the shape.
+- **Corner handles scale the type.** Text is a point and a font size rather than
+  a box, so a corner drag sets the point size from whichever axis moved further,
+  and the opposite corner stays put. Stretching a glyph is a thing image editors
+  do to bitmaps and type editors never do to type.
+- **Four alignments and a colour of its own.** Left, centre, right and justify,
+  which is what D21 was waiting for. Justify spreads the words of every line
+  except the last to the width of the widest line, and sets the last flush left,
+  exactly as it is done in print.
+
+**Enter now starts a new line.** It used to commit, and it cannot do both. The box
+is finished by clicking away or by pressing Escape. The inspector says so, because
+a key changing meaning is not something a person should have to discover.
+
+### Fixed: clicking a shape filled the undo history with nothing
+Selecting a shape is a press and a release on it, which is a move drag of zero
+distance, and every one of those pushed an undo step. Click three shapes and the
+next three presses of Cmd+Z appear to do nothing at all, which reads as undo being
+broken rather than as the history being full of no-ops. A move or resize now has to
+have changed the shape to be worth remembering.
+
+It surfaced because an end to end check asserts how many undo steps a piece of work
+should cost, which turns out to be a more useful thing to assert than that undo
+merely works.
+
 ### Changed: the text inspector says where its colour comes from
 It already explained why there is no alignment control, which is D21: alignment
 describes how lines sit relative to each other and the entry box holds one line, so

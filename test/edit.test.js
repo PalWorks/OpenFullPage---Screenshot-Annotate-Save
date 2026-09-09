@@ -9,7 +9,14 @@ import test from 'node:test';
 
 import {
   CROP_HANDLES,
+  MAX_TEXT_SIZE,
   MIN_CROP,
+  MIN_TEXT_SIZE,
+  TEXT_ALIGNS,
+  TEXT_LINE_RATIO,
+  alignOf,
+  linesOf,
+  measureText,
   amend,
   arrowGeometry,
   boundsOf,
@@ -349,3 +356,91 @@ test('every handle names a cursor, and anywhere else is a move', () => {
   for (const id of CROP_HANDLES) assert.match(cropCursor(id), /-resize$/, id);
   assert.equal(cropCursor(null), 'move');
 });
+
+// TEXT
+//
+// Text is the one shape that is a point plus a font rather than a box, so every
+// piece of geometry around it is a special case: the box has to be measured
+// rather than derived, and a corner drag has to become a point size.
+
+// A stand-in for ctx.measureText. Six pixels a character is nothing like a real
+// font, and it does not need to be: what is under test is what the model does
+// with the widths, not what the widths are.
+const fakeMeasure = (line) => line.length * 6;
+
+const someText = (over = {}) => ({
+  id: 't1', kind: 'text', at: { x: 100, y: 50 }, text: 'Hello', size: 20,
+  colour: '#ef4444', w: 30, h: 25, ...over,
+});
+
+test('alignment falls back to left, and only the four we can draw are kept', () => {
+  for (const align of TEXT_ALIGNS) assert.equal(alignOf({ align }), align);
+  for (const junk of ['start', 'end', 'JUSTIFY', '', null, undefined, 7]) {
+    assert.equal(alignOf({ align: junk }), 'left', String(junk));
+  }
+});
+
+test('a text shape always has at least one line, whatever it holds', () => {
+  assert.deepEqual(linesOf({ text: 'one\ntwo' }), ['one', 'two']);
+  assert.deepEqual(linesOf({ text: '' }), ['']);
+  assert.deepEqual(linesOf({}), ['']);
+});
+
+test('a text box is as wide as its widest line and as tall as all of them', () => {
+  const shape = someText({ text: 'ab\nabcdef\nabc', size: 20 });
+  const box = measureText(shape, fakeMeasure);
+  assert.equal(box.w, 36, 'the widest line, not the last one and not the sum');
+  assert.equal(box.h, 3 * 20 * TEXT_LINE_RATIO);
+});
+
+test('text carries resize handles and a numbered step does not', () => {
+  // Bundling the two point tools together is what left text with no handles at
+  // all, so this asserts they are treated separately.
+  assert.equal(handlesFor(someText()).length, 4);
+  assert.equal(handlesFor({ kind: 'counter', at: { x: 0, y: 0 }, radius: 12 }).length, 0);
+});
+
+test('dragging a text corner changes the point size, never the aspect', () => {
+  const shape = someText({ w: 100, h: 25, size: 20 });
+  // The south east corner is at (200, 75). Drag it to double the width.
+  const bigger = resizeShape(shape, 'se', { x: 300, y: 75 });
+  assert.equal(bigger.size, 40, 'the size follows the axis that moved further');
+  assert.equal(bigger.w / bigger.h, shape.w / shape.h, 'the block keeps its proportions');
+});
+
+test('scaling text anchors the corner opposite the one being dragged', () => {
+  const shape = someText({ at: { x: 100, y: 50 }, w: 100, h: 25, size: 20 });
+
+  // Dragging the south east corner leaves the north west one where it was.
+  const se = resizeShape(shape, 'se', { x: 300, y: 75 });
+  assert.deepEqual(se.at, { x: 100, y: 50 });
+
+  // Dragging the north west corner moves the origin instead, so the south east
+  // corner stays put: 200, 75 before and after.
+  const nw = resizeShape(shape, 'nw', { x: 0, y: 50 });
+  assert.equal(Math.round(nw.at.x + nw.w), 200);
+  assert.equal(Math.round(nw.at.y + nw.h), 75);
+});
+
+test('text cannot be scaled outside the size the inspector allows', () => {
+  const shape = someText({ w: 100, h: 25, size: 20 });
+  assert.equal(resizeShape(shape, 'se', { x: 100000, y: 75 }).size, MAX_TEXT_SIZE);
+  assert.equal(resizeShape(shape, 'se', { x: 100.5, y: 50.5 }).size, MIN_TEXT_SIZE);
+});
+
+test('a text shape with no measured box is left alone by a resize', () => {
+  // It cannot be scaled by a ratio of its own width when that width is zero, and
+  // returning NaN here would put the shape beyond recovery.
+  const shape = someText({ w: 0, h: 0 });
+  assert.deepEqual(resizeShape(shape, 'se', { x: 300, y: 75 }), shape);
+});
+
+test('undo puts back the size a text shape had before it was scaled', () => {
+  let doc = createDocument(800, 600);
+  const shape = someText({ w: 100, h: 25 });
+  doc = commit(doc, { ...doc.present, shapes: [shape], selected: shape.id });
+  doc = commit(doc, replaceShape(doc.present, resizeShape(shape, 'se', { x: 300, y: 75 })));
+  assert.equal(doc.present.shapes[0].size, 40);
+  assert.equal(undo(doc).present.shapes[0].size, 20);
+});
+
