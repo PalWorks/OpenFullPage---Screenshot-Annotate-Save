@@ -13,6 +13,36 @@ a clean checkout with `./tools/pack.sh`, not merely checkable against one downlo
 Everything below is on `main` and not yet packaged. It covers the toolbar rework
 and the capture reliability work of 2026-09-08 and 2026-09-09.
 
+### Added: one line, after the fifth capture, asking for a rating
+It appears in the strip that already says the image never leaves your computer, never
+as a modal and never as a window that opens by itself. At most twice ever, the second
+no earlier than the twenty fifth capture, and never after a capture that came out
+truncated or was cut short: asking for five stars right after handing someone a short
+image is asking to be told exactly what they think.
+
+It refuses the trick that would make it work better. The usual pattern asks "Enjoying
+it?" and sends the happy answers to the store and the unhappy ones to a feedback form,
+which lifts the average score by keeping complaints out of the public record. There is
+one ask here, and the link for telling us what is wrong sits beside it rather than
+behind it. "Don't ask again" is permanent.
+
+Your browser opens the store page, not the extension, so it still makes no requests of
+its own.
+
+### Added: somewhere to say thank you, and a covenant that now says so
+GOVERNANCE.md said "No monetisation" flatly. The reasoning behind that rule was always
+about one mechanism: a paid tier needs accounts, accounts need authentication,
+authentication needs a server, and a server is the thing this extension is built not to
+have. A gift starts none of that. The rule now bans the chain rather than the word, and
+attaches three conditions: no feature is ever gated or delayed for anyone who does not
+pay, nothing is ever asked for inside a capture or an editor, and every rupee is
+published.
+
+The feature ships switched off: the options page section stays hidden until there is
+somewhere for the money to go, and the repository's funding file is empty. The
+amendment landed in the same commit, because a donate link shipped against a document
+saying "No monetisation" would put the product in contradiction with its own covenant.
+
 ### Added: zoom, and a pane that says where in a long capture you are
 A 12,000 pixel capture opened at about 12% and there was no way to look at any of it
 closely, and no way to tell which part of it you were looking at. A magnifier button

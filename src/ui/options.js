@@ -16,6 +16,7 @@ import {
   toSettingsFile,
 } from '../lib/settings.js';
 import { applyTheme, startTheme } from '../lib/theme.js';
+import { usableSponsors } from '../lib/sponsors.js';
 
 /**
  * Where feedback goes.
@@ -424,3 +425,38 @@ el('copyFeedback').addEventListener('click', async () => {
 
 el('includeDiagnostics').addEventListener('change', showDiagnostics);
 showDiagnostics();
+
+/**
+ * Somewhere to send a gift, if there is anywhere yet.
+ *
+ * Built rather than written into the markup so that the section cannot be on
+ * screen with nothing in it: an empty list leaves the whole section hidden, and
+ * that is the state this ships in.
+ *
+ * `chrome.tabs.create` rather than an `<a href>`: the address comes from our own
+ * source either way, but routing it through the same call the rest of the
+ * extension uses keeps the answer to "what can this page navigate to" in one
+ * place, and an anchor in an extension page is the thing that quietly becomes a
+ * variable later.
+ */
+function showSponsors() {
+  const sponsors = usableSponsors();
+  const section = el('thanks');
+  const holder = el('sponsorLinks');
+  if (!section || !holder) return;
+  section.hidden = sponsors.length === 0;
+  holder.replaceChildren();
+  for (const sponsor of sponsors) {
+    const link = document.createElement('button');
+    link.type = 'button';
+    link.className = 'linky';
+    link.textContent = sponsor.label;
+    link.title = sponsor.url;
+    link.addEventListener('click', () => chrome.tabs.create({ url: sponsor.url }));
+    const note = document.createElement('span');
+    note.textContent = sponsor.note ? ` ${sponsor.note}. ` : ' ';
+    holder.append(link, note);
+  }
+}
+
+showSponsors();

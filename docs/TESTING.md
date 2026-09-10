@@ -39,6 +39,7 @@ node test/e2e/run.mjs --headed   # watch it happen
 node test/e2e/run.mjs --headed --popup  # prove Chrome opens the toolbar popup
 node test/e2e/run.mjs --stale   # a worker newer than the tab it is talking to
 node test/e2e/run.mjs --frozen  # Chrome hands back a frame it already presented
+node test/e2e/run.mjs --nudge   # the fifth capture asks for a rating, once
 
 FPC_URLS=https://example.com/a,https://example.com/b node test/e2e/run.mjs
 ```

@@ -54,8 +54,8 @@ already scoped and ready to start, or **planned** with the effort in the form
 | 1.9.5 region | F28 | Select a region of the canvas | planned, 2d / 45m | A marquee other operations take as an argument. Rectangle only |
 | 1.10.0 capture | F15 | Remove an element before capturing | planned, 2d / 45m | Cookie banners and chat widgets. No new permission |
 | 1.11.0 output | F5 | Presentation frame | planned, 3d / 1h | Padding, a background, an optional window frame. Pure canvas |
-| 1.12.0 thanks | F3 | Rating nudge | planned, 1d / 30m | **Deliberately last in Phase 1.** No review gating, both answers go to the store |
-| 1.12.0 thanks | F42 | Donations | planned, 0.5d / 15m | D48. **Blocked on a GOVERNANCE.md amendment** |
+| 1.12.0 thanks | F3 | Rating nudge | shipped 2026-09-10 | D59. No review gating: one ask, and the feedback link beside it rather than behind it. Exercised by `--nudge` |
+| 1.12.0 thanks | F42 | Donations | shipped 2026-09-10 | D48. The GOVERNANCE.md amendment landed in the same commit. Ships with an empty list, so the section stays hidden until there is somewhere to send money |
 | Phase 2 in | F8 | Snip a region on the live page | planned, 3d / 1h | The editor stays in the result tab, where it can never be photographed |
 | Phase 2 in | F17 | Repeat the last capture | planned, 1d / 25m | Turns a five step loop into one keystroke |
 | Phase 2 out | F16 | Before and after | planned, 0.5d / 15m | Nearly free: the pristine capture is already on its own canvas |

@@ -132,6 +132,14 @@
   kbd { font:600 11px ui-monospace,SFMono-Regular,Menlo,monospace; border:1px solid var(--line);
         border-radius:4px; padding:1px 5px; background:var(--sunken); }
   footer { color:var(--muted); font-size:12px; margin-top:26px; }
+  /* A link that is a button, because an extension page navigates through
+     chrome.tabs.create rather than through an href. It has to look like the link
+     it is, or nobody will press it. */
+  .linky {
+    padding: 0; border: 0; background: none; color: var(--indigo-bright);
+    font: inherit; font-weight: 600; text-decoration: underline; cursor: pointer;
+  }
+  .linky:hover { text-decoration: none; }
   /* The toolbar list. A grid rather than rows: fifteen stacked rows would make
      the page longer than everything else on it put together. */
   .tools { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:2px 14px;
@@ -365,6 +373,33 @@
       To attach a screenshot, add it in your email app after the draft opens. The
       extension cannot read your files or upload anything.
     </p>
+  </section>
+
+  <!-- F42, DONATIONS
+       A line, and a link, and nothing else. It is hidden until SPONSORS in
+       src/lib/sponsors.js has an entry in it, so the plumbing can land before
+       there is anywhere for the money to go. GOVERNANCE.md was amended in the
+       same commit rather than afterwards, because a donate link shipped against
+       a document that says "No monetisation" would put the product in
+       contradiction with its own covenant.
+
+       Not in the editor, not in the progress panel and not after a capture. The
+       rating nudge already spends the one interruption this product is willing
+       to make. -->
+  <section id="thanks" hidden>
+    <h2>Support the work</h2>
+    <p>
+      OpenFullPage is free, and every feature in it is free. Nothing here is
+      bought, unlocked or hurried along by paying, and nothing ever will be:
+      the moment money buys a feature, it starts buying an account and a server
+      to hold it, which is the thing this extension is built not to have.
+    </p>
+    <p>
+      If it saves you time and you want to say so, there is somewhere to do that.
+      The link opens in a new tab, so your browser makes that request and the
+      extension still makes none.
+    </p>
+    <p class="hint" id="sponsorLinks"></p>
   </section>
 
   <footer>

@@ -71,10 +71,26 @@ These are structural, enforced by CI (`test/invariants.test.js`), not promises:
 - No network access of any kind. The CSP declares `connect-src 'none'`.
 - No `host_permissions`, no `web_accessible_resources`, no `externally_connectable`.
 - No accounts, no telemetry, no analytics, no remote configuration.
-- No monetisation. Monetisation is the pressure that pulls a tool like this across
-  the network boundary, and it does so in a predictable order: a paid tier needs
-  accounts, accounts need authentication, authentication needs a server, and a
-  server is the thing this extension is built not to have.
+- **No monetisation that creates an obligation.** The rule this replaces said
+  "no monetisation" flatly, and the reasoning behind it was always about one
+  mechanism: a paid tier needs accounts, accounts need authentication,
+  authentication needs a server, and a server is the thing this extension is
+  built not to have. That chain is what is banned, whatever it is called:
+  subscriptions, licences, seats, a pro build, a trial, an unlock.
+
+  A gift starts no such chain. A link to a funding page needs no account, no
+  authentication and no server of ours, and the browser makes that request when
+  the reader clicks it, not the extension, so `connect-src 'none'` stays
+  literally true. A donation link is therefore allowed, under three conditions
+  which are the whole reason for allowing it:
+
+  - **No feature is ever gated, delayed or degraded for anyone who does not
+    pay.** The moment money buys something, the ban above applies again.
+  - **Nothing is ever asked for inside a capture or an editor.** The options
+    page and the repository, nowhere else.
+  - **Every rupee is published.** Whichever platform holds it, the ledger is
+    public, because this project's argument is that you should not have to take
+    its word for anything.
 
 A pull request that weakens any of these fails CI. Changing the invariants and the
 code in the same commit is the thing to watch for in review.

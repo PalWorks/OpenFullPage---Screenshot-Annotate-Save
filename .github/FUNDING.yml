@@ -1,0 +1,10 @@
+# Where GitHub puts a Sponsor button on this repository.
+#
+# Empty, deliberately. The extension side of this landed with GOVERNANCE.md's
+# amendment (see "No monetisation that creates an obligation") and with an
+# options page section that stays hidden while src/lib/sponsors.js has no
+# entries. Filling either one in is what turns it on, and the ledger has to be
+# public whichever platform holds it.
+#
+# github: [ your-username ]
+# open_collective: your-slug

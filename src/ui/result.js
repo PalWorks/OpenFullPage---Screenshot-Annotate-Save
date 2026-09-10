@@ -15,6 +15,7 @@ import { buildPdf, deflate, planPdfPages, rgbaToRgb } from '../lib/pdf.js';
 import { CORNERED_KINDS, PAINTS, PAINT_KINDS, SHAPE_TOOLS, kindOfTool } from '../lib/edit.js';
 import { DOWNLOAD_FORMATS, OUTPUT_FORMATS, encodeOrThrow, extensionOf } from '../lib/encode.js';
 import { PROTOCOL_MISMATCH, speaksOurProtocol } from '../lib/protocol.js';
+import { captureWasClean, reviewsUrl, shouldNudge } from '../lib/nudge.js';
 import { createEditor } from './editor.js';
 import { defaultStyle, saveSettings } from '../lib/settings.js';
 import { THEME_STATE, cycleTheme, startTheme, themeLabel } from '../lib/theme.js';
@@ -60,6 +61,10 @@ const ui = {
   textUnderline: el('text-underline'),
   zoomLevel: el('zoom-level'),
   zoomOut: el('zoom-out'),
+  nudge: el('nudge'),
+  nudgeRate: el('nudge-rate'),
+  nudgeTell: el('nudge-tell'),
+  nudgeNever: el('nudge-never'),
   overview: el('overview'),
   overviewSheet: el('overview-sheet'),
   overviewPort: el('overview-port'),
@@ -410,6 +415,11 @@ async function finish() {
     ui.note.hidden = false;
     ui.note.textContent = notes.join(' ');
   }
+
+  // Counted here, where the plan that says whether it came out whole already is.
+  // Never before the picture is on screen: the ask is worth making only after
+  // the thing it is asking about has been delivered.
+  await maybeNudge(plan, settings);
 
   if (settings.directDownload) await saveWithoutEditing();
 }
@@ -1496,6 +1506,55 @@ for (const button of ui.toolbar.querySelectorAll('[data-fit]')) {
 // The marker follows the window, and a fit follows the window's size.
 window.addEventListener('scroll', showOverview, { passive: true });
 window.addEventListener('resize', () => applyZoom());
+
+// F3, THE RATING NUDGE
+//
+// The counting happens here rather than in the worker because everything the
+// decision needs is already here: the plan says whether the capture came out
+// whole, and a count kept in the tab that can see that cannot disagree with what
+// the user is looking at.
+
+async function maybeNudge(plan, settings) {
+  const url = reviewsUrl(chrome.runtime.id);
+  // Nothing to rate. An unpacked build or anything else whose id is not a real
+  // one simply never asks, which is the honest answer rather than a link.
+  if (!url) return;
+
+  const history = {
+    captureCount: (settings.captureCount ?? 0) + 1,
+    nudgesShown: settings.nudgesShown ?? 0,
+    nudgeDone: settings.nudgeDone === true,
+  };
+  const ask = shouldNudge(history, { clean: captureWasClean(plan) });
+
+  // The count goes up whatever happens, including on the captures that are not
+  // the moment to ask: it is a count of captures, not of chances to ask.
+  await saveSettings({
+    captureCount: history.captureCount,
+    ...(ask ? { nudgesShown: history.nudgesShown + 1 } : {}),
+  });
+  if (!ask) return;
+
+  ui.nudge.hidden = false;
+  ui.nudgeRate.onclick = () => {
+    // The browser opens the store, not the extension. Same reasoning that lets
+    // an upload be handed off: connect-src 'none' stays literally true.
+    chrome.tabs.create({ url });
+    dismissNudge();
+  };
+  ui.nudgeTell.onclick = () => {
+    chrome.tabs.create({ url: chrome.runtime.getURL('src/ui/options.html#support') });
+    dismissNudge();
+  };
+  ui.nudgeNever.onclick = () => {
+    saveSettings({ nudgeDone: true });
+    dismissNudge();
+  };
+}
+
+function dismissNudge() {
+  ui.nudge.hidden = true;
+}
 
 // WHAT THE USER CHOSE TO SEE
 

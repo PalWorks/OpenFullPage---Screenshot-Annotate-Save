@@ -1548,6 +1548,48 @@ for the port protocol. An unrepaired build fails the fixture check with the
 sticky header and the fixed bar each appearing twice, which is exactly what the
 real page did.
 
+## D59: The rating nudge refuses the trick that would make it work better
+
+F3 is fifty lines of code and one decision, and the decision is what to leave out.
+
+**No review gating.** The standard pattern is a sentiment fork: "Enjoying it?",
+with Yes going to the store and No going to a feedback form. It measurably lifts
+the average score, which is the reason it is everywhere, and that is exactly the
+reason to refuse it. It filters unhappy users out of the public record. A product
+whose whole argument is that you can check it for yourself does not get to
+quietly curate its own reviews.
+
+So there is one ask, both answers go to the same place, and the feedback link
+sits **beside** it rather than behind it: reachable without first declaring how
+you feel. The e2e checks the words for "enjoying", "do you like" and "are you
+happy", because the fork is a sentence before it is a code path.
+
+**Counters, not a clock.** A time based trigger, seven days after install, rates
+patience rather than usefulness.
+
+**Suppressed after a capture that came out short.** Asking for five stars
+immediately after handing someone a truncated image is asking to be told exactly
+what they think. `captureWasClean` reads the plan the tab already has rather than
+a new flag from the worker, so it cannot disagree with the warning the user is
+reading at that moment.
+
+**Twice, ever, and a dismissal is permanent.** "Repeatedly asking users to rate"
+is a listed Web Store abuse. The second ask waits for the twenty fifth capture.
+
+**The address is built from `chrome.runtime.id`, and only if it is really an id.**
+Chrome extension ids are exactly thirty two letters from a to p. Anything else
+means the id is not what we think it is, and building a store address out of it
+would send someone to a page that is not ours. The nudge simply does not appear
+then, which is honest: there is nothing to rate.
+
+**The browser opens the store, not the extension.** `chrome.tabs.create` hands
+the address over; `connect-src 'none'` stays literally true. Same reasoning as
+D16's upload hand-off.
+
+**Counted in the result tab, not the worker.** Everything the decision needs is
+already there, and a count kept where the plan can be seen cannot disagree with
+what the user is looking at.
+
 ## D58: Zoom is a width, not a scroll container, and the pane is a schematic
 
 Two halves of F6, and the interesting decision is in each.

@@ -99,6 +99,35 @@
   button:hover:not(:disabled) { background: var(--indigo-bright); }
   button:disabled { opacity: 0.5; cursor: default; }
 
+  /* The nudge. Deliberately not styled as a banner: it is a line in the strip
+     that already carries the filename and the dimensions, at the same size and
+     the same colour as the rest of it. */
+  .nudge {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 24px 11px;
+    border-top: 1px solid var(--mat-edge);
+    background: var(--mat);
+    color: var(--muted);
+    font-size: 12.5px;
+  }
+  .nudge[hidden] { display: none; }
+  .nudge button {
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .nudge button.quiet {
+    background: none;
+    color: var(--muted);
+    text-decoration: underline;
+    padding: 4px 2px;
+  }
+  .nudge button.quiet:hover { background: none; color: var(--ink); }
+
   .track { height: 3px; background: var(--line); }
   .bar { height: 100%; width: 0%; background: var(--amber); transition: width 140ms linear; }
 
@@ -1259,6 +1288,24 @@
   <span id="status" role="status" aria-live="polite">Waiting for the capture to start…</span>
 </div>
 <p class="note" id="note" hidden></p>
+
+<!-- F3, THE RATING NUDGE
+     A line, in the strip that already says the image never leaves your
+     computer. Never a modal, never a new window, never the options page opening
+     by itself: the editor is where the value was just delivered, so it is where
+     the question belongs, and a line can be ignored by not reading it.
+
+     There is no sentiment fork here on purpose. The common pattern asks
+     "Enjoying it?" and sends Yes to the store and No to a feedback form, which
+     lifts the average score by keeping unhappy users out of the public record.
+     One ask, one place it goes, and the feedback link beside it rather than
+     behind it. See docs/ROADMAP.md, F3 in detail. -->
+<div class="nudge" id="nudge" role="note" hidden>
+  <span id="nudge-say">Been useful? A rating helps other people find it.</span>
+  <button type="button" id="nudge-rate">Rate it</button>
+  <button type="button" id="nudge-tell">Tell me what is wrong instead</button>
+  <button type="button" class="quiet" id="nudge-never">Don't ask again</button>
+</div>
 
 <main>
   <figure><canvas id="canvas" hidden></canvas></figure>

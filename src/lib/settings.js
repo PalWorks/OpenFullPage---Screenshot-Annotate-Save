@@ -165,6 +165,16 @@ export const DEFAULTS = {
   // STYLE_KEYS: Reset puts the drawing tools back, and how a file is written out
   // is not a drawing tool, the same reasoning that keeps `format` out of it.
   quality: 92,
+  // F3, the rating nudge. Counters rather than a date: a time based trigger
+  // rates patience rather than usefulness. Deliberately outside STYLE_KEYS,
+  // because Reset puts the drawing tools back and how often someone has been
+  // asked to rate the extension is not a drawing tool.
+  //
+  // In chrome.storage.local like everything else, because rule 5 bans synced
+  // storage, which also means the ask is per browser rather than per person.
+  captureCount: 0,
+  nudgesShown: 0,
+  nudgeDone: false,
   // Toolbar controls the user has switched off. Empty means the curated set.
   hiddenButtons: [],
   // Which shapes are hidden from the Shapes popover.
@@ -255,6 +265,14 @@ export function sanitise(raw) {
     typeof raw.fill === 'string' && /^#[0-9a-f]{6}$/i.test(raw.fill)
       ? raw.fill.toLowerCase()
       : null;
+
+  // Counters, clamped and whole. A stored count that arrived as a float or as
+  // something enormous should not be able to change when the question is asked.
+  for (const key of ['captureCount', 'nudgesShown']) {
+    if (!Number.isFinite(raw[key])) continue;
+    clean[key] = Math.min(1e9, Math.max(0, Math.floor(raw[key])));
+  }
+  if (typeof raw.nudgeDone === 'boolean') clean.nudgeDone = raw.nudgeDone;
 
   for (const key of ['strokeOpacity', 'textInkOpacity', 'textFrameOpacity', 'textPlateOpacity']) {
     if (!Number.isFinite(raw[key])) continue;

@@ -1380,6 +1380,78 @@ async function exerciseZoom(cdp, session, check) {
   await sleep(120);
 }
 
+/**
+ * F3, the rating nudge.
+ *
+ * The rules are unit tested in test/nudge.test.js. What cannot be tested there
+ * is that the line actually appears, that it does not fork on sentiment, and
+ * that "Don't ask again" is written down rather than merely obeyed for now.
+ */
+async function exerciseNudge(cdp, session, check) {
+  console.log('\nasking for a rating, once:');
+
+  const showing = await evaluate(cdp, session, 'document.getElementById("nudge").hidden === false');
+  check(showing,
+    'the fifth capture did not ask for a rating',
+    'the fifth clean capture asks, once');
+  if (!showing) return;
+
+  const counted = await evaluate(cdp, session,
+    `new Promise((r) => chrome.storage.local.get(['captureCount', 'nudgesShown'], r))`);
+  check(counted.captureCount === 5 && counted.nudgesShown === 1,
+    `the capture was counted as ${JSON.stringify(counted)}`,
+    `the ask is written down, so it cannot happen twice (${JSON.stringify(counted)})`);
+
+  // NO REVIEW GATING
+  //
+  // The pattern this refuses is a sentiment fork: "Enjoying it?" with Yes going
+  // to the store and No going to a feedback form, which keeps unhappy users out
+  // of the public record. There is one ask, and the feedback link sits beside it
+  // rather than behind it, so both are reachable without answering anything.
+  const shape = await evaluate(cdp, session, `(() => {
+    const box = document.getElementById('nudge');
+    return {
+      words: box.textContent.replace(/\s+/g, ' ').trim(),
+      buttons: [...box.querySelectorAll('button')].map((b) => b.textContent.trim()),
+    };
+  })()`);
+  check(shape.buttons.length === 3,
+    `the nudge offers ${shape.buttons.length} choices: ${shape.buttons.join(' / ')}`,
+    `one ask, a way to complain instead, and a way out (${shape.buttons.join(' / ')})`);
+  check(!/enjoying|do you like|are you happy/i.test(shape.words),
+    `the nudge asks how you feel first, which is the sentiment fork: "${shape.words}"`,
+    'it asks for the rating rather than asking how you feel first');
+
+  // The address is the store, and it is built from this extension's real id.
+  const target = await evaluate(cdp, session, `(() => {
+    const opened = [];
+    const real = chrome.tabs.create;
+    chrome.tabs.create = (o) => { opened.push(o.url); };
+    document.getElementById('nudge-rate').click();
+    chrome.tabs.create = real;
+    return { opened, hidden: document.getElementById('nudge').hidden };
+  })()`);
+  const wanted = `https://chromewebstore.google.com/detail/${await evaluate(cdp, session, 'chrome.runtime.id')}/reviews`;
+  check(target.opened[0] === wanted,
+    `Rate it opened ${target.opened[0]} rather than ${wanted}`,
+    'Rate it opens this extension\'s own reviews page');
+  check(target.hidden,
+    'the nudge stayed on screen after it was answered',
+    'and the line goes once it has been answered');
+
+  // A dismissal is permanent, which means written down, not merely obeyed.
+  await evaluate(cdp, session, `(() => {
+    document.getElementById('nudge').hidden = false;
+    document.getElementById('nudge-never').click();
+  })()`);
+  await sleep(200);
+  const never = await evaluate(cdp, session,
+    `new Promise((r) => chrome.storage.local.get(['nudgeDone'], r))`);
+  check(never.nudgeDone === true,
+    'Don\'t ask again was not written down, so it would ask again next time',
+    'Don\'t ask again is written down, so it is permanent');
+}
+
 async function exerciseTheme(cdp, session, check) {
   const read = async () =>
     JSON.parse(await evaluate(cdp, session, `JSON.stringify({
@@ -3137,6 +3209,15 @@ async function main() {
         await evaluate(cdp, driver, `chrome.storage.local.set({ directDownload: true })`);
       }
 
+      // F3 asks after the fifth capture, and this harness takes one. Rather than
+      // taking five, the count is set to four so that the one about to happen is
+      // the fifth: the rule being checked is "the fifth", not "five in a row",
+      // and driving five captures would check the loop and not the rule.
+      if (process.argv.includes('--nudge')) {
+        await evaluate(cdp, driver,
+          `chrome.storage.local.set({ captureCount: 4, nudgesShown: 0, nudgeDone: false })`);
+      }
+
       const started = await evaluate(
         cdp,
         driver,
@@ -3352,6 +3433,13 @@ async function main() {
           y: Math.round(box.box.y + Math.min(box.box.height, 620) * fy),
         });
         await marketingShots(cdp, result, shotsDir, at);
+      }
+
+      if (state.ready && process.argv.includes('--nudge')) {
+        await exerciseNudge(cdp, result, (ok, bad, good) => {
+          if (ok) console.log(`  ok   ${good}`);
+          else { console.log(`  FAIL ${bad}`); process.exitCode = 1; }
+        });
       }
 
       if (state.ready && process.argv.includes('--edit')) {
