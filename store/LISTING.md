@@ -57,7 +57,7 @@ WHAT IT DOES
 - Crops with a region you can adjust and confirm, rather than cutting on release
 - Undoes and redoes every edit
 - Light, dark, or whatever your system is set to
-- Saves as PNG, JPEG or PDF with a filename you can edit, or copies to the clipboard
+- Saves as PNG, JPEG, WebP or PDF with a filename you can edit, or copies to the clipboard
 - Hands the image to an image host of your choice through your clipboard, if you want a link
 
 
@@ -150,7 +150,7 @@ Screenshot captions, if the dashboard offers them:
 1. One image of the whole page, however long it is
 2. Arrows, boxes, highlights and numbered steps
 3. Redaction that removes the pixels, not just covers them
-4. Save as PNG, JPEG or PDF, with a filename you choose
+4. Save as PNG, JPEG, WebP or PDF, with a filename you choose
 5. Send it to an image host through your clipboard. The extension never uploads
 
 ## Privacy practices tab
@@ -309,7 +309,7 @@ Sixty seconds, no voiceover, captions only. Screen recording at 1280x800.
 | 0:14 | The result tab opens with the whole page as one tall image | The whole page, in one image |
 | 0:20 | Drag a box over a section, pick a fill colour and drop the opacity | Mark it up |
 | 0:30 | Drag the redaction tool over an email address | Redaction removes the pixels, it does not cover them |
-| 0:38 | Type a filename, choose PNG, save. The file appears in downloads | Save it, as PNG, JPEG or PDF |
+| 0:38 | Type a filename, choose PNG, save. The file appears in downloads | Save it, as PNG, JPEG, WebP or PDF |
 | 0:44 | **Cut to DevTools, Network panel, empty, next to the capture running** | Nothing was sent anywhere |
 | 0:52 | The manifest on screen, `connect-src 'none'` highlighted | Chrome enforces it. Not us |
 | 0:57 | The mark, the name, the site address | openfullpage |

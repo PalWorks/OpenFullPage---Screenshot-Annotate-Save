@@ -174,7 +174,9 @@ test('the remembered download format has to be one we can actually encode', () =
   assert.equal(sanitise({}).format, 'png');
   for (const known of DOWNLOAD_FORMATS) assert.equal(sanitise({ format: known }).format, known);
   // A format we cannot encode would fail at the moment the user presses save.
-  for (const junk of ['webp', 'image/png', '../x', 7, null]) {
+  // `webp` was in this list until WebP shipped, and `avif` replaces it for the
+  // same reason: Chrome's canvas will decode one and will not encode one.
+  for (const junk of ['avif', 'gif', 'image/png', '../x', 7, null]) {
     assert.equal(sanitise({ format: junk }).format, 'png', String(junk));
   }
 });

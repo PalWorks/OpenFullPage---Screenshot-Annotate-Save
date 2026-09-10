@@ -16,7 +16,7 @@ Nothing.
 ## What happens to your screenshots
 
 They are composited in your browser's memory and written wherever you save them:
-your own downloads folder, as PNG, JPEG or PDF, or your clipboard. They are never
+your own downloads folder, as PNG, JPEG, WebP or PDF, or your clipboard. They are never
 uploaded, and they are never seen by anyone but you.
 
 The Upload button is a hand off, not an upload. It copies the image to your

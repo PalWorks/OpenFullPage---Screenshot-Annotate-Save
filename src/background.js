@@ -28,6 +28,8 @@ import {
   PREPARE_CSS,
   expandSameOriginFrames,
   markSpecialElements,
+  pauseMedia,
+  resumeMedia,
   reportFrameHeights,
   restorePage,
   scrollAndSettle,
@@ -36,6 +38,7 @@ import {
 } from './content/prepare.js';
 import { DEEP_FRAMES, loadSettings } from './lib/settings.js';
 import { clearProgress, showFailure, showProgress } from './lib/badge.js';
+import { sealed, speaksOurProtocol } from './lib/protocol.js';
 import { planCapture } from './lib/plan.js';
 import { measurePage } from './content/measure.js';
 import { pickElement } from './content/pick.js';
@@ -127,7 +130,7 @@ function tellProgress(message) {
   if (message.type === 'progress') lastProgress = message;
   for (const port of progressPorts) {
     try {
-      port.postMessage(message);
+      port.postMessage(sealed(message));
     } catch {
       progressPorts.delete(port);
     }
@@ -171,11 +174,16 @@ chrome.runtime.onConnect.addListener((port) => {
     // the only thing that can send it, and only an extension page can open this
     // port at all.
     port.onMessage.addListener((message) => {
-      if (message?.type === 'stop') stopRequested = true;
+      // A command from a panel that does not agree with us about what messages
+      // mean is refused rather than guessed at. The only command there is is
+      // Finish now, so refusing it means the capture runs to the end, which
+      // costs the user nothing they had.
+      if (!speaksOurProtocol(message)) return;
+      if (message.type === 'stop') stopRequested = true;
     });
     // The popup connects after the capture has already started, so replay where
     // things stand rather than showing 0% until the next screenful lands.
-    if (lastProgress) port.postMessage(lastProgress);
+    if (lastProgress) port.postMessage(sealed(lastProgress));
     return;
   }
 
@@ -279,6 +287,9 @@ async function runCapture(tab, mode, settings) {
   let prepared = false;
   let fixedHidden = false;
   let deepFrames = false;
+  // Whether anything was playing when the capture started. Nothing is resumed
+  // that this capture did not pause.
+  let mediaPaused = false;
   let restored = false;
   let origin = { x: 0, y: 0 };
 
@@ -286,6 +297,8 @@ async function runCapture(tab, mode, settings) {
     if (restored) return;
     restored = true;
     const tidy = (async () => {
+      // First, because it is the one piece of tidying the reader can hear.
+      if (mediaPaused) await inAllFrames(tabId, resumeMedia);
       if (fixedHidden) {
         await chrome.scripting.removeCSS({ target: { tabId }, css: HIDE_FIXED_CSS }).catch(() => {});
       }
@@ -318,6 +331,13 @@ async function runCapture(tab, mode, settings) {
 
   try {
     report(0, 'Measuring the page');
+
+    // Before the delay and before anything is measured, so a capture delay is
+    // not spent with the video still running. Every mode, not only the full page
+    // walk: a visible-area shot of a playing video is a frame nobody chose, and
+    // the audio is playing either way.
+    await inAllFrames(tabId, pauseMedia);
+    mediaPaused = true;
 
     let metrics = await inPage(tabId, measurePage);
     pageTitle = metrics.title;
@@ -445,7 +465,8 @@ async function runCapture(tab, mode, settings) {
     await restore();
 
     const port = await openResultTab(captureId, tab, { active: !settings.directDownload });
-    port.postMessage({
+    const send = (message) => port.postMessage(sealed(message));
+    send({
       type: 'plan',
       title: metrics.title,
       url: metrics.url,
@@ -463,8 +484,8 @@ async function runCapture(tab, mode, settings) {
       viewportHeight: metrics.viewportHeight,
       settings,
     });
-    for (const shot of shots) port.postMessage({ type: 'tile', ...shot });
-    port.postMessage({ type: 'finish' });
+    for (const shot of shots) send({ type: 'tile', ...shot });
+    send({ type: 'finish' });
 
     shots.length = 0;
     clearProgress();

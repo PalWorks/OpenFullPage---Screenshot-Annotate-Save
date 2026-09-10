@@ -19,11 +19,15 @@
 // seventeen entries and grow every time a shape is added, and a second copy is
 // how "parallelogram" ends up valid in one file and rejected in the other.
 import { SHAPE_GROUPS, SHAPE_TOOLS, TOOLS } from './edit.js';
+import { DOWNLOAD_FORMATS } from './encode.js';
 
 export { SHAPE_GROUPS, SHAPE_TOOLS, TOOLS };
+// Re-exported so callers have one place to ask what a setting may be, the same
+// way the shape lists are. The list itself is derived from the format table.
+export { DOWNLOAD_FORMATS };
 
 export const CAPTURE_MODES = ['full', 'visible', 'element'];
-export const DOWNLOAD_FORMATS = ['png', 'jpeg', 'pdf'];
+
 
 /**
  * Interface theme. `system` is the default and means "whatever the operating

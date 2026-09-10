@@ -31,12 +31,12 @@ already scoped and ready to start, or **planned** with the effort in the form
 | 1.7.0 repairs | T10 | Warn before losing unsaved edits | shipped | D14. All of what survived the apply/discard request |
 | 1.7.0 repairs | T20 | Selection handles hold their size on screen | shipped | D19. A defect: nine canvas pixels is one screen pixel on a 14,000px capture |
 | 1.7.0 repairs | T1 | Fix the false storage claim in the README | shipped 2026-09-08 | |
-| 1.7.0 repairs | T2 | `encodeOrThrow`, so a null blob cannot fail silently | **next**, 2h / 15m | Blocks F1 |
-| 1.7.0 repairs | T11 | Version the port protocol | planned, 1h / 10m | Blocks F10 |
-| 1.7.0 wins | F1 | WebP export | planned, 0.5d / 10m | Waiting on T2 |
-| 1.7.0 wins | F21 | Export quality control | planned, 0.5d / 10m | 0.92 is hardcoded today, a guess made once on the user's behalf |
-| 1.7.0 wins | F2 | Pause playing media during the capture | planned, 0.5d / 15m | |
-| 1.7.0 wins | F26 | Unmissable confirmation on copy and save | planned, 0.5d / 15m | Without reaching for the `notifications` permission |
+| 1.7.0 repairs | T2 | `encodeOrThrow`, so a null blob cannot fail silently | shipped 2026-09-10 | D52. A null blob was a download of nothing with no error anywhere |
+| 1.7.0 repairs | T11 | Version the port protocol | shipped 2026-09-10 | D53. Unblocks F10. Exercised by `--stale` |
+| 1.7.0 wins | F1 | WebP export | shipped 2026-09-10 | D52. Output formats are described once now, not in three lists |
+| 1.7.0 wins | F21 | Export quality control | **next**, 0.5d / 10m | 0.92 is hardcoded today, a guess made once on the user's behalf. Applies to JPEG and WebP |
+| 1.7.0 wins | F2 | Pause playing media during the capture | shipped 2026-09-10 | L27, L28. Only what was playing, resumed first in the tidy-up |
+| 1.7.0 wins | F26 | Unmissable confirmation on copy and save | **next**, 0.5d / 15m | Without reaching for the `notifications` permission |
 | 1.8.0 toolbar | F24 | Toolbar regrouped, and configurable | shipped | D17, D18, D20, D21. 26 flat controls became grouped buttons carrying 68 |
 | 1.8.0 toolbar | F25 | Upload, as a hand-off | shipped | D16. The extension never uploads. It copies and opens the host |
 | 1.8.0 toolbar | F35 | PDF export, ahead of its release | shipped 2026-09-09 | D31. Hand written, around 200 lines, no library |
@@ -69,9 +69,9 @@ already scoped and ready to start, or **planned** with the effort in the form
 | Debt | T5 | Test that the GOVERNANCE.md canary is not stale | planned, P2 | It has already drifted, L19 |
 | Debt | T13 | Use the exported `HISTORY_LIMIT` instead of a second hardcoded 60 | planned, P3 | |
 
-**What to pick up next, in order:** T2 then F1 and F21, which close release 1.7.0
-and remove the last silent failure. Then F10, which is the only item on this page
-that fixes something a user has actually hit.
+**What to pick up next, in order:** F21 and F26, which are all that is left of
+release 1.7.0. Then F10, which is the only item on this page that fixes something
+a user has actually hit, and which T11 has now unblocked.
 
 
 ## The rule every item is measured against
@@ -161,15 +161,15 @@ Small, and it removes every known silent failure.
 | # | Item | Effort | Notes |
 |---|---|---|---|
 | T19 | **Harden the content security policy** | **shipped**, D15 | `connect-src 'none'` blocks fetch, XHR, WebSocket and beacons. It does **not** block `<img src="https://...">`, because our CSP sets no `default-src` and therefore leaves `img-src`, `style-src`, `font-src` and `media-src` unrestricted. One line closes it. See [DECISIONS.md](DECISIONS.md) D15 |
-| T2 | Add `encodeOrThrow`, so a null blob cannot fail silently | 2h / 15m | Blocks F1 |
+| T2 | Add `encodeOrThrow`, so a null blob cannot fail silently | **shipped**, D52 | `canvas.toBlob` reports failure by calling back with `null`, so wrapping it in a promise and resolving whatever arrived turned every encoding failure into a download of nothing. Unit tested with a fake canvas, because a real one has to exceed the encoder before it fails |
 | T3 | Round-trip test for every settings key | **shipped** | `test/settings.test.js` |
 | T10 | Warn before losing unsaved edits | **shipped** | This is F7, the whole of what survived the apply/discard request. D14 |
-| T11 | Version the port protocol | 1h / 10m | Blocks F10 |
+| T11 | Version the port protocol | **shipped**, D53 | An update replaces the service worker and leaves the pages it opened running old code. Only the worker can be newer than the page, so only that direction is checked. Exercised by `--stale`, which points the worker at a later protocol than the pages read |
 | T20 | **Selection handles hold their size on screen** | **shipped**, D19 | A defect, not a preference. `drawSelection()` draws handles at nine **canvas** pixels; at the 12% a 14,000px capture is fitted to, that is one screen pixel, and the 1.5px dashed outline vanishes entirely. `pickTolerance()` already divides by the display factor, so the shape is still easy to grab and impossible to see. One `screenScale()` helper feeds both |
 | T1 | Fix the false storage claim in the README | **shipped** | Done 2026-09-08 |
-| F1 | **WebP export** | 0.5d / 10m | |
+| F1 | **WebP export** | **shipped**, D52 | And the output formats are described once, in `src/lib/encode.js`, rather than in the settings list, the extension table and the markup, which could disagree in either direction without an error |
 | F21 | **Export quality control** | 0.5d / 10m | A quality slider for JPEG and WebP. We hardcode 0.92 today, which is a guess made once on the user's behalf |
-| F2 | **Pause playing media during the capture** | 0.5d / 15m | |
+| F2 | **Pause playing media during the capture** | **shipped**, L27, L28 | A walk takes seconds and a video playing through it is photographed at a different frame in every screenful it spans. Only what was playing is paused, and it is the first thing started again when the page is handed back, because it is the one piece of the tidy-up the reader can hear |
 | F26 | **Unmissable confirmation on copy and save** | 0.5d / 15m | The status line already says it. Make it impossible to miss without resorting to the `notifications` permission |
 
 ## Release 1.8.0: the toolbar becomes yours

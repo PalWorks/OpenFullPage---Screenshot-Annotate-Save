@@ -66,5 +66,7 @@ Status key: **open** (a real gap, unfixed), **by design** (a deliberate trade),
 | L19 | The canary line in `GOVERNANCE.md` is re-signed by hand at release time, and it has already drifted one release behind | **open**, task T5 makes it a test |
 | L25 | The rendered-page audit covers contrast, overflow, broken images and heading order. It does not cover focus order, screen reader labelling or motion, so it is a floor rather than an accessibility pass | **open**, honest scope |
 | L26 | Store screenshots are generated against the marketing site, so a change to that site changes the images. Regenerating them is one command and is on the release checklist | **by design** |
+| L27 | A capture pauses anything playing and starts it again afterwards. Some players answer a pause by drawing a large play button over the video, so a capture of a page with a video may photograph that overlay rather than the frame that was showing. The alternative is a video photographed at a different moment in every screenful it spans, which is worse | **open**, the better of two |
+| L28 | Media inside a cross-origin frame is not paused, because the extension cannot reach into one without the advanced access permission. Same-origin frames are covered | **by design**, follows the permission model |
 | L20 | `tools/verify-crx` needs Go to build, and the end to end suite needs a real Chrome. The unit suite needs neither | **by design** |
 | L21 | Chrome only. A Firefox or Safari port means a different manifest and a different verification story | **by design** |

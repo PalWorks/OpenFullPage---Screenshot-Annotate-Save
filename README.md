@@ -9,7 +9,7 @@
 [![Dependencies: zero](https://img.shields.io/badge/dependencies-0-success.svg)](#tech-stack)
 [![Build step: none](https://img.shields.io/badge/build%20step-none-success.svg)](#verify-what-is-running-in-your-browser)
 
-A Chrome extension that photographs an entire page, not just the part you can see, opens it in a real editor, and saves it as PNG, JPEG or PDF. It asks for no site access at install, sends nothing anywhere, and ships the same bytes that are in this repository.
+A Chrome extension that photographs an entire page, not just the part you can see, opens it in a real editor, and saves it as PNG, JPEG, WebP or PDF. It asks for no site access at install, sends nothing anywhere, and ships the same bytes that are in this repository.
 
 **Website:** <https://palworks.github.io/openfullpage-site/>
 
@@ -117,7 +117,7 @@ The capture opens in a tab with a real editor. Shapes stay **live objects**: sel
 | History | `Cmd`/`Ctrl`+`Z`, add `Shift` to redo. Covers moves and resizes, not only drawing |
 | Reset | Removes your edits when there are some, and restores the default tools and colours when there are none |
 | Theme | System, light or dark, cycled from the toolbar. System is the default and follows the operating system. The capture is laid on a solarized mat rather than on white or black, so a white screenshot still has a visible edge |
-| Output | `Cmd`/`Ctrl`+`C` to copy, or Download as PNG, JPEG or PDF with a filename you can edit |
+| Output | `Cmd`/`Ctrl`+`C` to copy, or Download as PNG, JPEG, WebP or PDF with a filename you can edit. An encoder that cannot manage the image says so, rather than saving nothing |
 | Upload | Copies the image and opens an image host so you can paste it there. The extension performs no upload and cannot |
 | Constrain | Hold `Shift` for squares, circles and 45 degree lines, while drawing and while resizing |
 

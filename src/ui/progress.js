@@ -9,6 +9,8 @@
 // screenful and would strobe. The popup is browser chrome, so it can animate
 // steadily for the entire capture and never appear in the result.
 
+import { PROTOCOL_MISMATCH, sealed, speaksOurProtocol } from '../lib/protocol.js';
+
 const el = (id) => document.getElementById(id);
 const ui = {
   percent: el('percent'),
@@ -51,7 +53,7 @@ ui.stop.addEventListener('click', () => {
   ui.stop.textContent = 'Finishing';
   ui.hint.textContent = 'Finishing after this screen.';
   try {
-    port.postMessage({ type: 'stop' });
+    port.postMessage(sealed({ type: 'stop' }));
   } catch {
     ui.hint.textContent = 'The capture had already stopped.';
   }
@@ -66,6 +68,17 @@ const setState = (state) => {
 setState('waiting');
 
 port.onMessage.addListener((message) => {
+  // An update can replace the worker while this panel stays open. Reading a
+  // message shaped for a build we are not is how a panel ends up animating at a
+  // percentage that means nothing, so it says so instead.
+  if (!speaksOurProtocol(message)) {
+    setState('stopped');
+    ui.stop.hidden = true;
+    ui.what.textContent = 'Capture interrupted';
+    ui.hint.textContent = PROTOCOL_MISMATCH;
+    return;
+  }
+
   setState(message.type);
 
   if (message.type === 'progress') {

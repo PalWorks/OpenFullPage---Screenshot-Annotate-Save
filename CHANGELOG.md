@@ -13,6 +13,59 @@ a clean checkout with `./tools/pack.sh`, not merely checkable against one downlo
 Everything below is on `main` and not yet packaged. It covers the toolbar rework
 and the capture reliability work of 2026-09-08 and 2026-09-09.
 
+### Added: WebP export
+A fourth format in the download menu. Smaller than JPEG at the same quality, and
+every browser in current use reads it. The quality is the same 0.92 JPEG has always
+used, which is where a screenshot stops looking worse than the original.
+
+### Fixed: an encoder that fails no longer saves nothing, quietly
+`canvas.toBlob` reports failure by handing its callback `null`. It does not throw
+and it does not reject, so the previous code resolved `null` and passed it to
+`URL.createObjectURL`. The user got a download of nothing, or no download at all,
+and the console said nothing about it.
+
+That is not a theoretical failure: `toBlob` returns null when the canvas is bigger
+than the encoder can hold, which a full page capture reaches sooner than anything
+else here. `encodeOrThrow` now names the format, says the image may be too large,
+and suggests PNG or a crop. Unit tested against a fake canvas, because a real one
+has to be enormous before it fails, and mutation confirms the test can fail.
+
+The output formats are also described in one place now rather than three. A format
+in the menu but not in `sanitise()` was silently thrown away on every reload; a
+format in the settings list with no menu row could be stored and never chosen. An
+invariant test checks the menu names exactly the formats the table declares and
+describes each one in the same words. [docs/DECISIONS.md](docs/DECISIONS.md) D52.
+
+### Added: the port protocol carries a version
+Chrome updates an extension by replacing the service worker and leaving the pages
+it opened running exactly as they were. A result tab opened five minutes ago is
+still executing the old code, and the new worker posts to it regardless.
+
+Nothing goes wrong today because the messages have the same shape. The moment that
+changes, and multi-part export changes it, an old tab reads a message it does not
+understand and shows a progress bar that never fills. One number on every message
+turns that into a sentence naming the cause and the remedy.
+
+Only the worker can be newer than the page, so that is the direction checked. See
+[docs/DECISIONS.md](docs/DECISIONS.md) D53 for why the other direction would be
+code whose failing case cannot occur. `node test/e2e/run.mjs --stale` points the
+worker at a later protocol than the pages read, which is the only way to make the
+two ends disagree, and proves the tab says so.
+
+### Added: playing media is paused for the capture, and started again afterwards
+A full page walk takes seconds, sometimes tens of them, and a video playing through
+it is photographed at a different frame in every screenful it spans, so a player
+straddling a seam shows two moments of the same video with a hard line between
+them. Audio is the other half: the page is being scrolled under a reader who is
+listening to it.
+
+Only what was actually playing is paused, so a video the reader had already stopped
+is still stopped when they get their tab back, and the resume happens first in the
+tidy-up because it is the one piece of it they can hear. Same-origin frames are
+covered; a cross-origin frame is not, because reaching into one needs the advanced
+access permission. Both that and the play-button overlay some players draw when
+paused are recorded as [docs/LIMITATIONS.md](docs/LIMITATIONS.md) L27 and L28.
+
 ### Added: the paint order, reachable at last
 Shapes are drawn in the order they were made, so the last one drawn is on top, and
 there has never been a way to change that. A box drawn over a highlighter covered it

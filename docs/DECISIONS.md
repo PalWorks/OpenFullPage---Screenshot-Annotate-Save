@@ -1353,3 +1353,66 @@ The alternative was two more kinds in `SHAPE_GEOMETRY` that render exactly like 
 rect. That would have put three indistinguishable rectangles in the model to save
 one line of mapping, and it is the kind of duplication that is invisible until
 something has to switch on kind.
+
+## D52: One description of each output format, and a null blob is an error
+
+**2026-09-10.** Three lists described the output formats: `DOWNLOAD_FORMATS` in
+`settings.js` decided what a remembered preference could be, `EXTENSIONS` in
+`result.js` decided what the file was called, and the markup decided what the
+download menu offered. Adding WebP meant editing all three.
+
+**A format present in two of them and missing from the third fails silently, in
+both directions.** A menu entry `sanitise()` does not know about is thrown away
+on every reload, so the format never sticks and nothing says why. A format in
+`DOWNLOAD_FORMATS` with no menu row is a preference that can be stored and never
+chosen. Neither produces an error.
+
+`src/lib/encode.js` now holds the table, `settings.js` re-exports the list from
+it the way it already re-exports the shape lists, and an invariant test checks
+that the menu names exactly the formats the table declares **and** describes each
+one with the same words. There is one remaining hand-maintained copy, the markup,
+and the test is what makes it safe.
+
+**And `encodeOrThrow`.** `canvas.toBlob` reports failure by handing its callback
+`null`. It does not throw and it does not reject, so wrapping it in
+`new Promise((r) => canvas.toBlob(r, ...))`, which is what the code did, resolved
+`null` and passed it to `URL.createObjectURL`. The user got a download of nothing,
+or no download at all, and the console said nothing.
+
+This is not theoretical. `toBlob` returns null when the canvas is larger than the
+encoder can hold, which a full page capture reaches sooner than anything else
+this extension does, and when the browser does not recognise the mime type. The
+failing case is unit tested with a fake canvas, because a real one has to be
+enormous before it fails, and mutation confirms the test can fail.
+
+## D53: The port protocol is versioned, and only one direction is checked
+
+**2026-09-10.** Chrome updates an extension by replacing the service worker and
+leaving the pages it opened running exactly as they were. A result tab opened
+five minutes ago is still executing the old code, and the new worker posts to it
+regardless.
+
+Today nothing goes wrong, because the messages have the same shape. **The moment
+the shape changes it fails in the worst available way: silently.** ROADMAP F10
+changes it, by splitting a long capture into parts, which is why this is a
+prerequisite rather than a nicety. An old tab reading a part message it does not
+understand shows a progress bar that never fills and reports nothing.
+
+`PROTOCOL_VERSION` goes on every message the worker sends, and both pages check
+what they receive. One number turns a hang into a sentence naming the cause and
+the remedy.
+
+**Only the worker can be newer than the page**, so only that direction needs
+catching. A page's code is loaded from the extension package when its tab opens,
+and any worker started afterwards comes from the same package or a later one,
+never an earlier one. Checking the other direction as well would be code whose
+failing case cannot occur.
+
+The pages do stamp what they send, and the worker refuses a command it does not
+recognise. There is exactly one command, Finish now, and refusing it means the
+capture runs to the end rather than stopping early, which costs nobody any work.
+
+The check is exercised by `node test/e2e/run.mjs --stale`, which points the
+worker at a protocol module claiming a later version while the pages read the
+real one. That is the only way to make the two ends disagree, because they
+otherwise read the same file.

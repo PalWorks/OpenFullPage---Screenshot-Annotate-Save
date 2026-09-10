@@ -37,6 +37,7 @@ node test/e2e/run.mjs --direct   # save straight to a file, with no editor
 node test/e2e/run.mjs --deep     # with advanced access granted
 node test/e2e/run.mjs --headed   # watch it happen
 node test/e2e/run.mjs --headed --popup  # prove Chrome opens the toolbar popup
+node test/e2e/run.mjs --stale   # a worker newer than the tab it is talking to
 
 FPC_URLS=https://example.com/a,https://example.com/b node test/e2e/run.mjs
 ```
@@ -49,7 +50,7 @@ because Chrome 137 and later ignore `--load-extension`), captures pages, drives 
 result tab, and inspects what was saved.
 
 The Download button is clicked with `Runtime.evaluate({ userGesture: true })`, so
-`chrome.permissions.request` sees a real gesture. PNG, JPEG and PDF are all
+`chrome.permissions.request` sees a real gesture. PNG, JPEG, WebP and PDF are all
 exercised, and the saved PDF is parsed back: its page count and image count have to
 match what `planPdfPages` says the crop should produce.
 

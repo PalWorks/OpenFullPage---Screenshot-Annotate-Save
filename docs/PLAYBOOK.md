@@ -14,6 +14,7 @@ Operational procedures. Follow step by step.
 | `node test/e2e/run.mjs --stop` | Presses Finish now partway through a capture of a 15000 pixel fixture, and checks the image comes back short, trimmed and honest about it |
 | `node test/e2e/run.mjs --direct` | Turns on straight-to-a-file, and checks a capture writes an image and closes its own tab with no editor and no click |
 | `node test/e2e/run.mjs --headed --popup` | Proves Chrome actually opens the progress panel under the toolbar button. Headless will not open one, so this is the only mode that can check it, and it refuses to run without `--headed` |
+| `node test/e2e/run.mjs --stale` | Points the service worker at a later protocol version than the pages read, which is what an extension update landing mid capture looks like. The result tab must say so rather than waiting on a progress bar that will never move |
 | `node test/e2e/run.mjs --market --shots store/screenshots` | The five store screenshots at exactly 1280x800, drawn on the real product |
 | `FPC_URLS=<url> node test/e2e/run.mjs ...` | Point any of the above at a page of your choosing rather than the fixture |
 | `node tools/preview-icons.mjs` | Contact sheet of the icon at 128, 48, 32 and 16, on both Chrome toolbars |

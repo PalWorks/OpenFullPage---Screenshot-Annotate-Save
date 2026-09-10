@@ -3,7 +3,7 @@
   "name": "OpenFullPage - Capture Screen, Annotate, Save",
   "short_name": "OpenFullPage",
   "version": "1.6.1",
-  "description": "Capture a whole web page as one image. Annotate it, save it as PNG, JPEG or PDF. No accounts, no network, no tracking.",
+  "description": "Capture a whole web page as one image. Annotate it, save it as PNG, JPEG, WebP or PDF. No accounts, no network, no tracking.",
   "minimum_chrome_version": "116",
   "icons": {
     "16": "icons/icon16.png",

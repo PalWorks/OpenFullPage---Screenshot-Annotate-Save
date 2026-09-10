@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { SHAPE_GROUPS, SHAPE_TOOLS, TOOLS } from '../src/lib/edit.js';
+import { DOWNLOAD_FORMATS, OUTPUT_FORMATS } from '../src/lib/encode.js';
 import { TOOLBAR_BUTTONS } from '../src/lib/settings.js';
 import { makeZip } from '../tools/lib/zip.mjs';
 import {
@@ -226,6 +227,25 @@ test('the shapes popover and the model agree about which shapes exist', () => {
   // added to the model and silently render as a run of unlabelled buttons.
   for (const [name] of SHAPE_GROUPS) {
     assert.ok(popover.includes(`>${name}<`), `the "${name}" group has no heading in the popover`);
+  }
+});
+
+test('the download menu and the model agree about which formats exist', () => {
+  // Three lists used to describe the output formats: the markup, EXTENSIONS in
+  // result.js and DOWNLOAD_FORMATS in settings.js. A format in two of them and
+  // missing from the third fails silently in both directions: a remembered
+  // preference the menu cannot show, or a menu entry sanitise() throws away on
+  // every reload. result.js and settings.js now read the one table, so this
+  // checks the remaining pair.
+  const markup = readFileSync(join(REPO_ROOT, 'src/ui/result.html'), 'utf8');
+  const menu = markup.slice(markup.indexOf('id="formats"'), markup.indexOf('data-button="upload"'));
+  const inMarkup = [...menu.matchAll(/data-format="([\w-]+)"/g)].map((m) => m[1]);
+
+  assert.deepEqual(inMarkup, DOWNLOAD_FORMATS, 'the menu order must match DOWNLOAD_FORMATS exactly');
+  for (const name of DOWNLOAD_FORMATS) {
+    // The note in the table is what the menu row says, so a format cannot be
+    // described one way in the code and another way on screen.
+    assert.ok(menu.includes(OUTPUT_FORMATS[name].note), `"${name}" says something different in the menu`);
   }
 });
 

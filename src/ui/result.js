@@ -13,6 +13,8 @@
 import { applyFilename, captureBasename } from '../lib/plan.js';
 import { buildPdf, deflate, planPdfPages, rgbaToRgb } from '../lib/pdf.js';
 import { CORNERED_KINDS, SHAPE_TOOLS, kindOfTool } from '../lib/edit.js';
+import { OUTPUT_FORMATS, encodeOrThrow, extensionOf } from '../lib/encode.js';
+import { PROTOCOL_MISMATCH, speaksOurProtocol } from '../lib/protocol.js';
 import { createEditor } from './editor.js';
 import { defaultStyle, saveSettings } from '../lib/settings.js';
 import { THEME_STATE, cycleTheme, startTheme, themeLabel } from '../lib/theme.js';
@@ -102,7 +104,10 @@ const NUDGES = {
   ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1],
 };
 
-const JPEG_QUALITY = 0.92;
+// What the lossy encoders are given. WebP and JPEG both take it, and 0.92 is
+// where JPEG stops being visibly worse than the original on a screenshot, which
+// is mostly flat colour and hard edges rather than photographic detail.
+const LOSSY_QUALITY = 0.92;
 
 // The stitched capture, kept untouched. The visible canvas is rendered from it
 // on every edit, so undo is exact and repeated edits never degrade the image.
@@ -295,7 +300,7 @@ async function finish() {
     url: pageUrl,
   });
   ui.filename.disabled = false;
-  format = EXTENSIONS[settings.format] ? settings.format : 'png';
+  format = OUTPUT_FORMATS[settings.format] ? settings.format : 'png';
   showExtension();
 
   const modeNote =
@@ -506,15 +511,13 @@ function setToolsEnabled(on) {
 // is an image, so it starts inert.
 setToolsEnabled(false);
 
-const EXTENSIONS = { png: 'png', jpeg: 'jpg', pdf: 'pdf' };
-
 // What a download would produce right now. Shown next to the filename so the box
 // always reads as the whole name, and remembered so the next capture opens on the
 // format this one was saved in.
 let format = 'png';
 
 function showExtension() {
-  ui.ext.textContent = `.${EXTENSIONS[format] ?? 'png'}`;
+  ui.ext.textContent = `.${extensionOf(format)}`;
   for (const item of ui.formats.querySelectorAll('[data-format]')) {
     item.setAttribute('aria-pressed', String(item.dataset.format === format));
   }
@@ -1270,12 +1273,13 @@ document.addEventListener('keyup', (event) => {
  */
 async function encode(format) {
   const canvas = editor.flatten();
-  if (format === 'pdf') return { blob: await encodePdf(canvas), extension: 'pdf' };
-  if (format === 'png') {
-    return { blob: await new Promise((r) => canvas.toBlob(r, 'image/png')), extension: 'png' };
-  }
-  const blob = await new Promise((r) => canvas.toBlob(r, 'image/jpeg', JPEG_QUALITY));
-  return { blob, extension: 'jpg' };
+  const spec = OUTPUT_FORMATS[format] ?? OUTPUT_FORMATS.png;
+  if (format === 'pdf') return { blob: await encodePdf(canvas), extension: spec.extension };
+  // `quality` is passed only to the encoders that take one. Handing a quality to
+  // the PNG encoder is not an error, it is simply ignored, but passing it says
+  // something untrue about what PNG does.
+  const blob = await encodeOrThrow(canvas, spec.mime, spec.quality ? LOSSY_QUALITY : undefined);
+  return { blob, extension: spec.extension };
 }
 
 /**
@@ -1434,8 +1438,23 @@ if (!captureId) {
   say('No capture in progress. Click the OpenFullPage button on the page you want.');
 } else {
   const port = chrome.runtime.connect({ name: `capture:${captureId}` });
+  // Said once. A mismatch is true of every message that follows, and repeating
+  // it for each of a hundred tiles would bury it.
+  let mismatched = false;
 
   port.onMessage.addListener((message) => {
+    // The extension can be updated while this tab stays exactly as it was, and
+    // the new worker will post to it regardless. Reading a message we do not
+    // understand is the one failure worth catching here, because it fails
+    // silently: a progress bar that never fills and no error anywhere.
+    if (!speaksOurProtocol(message)) {
+      if (!mismatched) {
+        mismatched = true;
+        say(PROTOCOL_MISMATCH, true);
+      }
+      return;
+    }
+
     queue = queue
       .then(async () => {
         if (message.type === 'plan') {
@@ -1459,6 +1478,7 @@ if (!captureId) {
 
   port.onDisconnect.addListener(() => {
     queue = queue.then(() => {
+      if (mismatched) return;
       if (!editor && !ui.status.classList.contains('error')) {
         say('The capture stopped before it finished.', true);
       }

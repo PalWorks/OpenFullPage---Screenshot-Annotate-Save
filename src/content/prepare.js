@@ -50,6 +50,53 @@ export function markSpecialElements() {
 }
 
 /**
+ * Pause anything that is playing, and remember only what we paused.
+ *
+ * A full page walk takes seconds, sometimes tens of them. A video playing
+ * through it is photographed at a different frame in every screenful it spans,
+ * so a player that straddles a seam shows two moments of the same video with a
+ * hard line between them. Audio is the other half: the capture manipulates the
+ * page under a reader who is listening to it, and leaving it playing while the
+ * page scrolls itself is worse than pausing for a moment.
+ *
+ * `data-fpc-playing`, not a list held in this function, because the mark has to
+ * survive the round trip: this runs in the page through executeScript and the
+ * worker gets back a number, not a reference to a video element.
+ *
+ * Only what was playing is marked, so a video the reader had already paused is
+ * still paused when they get their tab back.
+ *
+ * @returns {number} how many were paused
+ */
+export function pauseMedia() {
+  let paused = 0;
+  for (const el of document.querySelectorAll('video, audio')) {
+    if (el.paused) continue;
+    el.setAttribute('data-fpc-playing', '');
+    el.pause();
+    paused += 1;
+  }
+  return paused;
+}
+
+/**
+ * Start again exactly what `pauseMedia` stopped.
+ *
+ * `play()` returns a promise that rejects when the browser declines, which it
+ * does when the element needs a user gesture it no longer has. There is nothing
+ * useful to do about that and it must not become an unhandled rejection inside
+ * somebody else's page, so it is swallowed deliberately: the reader is left
+ * looking at a paused video, which is the state their own browser chose.
+ */
+export function resumeMedia() {
+  for (const el of document.querySelectorAll('[data-fpc-playing]')) {
+    el.removeAttribute('data-fpc-playing');
+    const resumed = el.play();
+    if (resumed && typeof resumed.catch === 'function') resumed.catch(() => {});
+  }
+}
+
+/**
  * Scroll to a tile position, wait for what that reveals to actually load, and
  * report where the page landed and how tall it now is.
  *

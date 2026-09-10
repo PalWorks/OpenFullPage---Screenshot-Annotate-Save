@@ -26,6 +26,7 @@ import { fileURLToPath } from 'node:url';
 import { Cdp, evaluate, sleep, until } from './cdp.mjs';
 import { planPdfPages } from '../../src/lib/pdf.js';
 import { SHAPE_TOOLS } from '../../src/lib/edit.js';
+import { DOWNLOAD_FORMATS, extensionOf } from '../../src/lib/encode.js';
 import { decodePng, thumbnail, verifyFixture, verifyIframes } from './verify.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -45,7 +46,7 @@ const VIEWPORT = { width: 1280, height: 800 };
 // Typed into the filename box by --edit. Every path separator, the traversal, and
 // the reserved colon must be gone by the time it reaches disk.
 const TYPED_NAME = '../../My Report: v2';
-const EXPECTED_NAME = /^My Report- v2\.(png|jpg|pdf)$/;
+const EXPECTED_NAME = /^My Report- v2\.(png|jpg|webp|pdf)$/;
 
 // FIXTURES
 
@@ -354,6 +355,25 @@ function stageExtension(deepFrames) {
   // captureVisibleTab accepts only <all_urls> or activeTab, not host patterns.
   manifest.host_permissions = ['<all_urls>'];
   writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+
+  // --stale simulates the one thing the port protocol version exists to catch:
+  // Chrome replaces the service worker on an update and leaves the pages it
+  // opened running the old code. The two ends cannot be made to disagree by
+  // editing the shared constant, because both read the same file, so the
+  // worker alone is pointed at a copy that claims a later version. The result
+  // tab and the progress panel still read the real one, which is exactly the
+  // shape of a new worker talking to an old page.
+  if (process.argv.includes('--stale')) {
+    const real = join(dir, 'src', 'lib', 'protocol.js');
+    const future = readFileSync(real, 'utf8')
+      .replace(/export const PROTOCOL_VERSION = \d+;/, 'export const PROTOCOL_VERSION = 999;');
+    writeFileSync(join(dir, 'src', 'lib', 'protocol-future.js'), future);
+    const worker = join(dir, 'src', 'background.js');
+    writeFileSync(
+      worker,
+      readFileSync(worker, 'utf8').replace("'./lib/protocol.js'", "'./lib/protocol-future.js'"),
+    );
+  }
 
   return dir;
 }
@@ -2604,10 +2624,15 @@ async function launchChrome({ profileDir, headless }) {
  * Files Chrome has finished writing. A download in flight is a `.crdownload`
  * temp file, and treating one as finished means reading a truncated PNG.
  */
+// Built from the format table rather than typed out. It was `png|jpg|pdf`, and
+// the first WebP download landed on disk, was filtered out of this list, and
+// reported as a download that never arrived.
+const SAVED_FILE = new RegExp(`\\.(${DOWNLOAD_FORMATS.map(extensionOf).join('|')})$`);
+
 function completedDownloads(dir) {
   const names = readdirSync(dir);
   if (names.some((f) => f.endsWith('.crdownload'))) return null;
-  return names.filter((f) => /\.(png|jpg|pdf)$/.test(f));
+  return names.filter((f) => SAVED_FILE.test(f));
 }
 
 async function findServiceWorker(cdp, extensionId) {
@@ -2877,6 +2902,67 @@ async function main() {
       );
       process.stdout.write('\n');
 
+      // --stale: the worker in this run claims a protocol this tab does not
+      // speak, which is what an update landing mid-capture looks like. The tab
+      // must say so. Without the check it waits on a progress bar that will
+      // never move, and that silence is the whole reason the version exists.
+      //
+      // Nothing after this point can run, because no capture will ever land.
+      if (process.argv.includes('--stale')) {
+        if (state.failed && /updated while this capture was running/.test(state.status)) {
+          console.log('  ok   a tab left behind by an update says so, rather than waiting for ever');
+        } else {
+          console.log(`  FAIL a tab talking to a newer worker did not say so: ${state.status}`);
+          process.exitCode = 1;
+        }
+        await cdp.send('Target.closeTarget', { targetId: resultTarget.targetId }).catch(() => {});
+        await cdp.send('Target.closeTarget', { targetId }).catch(() => {});
+        return;
+      }
+
+      // A capture takes seconds, and anything playing through it is
+      // photographed at a different frame in every screenful it spans. The
+      // fixture is the only page here with something playing, and it counts
+      // what was done to it: checking only that it plays at the end would pass
+      // on a build that never paused it.
+      if (url.includes(`:${PORT}/`) && !url.includes('iframes') && !url.includes('tall')) {
+        const media = JSON.parse(await evaluate(cdp, driver, `(async () => {
+          const [r] = await chrome.scripting.executeScript({
+            // MAIN, not the isolated world an extension script normally gets:
+            // __fpcPauses is a page variable and the two worlds share only the
+            // DOM. Reading it from the isolated world reports 0 for ever, which
+            // is a check that can never pass rather than one that can never fail.
+            target: { tabId: ${tabId} },
+            world: 'MAIN',
+            func: () => JSON.stringify({
+              pauses: window.__fpcPauses ?? 0,
+              paused: document.getElementById('clip')?.paused,
+              marked: document.querySelectorAll('[data-fpc-playing]').length,
+            }),
+          });
+          return r.result;
+        })()`));
+        console.log('\n  media on the page:');
+        if (media.pauses > 0) {
+          console.log(`  ok   the capture paused what was playing (${media.pauses} time)`);
+        } else {
+          console.log('  FAIL a video was playing through the whole capture and was never paused');
+          process.exitCode = 1;
+        }
+        if (media.paused === false) {
+          console.log('  ok   and started it again when the page was handed back');
+        } else {
+          console.log(`  FAIL the page was handed back with its video still paused (paused=${media.paused})`);
+          process.exitCode = 1;
+        }
+        if (media.marked === 0) {
+          console.log('  ok   no capture marks were left on the page');
+        } else {
+          console.log(`  FAIL ${media.marked} element(s) still carry data-fpc-playing`);
+          process.exitCode = 1;
+        }
+      }
+
       // --shots <dir> writes screenshots of the real interface. Used to look at
       // the toolbar with human eyes, and to produce the store listing images.
       const shotsArg = process.argv.indexOf('--shots');
@@ -3072,7 +3158,7 @@ async function main() {
         // Both formats, with a real gestured click each time, that is what
         // chrome.permissions.request requires, and asking only at this point is
         // the whole reason the result lives in a tab.
-        for (const format of ['png', 'jpeg', 'pdf']) {
+        for (const format of DOWNLOAD_FORMATS) {
           const before = (completedDownloads(downloadDir) ?? []).length;
           // Download is a menu now: open it, then pick the format. The click on
           // the menu item is the gesture chrome.permissions.request needs.
@@ -3138,8 +3224,11 @@ async function main() {
         console.log(`  ok   saved file matches the edited canvas (${img.width}x${img.height})`);
       }
 
+      // One file per format, because the loop above saves every one of them.
+      // This was `!== 3` and went red the moment WebP was added, which is the
+      // right kind of failure: a number typed here is a number that goes stale.
       const named = files.filter((f) => EXPECTED_NAME.test(f));
-      if (named.length !== 3) {
+      if (named.length !== DOWNLOAD_FORMATS.length) {
         console.log(`  FAIL typed filename did not survive sanitising: got ${files.join(', ')}`);
         process.exitCode = 1;
       } else {

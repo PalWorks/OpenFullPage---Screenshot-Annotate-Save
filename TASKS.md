@@ -55,8 +55,12 @@ implements them twice. Every one has tests.
 | **F27** | **Closed.** A right click menu on the canvas carrying the paint order and Delete, with `[` and `]` for a step and the accelerator for all the way, and a key in every tool's tooltip. Empty canvas keeps Chrome's own menu | `src/lib/edit.js`, `src/ui/result.js`, D49 |
 | | The text inspector carries a Frame block: a switch, a colour well, a thickness and a plate switch, writing the same two properties the Border and Fill wells write. The line of copy that stood in for it is gone | `src/ui/result.html`, `src/ui/result.js`, D50 |
 | **F29** | Rounded box and Stadium are entries in the Shapes popover that pick the Box and set its corner in one click. Fourteen tools, twelve kinds, no new shape in the model | `src/lib/edit.js`, D51 |
+| **T2** | `encodeOrThrow`. `canvas.toBlob` reports failure with a null blob rather than an exception, so every encoding failure became a download of nothing with no error anywhere | `src/lib/encode.js`, D52 |
+| **F1** | WebP export, and the output formats described once instead of in three lists that could disagree | `src/lib/encode.js`, `src/ui/result.html`, D52 |
+| **T11** | The port protocol carries a version. An update replaces the worker and leaves the pages it opened running old code, and a message shape change would fail silently | `src/lib/protocol.js`, `--stale`, D53 |
+| **F2** | Anything playing is paused for the capture and started again afterwards. Only what was playing, so a video already stopped stays stopped | `src/content/prepare.js`, L27, L28 |
 
-**Still open from the 1.7.0 list below:** T2, T11, F1, F21, F2, F26.
+**Still open from the 1.7.0 list below:** F21 and F26. T2, T11, F1 and F2 are done.
 **Still open from 1.8.0:** F6 and F4. F27 is closed.
 
 **Queued by the maintainer on 2026-09-10:** F3, the rating nudge, and F42,

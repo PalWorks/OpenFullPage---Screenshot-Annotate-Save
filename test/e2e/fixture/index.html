@@ -26,12 +26,19 @@
     background: #fee2e2; color: #991b1b; font-size: 30px; font-weight: 800;
   }
   #lazy.seen { background: #dcfce7; color: #166534; }
+  /* Something playing, for the check that a capture pauses media and starts it
+     again afterwards. Out of flow, two pixels, fully transparent: the fixture's
+     geometry is compared band by band against exact expected heights, so this
+     must not move a single row. It is the media element that is under test,
+     not its pixels. */
+  #clip { position: absolute; top: 0; left: 0; width: 2px; height: 2px; opacity: 0; }
 </style>
 
 <header>STICKY HEADER</header>
 <main id="rows"></main>
 <div id="lazy">LAZY NOT LOADED</div>
 <div id="cookiebar">FIXED COOKIE BAR</div>
+<video id="clip" muted playsinline></video>
 
 <script>
   // 40 numbered bands. Any duplicated or missing number in the stitched output
@@ -42,6 +49,34 @@
     el.className = 'row';
     el.textContent = `ROW ${String(i).padStart(2, '0')}`;
     rows.appendChild(el);
+  }
+
+  // A video that is genuinely playing, without shipping a video file: a canvas
+  // repainting on a timer, captured as a stream. It needs no codec, no network
+  // and no user gesture, because a muted element is allowed to start itself.
+  //
+  // __fpcPauses counts what the extension did to it. Checking only that it is
+  // playing again at the end would pass on a build that never paused it at all.
+  const clip = document.getElementById('clip');
+  window.__fpcPauses = 0;
+  clip.addEventListener('pause', () => { window.__fpcPauses += 1; });
+  try {
+    const paint = document.createElement('canvas');
+    paint.width = 32;
+    paint.height = 32;
+    const brush = paint.getContext('2d');
+    let tick = 0;
+    setInterval(() => {
+      tick += 1;
+      brush.fillStyle = tick % 2 ? '#000' : '#fff';
+      brush.fillRect(0, 0, 32, 32);
+    }, 100);
+    clip.srcObject = paint.captureStream(10);
+    const started = clip.play();
+    if (started && started.catch) started.catch(() => {});
+  } catch {
+    // A browser that cannot do this leaves the element paused, and the check
+    // that reads __fpcPauses says so rather than passing quietly.
   }
 
   // Only resolves if something actually scrolls this into view, the check that
