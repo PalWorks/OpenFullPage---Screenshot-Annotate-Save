@@ -60,7 +60,7 @@ const ui = {
   textItalic: el('text-italic'),
   textUnderline: el('text-underline'),
   zoomLevel: el('zoom-level'),
-  zoomOut: el('zoom-out'),
+  zoomExact: el('zoom-exact'),
   nudge: el('nudge'),
   nudgeRate: el('nudge-rate'),
   nudgeTell: el('nudge-tell'),
@@ -746,18 +746,13 @@ function buildPaintPopovers() {
     // in two files.
     pop.setAttribute('aria-labelledby', title.id);
 
+    // The opacity row is the whole width of the panel. The no-colour square used
+    // to sit at the head of it, which put a colour choice inside a row about how
+    // solid a colour is and squeezed the slider into what was left. It is the
+    // first swatch in the row of colours now, which is where a reader looks for
+    // it and where every other choice on this panel already lives.
     const row = document.createElement('div');
     row.className = 'paintrow';
-    if (paint.none) {
-      const off = document.createElement('button');
-      off.type = 'button';
-      off.className = 'nofill';
-      off.dataset.paintNone = kind;
-      off.setAttribute('aria-pressed', 'false');
-      off.setAttribute('aria-label', `No ${kind === 'fill' ? 'fill' : kind}`);
-      off.title = off.getAttribute('aria-label');
-      row.append(off);
-    }
     const label = document.createElement('label');
     label.setAttribute('for', `${kind}-opacity`);
     label.textContent = 'Opacity';
@@ -784,7 +779,21 @@ function buildPaintPopovers() {
     grid.dataset.grid = kind;
     pop.append(quick, grid);
 
-    for (const colour of QUICK_COLOURS) quick.append(swatchButton(colour, kind));
+    if (paint.none) {
+      const off = document.createElement('button');
+      off.type = 'button';
+      off.className = 'sw none';
+      off.dataset.paintNone = kind;
+      off.setAttribute('aria-pressed', 'false');
+      off.setAttribute('aria-label', kind === 'fill' ? 'No fill' : 'No frame');
+      off.title = off.getAttribute('aria-label');
+      quick.append(off);
+    }
+    // Ten cells either way, so the quick row and the grid below it line up. The
+    // white that a no-colour square displaces is the first swatch of the grid,
+    // so nothing is lost by dropping it from here.
+    const quicks = paint.none ? QUICK_COLOURS.slice(0, 9) : QUICK_COLOURS;
+    for (const colour of quicks) quick.append(swatchButton(colour, kind));
     for (let step = 0; step < GREYS.length; step += 1) {
       grid.append(swatchButton(GREYS[step], kind));
       for (const colour of QUICK_COLOURS.slice(0, 9)) {
@@ -1349,7 +1358,16 @@ const ZOOM_MAX = 400;
 // value, so the picture goes on fitting when the window is resized.
 let zoomFit = 'width';
 
-const clampZoom = (percent) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(percent)));
+/**
+ * A percentage, or the size a capture opens at.
+ *
+ * The `isFinite` guard is not decoration. Math.round(NaN) is NaN, and NaN
+ * survives both Math.max and Math.min, so without it a field that briefly held
+ * something unreadable would set the canvas width to "NaNpx" and the picture
+ * would vanish with nothing thrown.
+ */
+const clampZoom = (percent) =>
+  (Number.isFinite(percent) ? Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(percent))) : 100);
 
 /**
  * The per cent the current rule works out to, for this window and this image.
@@ -1391,12 +1409,11 @@ function applyZoom() {
   ui.canvas.style.maxWidth = zoomFit === 'width' ? '100%' : 'none';
 
   ui.zoomLevel.value = String(percent);
-  ui.zoomOut.textContent = `${percent}%`;
+  // Not while it is being typed into: rewriting the field under the caret is how
+  // a control refuses to let you type 25 because it saw the 2 first.
+  if (document.activeElement !== ui.zoomExact) ui.zoomExact.value = String(percent);
   for (const button of ui.toolbar.querySelectorAll('[data-fit]')) {
-    const mine = button.dataset.fit === 'width' || button.dataset.fit === 'height'
-      ? button.dataset.fit === zoomFit
-      : zoomFit === 100;
-    button.setAttribute('aria-pressed', String(mine));
+    button.setAttribute('aria-pressed', String(button.dataset.fit === zoomFit));
   }
 
   // Handles and the hover outline are drawn at a fixed size on screen, worked
@@ -1496,9 +1513,30 @@ ui.zoomLevel.addEventListener('input', () => {
   applyZoom();
 });
 
+/** Typing a percentage. The same control as the slider, reached the other way. */
+function typeZoom() {
+  const wanted = Number(ui.zoomExact.value);
+  // An empty or unreadable field is someone mid-edit, not a request to zoom to
+  // nothing. It is left alone until it says a number, and put back on blur.
+  if (!Number.isFinite(wanted)) return;
+  zoomFit = clampZoom(wanted);
+  applyZoom();
+}
+
+ui.zoomExact.addEventListener('input', typeZoom);
+ui.zoomExact.addEventListener('change', () => {
+  typeZoom();
+  // Whatever was typed, the field ends up showing what the picture is actually
+  // at, which is the clamp made visible rather than silently applied.
+  ui.zoomExact.value = String(zoomPercent());
+});
+// The editor binds single letters to tools, so a field that can hold "100" has
+// to stop them before they reach it. Every other field here does the same.
+ui.zoomExact.addEventListener('keydown', (event) => event.stopPropagation());
+
 for (const button of ui.toolbar.querySelectorAll('[data-fit]')) {
   button.addEventListener('click', () => {
-    zoomFit = button.dataset.fit === '100' ? 100 : button.dataset.fit;
+    zoomFit = button.dataset.fit;
     applyZoom();
   });
 }

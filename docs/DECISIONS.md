@@ -1548,6 +1548,43 @@ for the port protocol. An unrepaired build fails the fixture check with the
 sticky header and the fixed bar each appearing twice, which is exactly what the
 real page did.
 
+## D60: A caption has a width, and its height is a consequence
+
+F43. A text shape had no width: its box was measured from the longest line it
+happened to contain, so adding a word made the box wider rather than pushing the
+word onto the next line, and a long sentence ran off across the picture. The
+corner handles scaled the point size, because scaling is the only thing a box
+with no width of its own can do.
+
+**A caption now carries an optional `wrap`.** Optional is the whole migration: a
+shape saved without one measures exactly as it did before, so nothing drawn
+yesterday moves. There is no conversion step and there is nothing to get wrong.
+
+**Two side handles, and no top or bottom one.** The height of a caption is not a
+thing anyone sets. It is the line count times the line height, so a handle
+claiming to change it would be lying about what it did. The sides are also
+offered on a caption that has never had a width, because they are how it gets
+one.
+
+**Transparent counts, and so does exact.** Two cases decide whether the breaking
+is right, and both are in `test/edit.test.js`:
+
+- A word that **exactly fills** the width stays on its line. The comparison is
+  strictly greater. Off by one here is a caption that wraps a word early at some
+  sizes and not others, which reads as a rendering fault rather than a rule.
+- A word **wider than the width** cannot be broken and must overflow. Anything
+  that instead tries again with a smaller remainder never terminates, because
+  there is no smaller remainder to try. The guard is that a line with nothing on
+  it yet takes the word whatever it measures.
+
+**A wrapped caption measures as the width it was given**, not as its longest
+line. Otherwise the side handles spring back the moment the words come up short
+and the box a reader set moves on its own.
+
+**`measureText` already took its measurer as an argument**, which is what made
+all of this testable without a canvas. That seam was built for D39 and paid for
+itself here.
+
 ## D59: The rating nudge refuses the trick that would make it work better
 
 F3 is fifty lines of code and one decision, and the decision is what to leave out.
@@ -1644,6 +1681,22 @@ so a percentage carried over from the last one is meaningless, and a fit is what
 the old `max-width: 100%` rule already did. A capture opens exactly where it
 always has.
 
+**Revised the same day: one percentage, not two.** The popover carried a readout
+beside the slider and a 100% button below it, which is the same fact stated
+twice, and the second one was a button whose whole job was to type a number. The
+readout is a field now: it says what the picture is at and it sets it, so 100% is
+typed rather than pressed. Fit width and fit height are the only two buttons
+left, and they are icons, because a fit is a shape and not a sentence.
+
+The field suppresses the browser's own spinner. It is fourteen pixels of a
+fifty-six pixel field, this stepper has no arrows for it to sit beside, and with
+it there "100" was drawn clipped.
+
+`clampZoom` refuses anything that is not a finite number. `Math.round(NaN)` is
+NaN and NaN survives both `Math.max` and `Math.min`, so a field that briefly held
+something unreadable would have set the canvas width to "NaNpx" and the picture
+would have vanished with nothing thrown.
+
 ## D57: One description of the colour popovers, and opacity in all of them
 
 Three requests from the maintainer, on the same day, that turned out to be one
@@ -1704,3 +1757,25 @@ fails it.
 every shape drawn before they existed had, so an opacity nobody has touched
 cannot be told apart from one that was never stored. No shape is converted and no
 capture annotated last week draws differently.
+
+**Revised the same day, from a screenshot of the shipped build.** Three things
+were wrong and all three were the same mistake, which is putting a control where
+it was easy to add rather than where it belongs.
+
+The no-colour square sat at the head of the opacity row. That put a colour choice
+inside a row about how solid a colour is, and squeezed the slider into what was
+left. It is the first swatch in the row of colours now, which is where a reader
+looks for it and where every other colour choice on the panel already lives. The
+row of quick colours stays ten cells wide so it goes on lining up with the grid
+below it: the white it displaces is the first swatch of that grid, so nothing is
+lost.
+
+The Frame and Plate labels sat on lines of their own, then inline but at the top
+of a stretched row, which read as superscript. `align-items` was `stretch`, so
+every label and readout was as tall as its row with its text at the top. It is
+`center` now.
+
+And the panel was 244px with a plate slider that got 56 of them. The text
+inspector is the densest thing in the toolbar and it was the one panel that had
+never been widened for what had been added to it. 272px, and both rows fill it
+and end in the same place.

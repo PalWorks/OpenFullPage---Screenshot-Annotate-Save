@@ -73,6 +73,8 @@ import {
   isUsableCrop,
   isUsableDrag,
   linesOf,
+  wrapOf,
+  wrappedLinesOf,
   measureText,
   moveCrop,
   moveShape,
@@ -413,10 +415,16 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
 
-    const lines = linesOf(shape);
+    // The lines as they will be drawn, which is the shape's own lines broken to
+    // its wrap width when it has one. A caption written before wrapping existed
+    // has no width and gets its own lines back untouched.
+    const lines = wrappedLinesOf(shape, (line) => ctx.measureText(line).width);
     const align = alignOf(shape);
     const widths = lines.map((line) => ctx.measureText(line).width);
-    const block = Math.max(0, ...widths);
+    // The block a line is aligned inside. With a wrap that is the width that was
+    // set, not the longest line: centring inside the longest line would put the
+    // words somewhere different every time one of them changed.
+    const block = wrapOf(shape) || Math.max(0, ...widths);
     const left = shape.at.x + dx;
 
     lines.forEach((line, i) => {
@@ -1353,6 +1361,7 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
         fill: existing.fill ?? null,
         fillOpacity: existing.fillOpacity,
         inkOpacity: existing.inkOpacity ?? text.inkOpacity,
+        wrap: wrapOf(existing) || undefined,
         width: existing.width ?? text.width,
       }
       : { ...text };
@@ -1371,6 +1380,15 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
     input.style.font = fontOf({ ...style, size: Math.max(12, size * shown) });
     input.style.lineHeight = String(TEXT_LINE_RATIO);
     input.style.textAlign = style.align;
+    // What is typed should look like what will be drawn, which is the property
+    // this whole function exists to hold. With a wrap that means the same width
+    // and the same breaking, so `pre` becomes `pre-wrap`.
+    const wrap = wrapOf(style);
+    if (wrap) {
+      input.style.width = `${Math.max(40, wrap * shown)}px`;
+      input.style.whiteSpace = 'pre-wrap';
+      input.style.minWidth = '0';
+    }
     // The glyph colour, not the frame colour: the box you type into should
     // look like the words it will become.
     input.style.color = style.ink;
@@ -1431,6 +1449,9 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
         size,
         ink: style.ink,
         inkOpacity: style.inkOpacity ?? 1,
+        // Only ever carried, never invented. A new caption has no width until
+        // someone drags a side handle to give it one.
+        ...(style.wrap ? { wrap: style.wrap } : {}),
         colour: style.colour,
         strokeOpacity: style.strokeOpacity ?? 1,
         fill: style.fill,

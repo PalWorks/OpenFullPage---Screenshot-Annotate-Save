@@ -10,6 +10,7 @@ import test from 'node:test';
 import {
   CROP_HANDLES,
   DEFAULT_FILL_OPACITY,
+  MIN_WRAP,
   PAINTS,
   PAINT_KINDS,
   MAX_TEXT_SIZE,
@@ -19,6 +20,9 @@ import {
   TEXT_LINE_RATIO,
   alignOf,
   linesOf,
+  wrapLine,
+  wrapOf,
+  wrappedLinesOf,
   measureText,
   amend,
   arrowGeometry,
@@ -317,12 +321,22 @@ test('a shape too small for eight handles keeps its corners and drops the midpoi
   assert.deepEqual(handlesFor(box('a', 0, 0, 900, 10), 40).map((h) => h.id), ['nw', 'ne', 'se', 'sw']);
 });
 
-test('text keeps four corners however roomy it is, because an edge would stretch it', () => {
+test('text gets four corners and two sides, never a top or a bottom', () => {
+  // The sides set the width the words wrap inside. There is no top or bottom
+  // handle because the height of a caption is not a thing anyone sets: it is the
+  // line count times the line height, and a handle claiming to change it would
+  // be lying about what it did. F43, D60.
   const text = {
     id: 't', kind: 'text', at: { x: 0, y: 0 }, w: 400, h: 300, text: 'hello',
     size: 24, colour: '#18181b', width: 4,
   };
-  assert.deepEqual(handlesFor(text, 1).map((h) => h.id), ['nw', 'ne', 'se', 'sw']);
+  const ids = handlesFor(text, 1).map((h) => h.id);
+  assert.deepEqual(ids, ['nw', 'ne', 'se', 'sw', 'e', 'w']);
+  assert.ok(!ids.includes('n') && !ids.includes('s'), 'a caption has no top or bottom handle');
+
+  // And they are offered however small it is: the sides are how a caption is
+  // given a width in the first place, so they cannot wait for it to be roomy.
+  assert.deepEqual(handlesFor({ ...text, w: 8, h: 8 }, 200).map((h) => h.id), ids);
 });
 
 test('handleAt and handlesFor agree about which handles exist', () => {
@@ -347,13 +361,45 @@ test('an edge handle moves one edge and leaves the other three alone', () => {
   assert.deepEqual(resizeShape(start, 'w', { x: 0, y: 999 }).rect, { x: 0, y: 20, w: 110, h: 60 });
 });
 
-test('resizing text ignores an edge handle', () => {
+test('a side handle sets the wrap and never the type size', () => {
   const text = {
     id: 't', kind: 'text', at: { x: 0, y: 0 }, w: 100, h: 30, text: 'hello',
     size: 24, colour: '#18181b', width: 4,
   };
-  assert.equal(resizeShape(text, 'e', { x: 400, y: 0 }), text, 'an edge handle must be a no-op');
+  const wider = resizeShape(text, 'e', { x: 400, y: 0 });
+  assert.equal(wider.wrap, 400);
+  assert.equal(wider.size, text.size, 'the type must not change size when the width does');
+  assert.deepEqual(wider.at, text.at, 'dragging the east side leaves the west edge alone');
+
+  // A corner still scales the type, which is the other half of the same rule.
   assert.notEqual(resizeShape(text, 'se', { x: 400, y: 120 }).size, text.size);
+
+  // A top or bottom handle is still refused. handlesFor does not offer one, so
+  // this is the second lock on the same door.
+  assert.equal(resizeShape(text, 'n', { x: 0, y: -50 }), text);
+  assert.equal(resizeShape(text, 's', { x: 0, y: 400 }), text);
+});
+
+test('dragging the west side moves the block and keeps its right edge', () => {
+  const text = {
+    id: 't', kind: 'text', at: { x: 100, y: 50 }, w: 200, h: 30, text: 'hello',
+    size: 24, colour: '#18181b', width: 4,
+  };
+  // The right edge is at 300. Dragging the west handle to 150 leaves it there.
+  const narrower = resizeShape(text, 'w', { x: 150, y: 50 });
+  assert.equal(narrower.wrap, 150);
+  assert.equal(narrower.at.x, 150);
+  assert.equal(narrower.at.x + narrower.wrap, 300, 'the side that was not dragged moved');
+});
+
+test('a caption cannot be dragged narrower than a word', () => {
+  const text = {
+    id: 't', kind: 'text', at: { x: 0, y: 0 }, w: 200, h: 30, text: 'hello',
+    size: 24, colour: '#18181b', width: 4,
+  };
+  // Past the opposite edge, which is what a fast drag does.
+  assert.equal(resizeShape(text, 'e', { x: -500, y: 0 }).wrap, MIN_WRAP);
+  assert.equal(resizeShape(text, 'w', { x: 5000, y: 0 }).wrap, MIN_WRAP);
 });
 
 test('handles are only picked up when the pointer is near them', () => {
@@ -662,7 +708,7 @@ test('a text box is as wide as its widest line and as tall as all of them', () =
 test('text carries resize handles and a numbered step does not', () => {
   // Bundling the two point tools together is what left text with no handles at
   // all, so this asserts they are treated separately.
-  assert.equal(handlesFor(someText()).length, 4);
+  assert.equal(handlesFor(someText()).length, 6);
   assert.equal(handlesFor({ kind: 'counter', at: { x: 0, y: 0 }, radius: 12 }).length, 0);
 });
 
@@ -844,4 +890,71 @@ test('every colour popover writes a property and an opacity, and says if it can 
   // to be kept in step by hand, which is the thing this table exists to avoid.
   assert.equal(PAINTS.border.property, PAINTS.frame.property);
   assert.equal(PAINTS.fill.property, PAINTS.plate.property);
+});
+
+// WRAPPING
+//
+// F43. The breaking is pure and takes its measurer as an argument precisely so
+// it can be tested without a canvas, and the two cases worth testing are the two
+// that a renderer written inline would get wrong: a word that exactly fills the
+// width, and a word that cannot fit at all.
+
+// Ten pixels a character, so a width is a character count and the arithmetic in
+// these tests is readable.
+const ten = (text) => text.length * 10;
+
+test('a caption breaks on word boundaries at the width it was given', () => {
+  assert.deepEqual(wrapLine('one two three four', 100, ten), ['one two', 'three four']);
+  assert.deepEqual(wrapLine('one two three four', 1000, ten), ['one two three four']);
+});
+
+test('a word that exactly fills the width stays on its line', () => {
+  // The comparison has to be strictly greater. Off by one here is a caption that
+  // wraps a word early at some sizes and not others, which reads as a rendering
+  // fault rather than as a rule.
+  assert.deepEqual(wrapLine('abcde fghij', 50, ten), ['abcde', 'fghij']);
+  assert.deepEqual(wrapLine('abcde', 50, ten), ['abcde']);
+  assert.deepEqual(wrapLine('abcdef', 50, ten), ['abcdef'], 'and one over still cannot be broken');
+});
+
+test('a word wider than the whole width overflows rather than looping', () => {
+  // There is no smaller remainder to try, so anything that tries again never
+  // terminates. It takes its own line and hangs over the edge.
+  assert.deepEqual(wrapLine('supercalifragilistic ok', 50, ten), ['supercalifragilistic', 'ok']);
+  assert.deepEqual(wrapLine('supercalifragilistic', 50, ten), ['supercalifragilistic']);
+});
+
+test('no width means no wrapping, which is every caption written before this', () => {
+  assert.deepEqual(wrapLine('one two three', 0, ten), ['one two three']);
+  assert.deepEqual(wrappedLinesOf({ text: 'one two three' }, ten), ['one two three']);
+  // Below the floor is not a width either, so a stored nonsense value cannot
+  // turn a caption into one word per line.
+  assert.equal(wrapOf({ wrap: MIN_WRAP - 1 }), 0);
+  assert.equal(wrapOf({ wrap: MIN_WRAP }), MIN_WRAP);
+  for (const junk of [null, undefined, '100', NaN, Infinity, -5]) {
+    assert.equal(wrapOf({ wrap: junk }), 0, String(junk));
+  }
+});
+
+test('the newlines someone typed survive the wrapping', () => {
+  // A wrap is a display width. It never edits what was typed, so a hard line
+  // break stays a hard line break and is then broken again if it is too long.
+  const shape = { text: 'one two\nthree four five', wrap: 100 };
+  // "three four" is ten characters, so exactly a hundred wide, so it fits.
+  assert.deepEqual(wrappedLinesOf(shape, ten), ['one two', 'three four', 'five']);
+  const empty = { text: 'a\n\nb', wrap: 100 };
+  assert.deepEqual(wrappedLinesOf(empty, ten), ['a', '', 'b'], 'a blank line is a line');
+});
+
+test('a caption that was given a width measures as that width', () => {
+  // Not as its longest line. Otherwise the side handles spring back the moment
+  // the words come up short, and the box a reader set moves on its own.
+  const shape = { text: 'hi', wrap: 200, size: 20 };
+  assert.equal(measureText(shape, ten).w, 200);
+  // And the height follows the lines, which is what makes the height not a thing
+  // anyone drags.
+  const two = { text: 'one two three four', wrap: 100, size: 20 };
+  assert.equal(measureText(two, ten).h, 2 * 20 * TEXT_LINE_RATIO);
+  const four = { text: 'one two three four', wrap: 40, size: 20 };
+  assert.equal(measureText(four, ten).h, 4 * 20 * TEXT_LINE_RATIO);
 });

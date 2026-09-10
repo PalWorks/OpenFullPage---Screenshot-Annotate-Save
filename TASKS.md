@@ -61,6 +61,7 @@ implements them twice. Every one has tests.
 | **F2** | Anything playing is paused for the capture and started again afterwards. Only what was playing, so a video already stopped stays stopped | `src/content/prepare.js`, L27, L28 |
 | **F21** | Export quality, and what each format would actually cost. The sizes are the capture really encoded, measured while the menu is open, cheapest format first | `src/ui/result.js`, D54 |
 | **F26** | The button that was pressed answers, with a tick, a green ground and an accessible name that says what happened. It does not change width to do it | `src/ui/result.*`, D55 |
+| **F43** | A caption wraps inside a width set by its two side handles. The height is the line count and is never dragged. A word that exactly fills the width stays, and one wider than it overflows rather than looping | `src/lib/edit.js`, D60, L41 |
 | **F3** | The rating nudge. One line in the strip that already says the image never leaves your computer, after the fifth whole capture, twice ever, and no sentiment fork | `src/lib/nudge.js`, `--nudge`, D59 |
 | **F42** | Donations. A hidden options page section, an empty `.github/FUNDING.yml`, and the GOVERNANCE.md amendment that had to land with them | `src/lib/sponsors.js`, `GOVERNANCE.md`, D48 |
 | **F6** | Zoom, as a slider plus Fit width, Fit height and 100%, and an overview pane that says where in a long capture you are. The pane is a schematic of a page, not a picture of the capture | `src/ui/result.*`, D58, L17 |
@@ -69,7 +70,7 @@ implements them twice. Every one has tests.
 
 **Release 1.7.0 is complete.** T1, T2, T3, T10, T11, T19, T20, F1, F2, F21, F26 and
 T30 have all shipped.
-**Still open from 1.8.0:** F6, F4 and F43. F27 is closed.
+**Still open from 1.8.0:** F4. F6, F27, F43 and F44 are closed.
 
 **T30 was found in the field, not by the suite**, which is the only entry here
 that can say that. It is the reason `--frozen` exists: the failure lives inside

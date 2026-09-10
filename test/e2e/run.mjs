@@ -1174,6 +1174,9 @@ async function exerciseEditor(cdp, session, log) {
   // 8e. What the pointer says before the click.
   await exerciseTextFrame(cdp, session, check, p);
 
+  // 8f. A caption that wraps inside a width set by its two side handles.
+  await exerciseTextWrap(cdp, session, check, p);
+
   await exerciseShapes(cdp, session, check, p);
 
   await exercisePaintOrder(cdp, session, check, p);
@@ -1318,13 +1321,21 @@ async function exerciseZoom(cdp, session, check) {
 
   await clickButton(cdp, session, '[data-pop="pop-zoom"]');
   await sleep(120);
-  await clickButton(cdp, session, '[data-fit="100"]');
-  await sleep(160);
+
+  // The percentage is typed as well as dragged, and there is only one of it:
+  // this is what the separate 100% button used to do.
+  await evaluate(cdp, session, `(() => {
+    const f = document.getElementById('zoom-exact');
+    f.value = '100';
+    f.dispatchEvent(new Event('input', { bubbles: true }));
+    f.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await sleep(180);
   const full = await shown();
   const natural = await evaluate(cdp, session, 'document.getElementById("canvas").width');
   check(Math.abs(full - natural) <= 2,
-    `100% drew the capture ${full}px wide when the image is ${natural}px`,
-    `100% shows one pixel of the capture to one of the screen (${full}px of ${natural}px)`);
+    `typing 100 drew the capture ${full}px wide when the image is ${natural}px`,
+    `typing 100 shows one pixel of the capture to one of the screen (${full}px of ${natural}px)`);
 
   await setRange(cdp, session, 'zoom-level', 40);
   await sleep(160);
@@ -1332,10 +1343,23 @@ async function exerciseZoom(cdp, session, check) {
   check(smaller < full - 10,
     `dragging the zoom slider left did not shrink the picture (${full}px to ${smaller}px)`,
     `dragging the zoom slider shrinks the picture (${full}px to ${smaller}px)`);
-  const says = await evaluate(cdp, session, 'document.getElementById("zoom-out").textContent');
-  check(says === '40%',
-    `the zoom readout says ${says} after the slider was dragged to 40`,
-    'the zoom readout says what the slider was dragged to');
+  const says = await evaluate(cdp, session, 'document.getElementById("zoom-exact").value');
+  check(says === '40',
+    `the zoom field says ${says} after the slider was dragged to 40`,
+    'the slider and the field are one control: dragging one moves the other');
+
+  // And the field refuses a number that is not a zoom, rather than trying it.
+  await evaluate(cdp, session, `(() => {
+    const f = document.getElementById('zoom-exact');
+    f.value = '9999';
+    f.dispatchEvent(new Event('input', { bubbles: true }));
+    f.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await sleep(160);
+  const clamped = await evaluate(cdp, session, 'document.getElementById("zoom-exact").value');
+  check(clamped === '400',
+    `typing 9999 left the field saying ${clamped} rather than the largest zoom there is`,
+    'typing more than the largest zoom puts the field back to what the picture is at');
 
   await clickButton(cdp, session, '[data-fit="width"]');
   await sleep(160);
@@ -1450,6 +1474,181 @@ async function exerciseNudge(cdp, session, check) {
   check(never.nudgeDone === true,
     'Don\'t ask again was not written down, so it would ask again next time',
     'Don\'t ask again is written down, so it is permanent');
+}
+
+/**
+ * F43. A caption wraps inside a width set by its two side handles.
+ *
+ * The check is not that a number changed. It is that the words rearranged
+ * themselves: the block got narrower and taller while the type stayed the size
+ * it was, which is the difference between wrapping and scaling and is the whole
+ * point of the feature.
+ *
+ * The handle is found by looking for the handles the editor drew rather than by
+ * arithmetic repeated from the source. A handle this test can compute but nobody
+ * can see is exactly the bug worth catching.
+ */
+async function exerciseTextWrap(cdp, session, check, p) {
+  console.log('\na caption that wraps inside a width you set:');
+
+  const settle = async () => {
+    await evaluate(cdp, session,
+      `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+    await moveTo(cdp, session, { x: 6, y: 6 });
+    await sleep(140);
+  };
+
+  // A colour nothing else on the canvas is using, so the glyphs can be counted
+  // on their own. Set here rather than inherited from whatever ran before.
+  await clickButton(cdp, session, '[data-pop="pop-text"]');
+  await clickButton(cdp, session, '#pop-text-colour [data-paint="text"][data-colour="#22c55e"]');
+  await evaluate(cdp, session, 'document.body.click()');
+  await sleep(120);
+
+  // Ink, in the caption's own colour, somewhere clear of everything else.
+  const spot = p(0.14, 0.24);
+  const inkBox = () => evaluate(cdp, session, `(() => {
+    const c = document.getElementById('canvas');
+    const box = c.getBoundingClientRect();
+    const sx = c.width / box.width;
+    const sy = c.height / box.height;
+    const ox = Math.max(0, Math.round((${spot.x} - box.left) * sx) - 60);
+    const oy = Math.max(0, Math.round((${spot.y} - box.top) * sy) - 60);
+    const w = Math.min(c.width - ox, 1100);
+    const h = Math.min(c.height - oy, 800);
+    const d = c.getContext('2d').getImageData(ox, oy, w, h).data;
+    let minX = 1e9, maxX = -1, minY = 1e9, maxY = -1, n = 0;
+    for (let y = 0; y < h; y += 1) {
+      for (let x = 0; x < w; x += 1) {
+        const i = (y * w + x) * 4;
+        if (Math.abs(d[i] - 34) < 60 && Math.abs(d[i + 1] - 197) < 60 && Math.abs(d[i + 2] - 94) < 60) {
+          n += 1;
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    return n > 0 ? { w: maxX - minX + 1, h: maxY - minY + 1, n, x: ox + minX, y: oy + minY } : { n: 0, w: 0, h: 0 };
+  })()`);
+
+  // Where the editor drew the east handle, in client coordinates.
+  //
+  // Scanned only around the caption. A first version looked at the whole canvas
+  // and took the rightmost handle pixel together with the vertical middle of
+  // every handle pixel on it, which are two different shapes' worth of chrome
+  // the moment anything else has ever been selected: it aimed thirty three
+  // pixels above the caption and pressed on nothing.
+  const eastHandle = (ink) => evaluate(cdp, session, `(() => {
+    const c = document.getElementById('canvas');
+    const box = c.getBoundingClientRect();
+    const pad = 44;
+    const ox = Math.max(0, ${ink.x} - pad);
+    const oy = Math.max(0, ${ink.y} - pad);
+    const w = Math.min(c.width - ox, ${ink.w} + pad * 2);
+    const h = Math.min(c.height - oy, ${ink.h} + pad * 2);
+    const d = c.getContext('2d').getImageData(ox, oy, w, h).data;
+    const near = (i) => Math.abs(d[i] - 99) < 26 && Math.abs(d[i + 1] - 102) < 26
+      && Math.abs(d[i + 2] - 241) < 26;
+    let maxX = -1, n = 0;
+    for (let y = 0; y < h; y += 1) {
+      for (let x = 0; x < w; x += 1) {
+        if (!near((y * w + x) * 4)) continue;
+        n += 1;
+        if (x > maxX) maxX = x;
+      }
+    }
+    if (n === 0) return null;
+    // The vertical middle of the handle pixels in the rightmost few columns,
+    // which is the east handle and the two corners above and below it.
+    let minY = 1e9, maxY = -1;
+    for (let y = 0; y < h; y += 1) {
+      for (let x = Math.max(0, maxX - 3); x <= maxX; x += 1) {
+        if (!near((y * w + x) * 4)) continue;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+    return {
+      x: box.left + ((ox + maxX) / c.width) * box.width,
+      y: box.top + ((oy + (minY + maxY) / 2) / c.height) * box.height,
+      pixels: n,
+    };
+  })()`);
+
+  await clickButton(cdp, session, '[data-tool="text"]');
+  await dragOn(cdp, session, spot, spot, 1);
+  await sleep(160);
+  await evaluate(cdp, session, `(() => {
+    const i = document.querySelector('.text-entry');
+    if (!i) return 'none';
+    i.value = 'wrap these words onto more lines please';
+    i.dispatchEvent(new Event('input', { bubbles: true }));
+    i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    return 'ok';
+  })()`);
+  await sleep(200);
+  await settle();
+
+  const one = await inkBox();
+  check(one.n > 60,
+    `the caption drew only ${one.n} pixels, so nothing below can be measured`,
+    `the caption drew one long line (${one.w} by ${one.h})`);
+  if (one.n <= 60) return;
+
+  // Pick it up, so the handles are on screen to be found. The click goes into
+  // the middle of the ink rather than at the corner it was typed from: the top
+  // left of a text block is above and left of the first glyph, so a click there
+  // can miss the shape entirely.
+  await clickButton(cdp, session, '[data-tool="select"]');
+  await dragOn(cdp, session,
+    { x: spot.x + one.w * 0.3, y: spot.y + one.h * 0.5 },
+    { x: spot.x + one.w * 0.3, y: spot.y + one.h * 0.5 }, 1);
+  await sleep(180);
+
+  const picked = await evaluate(cdp, session, 'document.getElementById("delete").disabled === false');
+  check(picked,
+    'the caption could not be selected, so there is no handle to drag',
+    'the caption is selected');
+  if (!picked) return;
+
+  const handle = await eastHandle(one);
+  check(handle && handle.pixels > 20,
+    'no handles were drawn for the selected caption',
+    `the caption carries handles (east side at ${Math.round(handle?.x ?? -1)}, ${Math.round(handle?.y ?? -1)})`);
+  if (!handle) return;
+
+  // Drag the east side left, to about half the width it had.
+  await dragOn(cdp, session, { x: handle.x, y: handle.y },
+    { x: handle.x - (one.w * 0.45), y: handle.y }, 10);
+  await sleep(220);
+  await settle();
+
+  const two = await inkBox();
+  check(two.w < one.w * 0.8,
+    `dragging the side handle did not narrow the caption (${one.w} to ${two.w})`,
+    `dragging the side handle narrows the caption (${one.w} to ${two.w})`);
+  check(two.h > one.h * 1.4,
+    `the caption did not grow taller, so the words did not wrap (${one.h} to ${two.h})`,
+    `and it grows taller, because the words wrapped (${one.h} to ${two.h})`);
+
+  // The decisive one. Scaling would have shrunk the type and taken the ink with
+  // it; wrapping rearranges the same glyphs, so the ink is about what it was.
+  check(two.n > one.n * 0.75,
+    `the type shrank rather than wrapping: ${one.n} pixels of ink became ${two.n}`,
+    `the type stayed the size it was, so this is wrapping and not scaling (${one.n} to ${two.n})`);
+
+  // Put the page back for whatever runs next.
+  let ink = (await inkBox()).n;
+  for (let i = 0; i < 10 && ink > 30; i += 1) {
+    await clickButton(cdp, session, '#undo');
+    await sleep(120);
+    ink = (await inkBox()).n;
+  }
+  check(ink <= 30,
+    `the wrapped caption survived every undo this check had (${ink} pixels left)`,
+    'the check leaves the canvas the way it found it');
 }
 
 async function exerciseTheme(cdp, session, check) {

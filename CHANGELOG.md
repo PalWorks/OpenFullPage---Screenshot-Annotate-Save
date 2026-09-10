@@ -13,6 +13,34 @@ a clean checkout with `./tools/pack.sh`, not merely checkable against one downlo
 Everything below is on `main` and not yet packaged. It covers the toolbar rework
 and the capture reliability work of 2026-09-08 and 2026-09-09.
 
+### Added: a caption wraps inside a width you set
+A text box had no width. Its box was whatever its longest line happened to be, so
+adding a word made the box wider instead of pushing the word onto the next line, and
+a long sentence ran off across the picture. The corner handles scaled the type,
+because scaling is all a box with no width of its own can do.
+
+A caption now has two handles at the middle of its left and right edges. Dragging one
+sets the width the words wrap inside; the height follows from how many lines that
+takes, and is never dragged, because the height of a caption is not a thing anyone
+sets. The corners still scale the type, which is the other half of the same rule.
+
+Nothing already drawn changes: a caption saved without a width measures exactly as it
+always did.
+
+### Changed: three things a screenshot of the shipped build showed were wrong
+The no-colour square has moved out of the opacity row and become the first swatch in
+the row of colours, where a reader looks for it. The opacity slider takes the width
+that frees up.
+
+The Frame and Plate labels sat at the top of their rows and read as superscript. They
+are centred now, and the text inspector is a little wider, so both rows fill it and end
+in the same place.
+
+The zoom popover said the same thing twice: a percentage beside the slider and a 100%
+button below it. The percentage is a field now. It says what the picture is at and it
+sets it, so an exact zoom is typed rather than pressed, and Fit width and Fit height
+are the only buttons left. They are icons, because a fit is a shape and not a sentence.
+
 ### Added: one line, after the fifth capture, asking for a rating
 It appears in the strip that already says the image never leaves your computer, never
 as a modal and never as a window that opens by itself. At most twice ever, the second

@@ -284,6 +284,72 @@ export const alignOf = (shape) =>
 /** The lines of a text shape, always at least one so callers need no guard. */
 export const linesOf = (shape) => String(shape.text ?? '').split('\n');
 
+/** The narrowest a caption may be set to, in image pixels. */
+export const MIN_WRAP = 24;
+
+/** The wrap width of a text shape, or 0 for a shape that has never been given one. */
+export const wrapOf = (shape) =>
+  (Number.isFinite(shape?.wrap) && shape.wrap >= MIN_WRAP ? shape.wrap : 0);
+
+/**
+ * Break one line into the lines it becomes at a given width.
+ *
+ * Word boundaries only, which is what breaking on anything else is called and is
+ * not what a screenshot caption wants.
+ *
+ * Two cases are the whole reason this is a function with tests rather than three
+ * lines inside the renderer.
+ *
+ * A word that exactly fills the width stays on its line: the comparison is
+ * strictly greater, so equal fits. Off by one here shows up as a caption that
+ * wraps one word early on some sizes and not others, which reads as a rendering
+ * fault rather than a rule.
+ *
+ * A single word wider than the width cannot be broken at all, and must be
+ * allowed to overflow. Anything that instead tries again with a smaller
+ * remainder never terminates, because there is no smaller remainder to try.
+ *
+ * @param {string} line
+ * @param {number} width in image pixels
+ * @param {(text: string) => number} measure the width of a string in this font
+ */
+export function wrapLine(line, width, measure) {
+  if (!(width > 0)) return [line];
+
+  const words = String(line).split(' ');
+  const out = [];
+  let current = '';
+
+  for (const word of words) {
+    const candidate = current === '' ? word : `${current} ${word}`;
+    // `current === ''` is the guard that makes an unbreakable word terminate:
+    // with nothing on the line yet there is nothing to push, so the long word is
+    // taken and overflows rather than being reconsidered for ever.
+    if (current !== '' && measure(candidate) > width) {
+      out.push(current);
+      current = word;
+    } else {
+      current = candidate;
+    }
+  }
+  out.push(current);
+  return out;
+}
+
+/**
+ * The lines a text shape actually draws: its own, then broken to its width.
+ *
+ * A shape with no wrap returns its own lines untouched, which is every caption
+ * written before this existed. That is the migration, and there is nothing else
+ * to it: `wrap` is optional and its absence means what it always meant.
+ */
+export function wrappedLinesOf(shape, measure) {
+  const width = wrapOf(shape);
+  const lines = linesOf(shape);
+  if (!width) return lines;
+  return lines.flatMap((line) => wrapLine(line, width, measure));
+}
+
 /**
  * Measure a text shape into `w` and `h`.
  *
@@ -297,9 +363,13 @@ export const linesOf = (shape) => String(shape.text ?? '').split('\n');
  * @param {(line: string) => number} measure
  */
 export function measureText(shape, measure) {
-  const lines = linesOf(shape);
+  const lines = wrappedLinesOf(shape, measure);
+  const width = wrapOf(shape);
   return {
-    w: Math.max(0, ...lines.map((line) => measure(line))),
+    // A caption that has been given a width is that width, even when the words
+    // inside it come up short. That is what makes the two side handles stay
+    // where they were put rather than springing back to the longest line.
+    w: width || Math.max(0, ...lines.map((line) => measure(line))),
     h: lines.length * shape.size * TEXT_LINE_RATIO,
   };
 }
@@ -719,7 +789,17 @@ export function handlesFor(shape, minEdge) {
     { id: 'se', x: right, y: bottom },
     { id: 'sw', x: b.x, y: bottom },
   ];
-  if (shape.kind === 'text') return corners;
+  // A caption gets its two side midpoints and never the top and bottom ones.
+  // The height of a caption is not a thing anyone sets: it is the line count
+  // times the line height, and a handle that claimed to change it would be
+  // lying about what it did. The sides set the width the words wrap inside,
+  // which is the shape of it in every type tool there has ever been.
+  if (shape.kind === 'text') {
+    return corners.concat([
+      { id: 'e', x: right, y: midY },
+      { id: 'w', x: b.x, y: midY },
+    ]);
+  }
   if (!(Math.min(b.w, b.h) >= minEdge)) return corners;
   return corners.concat([
     { id: 'n', x: midX, y: b.y },
@@ -762,10 +842,13 @@ export function resizeShape(shape, handleId, point) {
   const b = boundsOf(shape);
 
   if (shape.kind === 'text') {
-    // Text scales from a corner only. An edge handle would set one axis
-    // independently, which is stretching the glyphs, so it is ignored rather
-    // than approximated. `handlesFor` does not offer text an edge handle, so
-    // this is a second lock on the same door.
+    // The two side handles set the width the words wrap inside. They are the
+    // only edge handles a caption has, and they change no glyph: the type stays
+    // the size it was and the block grows downwards instead.
+    if (handleId === 'e' || handleId === 'w') return rewrapText(shape, handleId, point);
+    // A corner still scales the type. An edge handle that set one axis of a
+    // glyph would be stretching it, which is a thing bitmap editors do and type
+    // editors never do, so the top and bottom handles do not exist.
     if (!CORNER_HANDLES.includes(handleId)) return shape;
     // From the glyph box, never the padded one. See glyphBoxOf.
     const g = glyphBoxOf(shape);
@@ -790,6 +873,30 @@ export function resizeShape(shape, handleId, point) {
   if (handleId.includes('s')) bottom = point.y;
 
   return { ...shape, rect: normalizeRect({ x: left, y: top }, { x: right, y: bottom }) };
+}
+
+/**
+ * Set the width a caption's words wrap inside, by dragging one of its sides.
+ *
+ * The opposite side stays where it is, which is what a handle means. Dragging
+ * the west one therefore moves `at`, and dragging the east one does not, exactly
+ * as the corners already behave.
+ *
+ * `w` is set here so that the frame and the selection outline are right during
+ * the drag. The height is not: only a canvas can say how many lines the words
+ * take at the new width, so the caller re-measures, and every caller already
+ * does because that has been true of every restyle since text became a shape.
+ */
+function rewrapText(shape, handleId, point) {
+  const g = glyphBoxOf(shape);
+  const right = g.x + g.w;
+  const wrap = Math.max(MIN_WRAP, handleId === 'e' ? point.x - g.x : right - point.x);
+  return {
+    ...shape,
+    wrap,
+    w: wrap,
+    at: { x: handleId === 'w' ? right - wrap : g.x, y: g.y },
+  };
 }
 
 /**
