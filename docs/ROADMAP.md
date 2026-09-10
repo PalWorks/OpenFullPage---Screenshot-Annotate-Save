@@ -33,6 +33,7 @@ already scoped and ready to start, or **planned** with the effort in the form
 | 1.7.0 repairs | T1 | Fix the false storage claim in the README | shipped 2026-09-08 | |
 | 1.7.0 repairs | T2 | `encodeOrThrow`, so a null blob cannot fail silently | shipped 2026-09-10 | D52. A null blob was a download of nothing with no error anywhere |
 | 1.7.0 repairs | T11 | Version the port protocol | shipped 2026-09-10 | D53. Unblocks F10. Exercised by `--stale` |
+| 1.7.0 repairs | T31 | What is fixed is asked again as the page is walked | shipped 2026-09-10 | D63. **Found in the field.** A header and a floating card that only turn fixed once you scroll were tagged before the walk, so they rode every screenful |
 | 1.7.0 repairs | T30 | A screenful Chrome had already presented is photographed again | shipped 2026-09-10 | D56, L39. **Found in the field**, not by a test. A repeated screenful, and a lost one. Exercised by `--frozen` |
 | 1.7.0 wins | F1 | WebP export | shipped 2026-09-10 | D52. Output formats are described once now, not in three lists |
 | 1.7.0 wins | F21 | Export quality, and what each format costs | shipped 2026-09-10 | D54. The size readout is the feature; the slider is how you move it |

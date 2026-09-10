@@ -50,6 +50,75 @@ export function markSpecialElements() {
 }
 
 /**
+ * Look again at what is fixed, now that the page has been scrolled.
+ *
+ * markSpecialElements runs once, before the walk, and it can only see what is
+ * fixed while the page is still at the top. A great many pages make an element
+ * fixed only after the reader has started scrolling: a header that reappears on
+ * the way down, a course card or a chat bubble that follows you and then docks
+ * above the footer. None of those are fixed at the moment we tag the page, so
+ * the stylesheet that hides fixed elements never reached them and they rode
+ * every screenful of the capture. That is what a repeated header is: not a
+ * stitching fault, an element that changed its mind after we asked.
+ *
+ * Both directions, on purpose. Something that has stopped being fixed has
+ * rejoined the flow and belongs in the picture where it now sits, so the mark
+ * comes off as readily as it goes on.
+ *
+ * Sticky elements are left alone. PREPARE_CSS has already forced them to static,
+ * so asking the browser about them here would only report back what we did.
+ *
+ * The walk is a getComputedStyle per element per screenful. On a heavy page of
+ * about two and a half thousand elements that measures around five milliseconds,
+ * against a screenful that costs hundreds, so it is not worth being clever about.
+ *
+ * @returns {Promise<{fixed:number, added:number, lifted:number}>}
+ */
+export async function remarkFixed() {
+  let fixed = 0;
+  let added = 0;
+  let lifted = 0;
+
+  for (const el of document.querySelectorAll('*')) {
+    if (el.hasAttribute('data-fpc-sticky')) continue;
+    const marked = el.hasAttribute('data-fpc-fixed');
+    if (getComputedStyle(el).position === 'fixed') {
+      fixed += 1;
+      if (!marked) {
+        el.setAttribute('data-fpc-fixed', '');
+        added += 1;
+      }
+    } else if (marked) {
+      el.removeAttribute('data-fpc-fixed');
+      lifted += 1;
+    }
+  }
+
+  // Hiding something is a paint, and captureVisibleTab hands back the last frame
+  // the compositor presented rather than photographing the page on demand. Going
+  // straight to the shot would photograph the page as it was a moment ago, with
+  // the banner still in it, which is the bug this function exists to fix. Two
+  // frames, because a requestAnimationFrame callback runs before the frame it
+  // belongs to is drawn. T30.
+  if (added > 0 || lifted > 0) {
+    const nextFrame = () => new Promise((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      requestAnimationFrame(finish);
+      setTimeout(finish, 60);
+    });
+    await nextFrame();
+    await nextFrame();
+  }
+
+  return { fixed, added, lifted };
+}
+
+/**
  * Pause anything that is playing, and remember only what we paused.
  *
  * A full page walk takes seconds, sometimes tens of them. A video playing

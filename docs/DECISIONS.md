@@ -1548,6 +1548,40 @@ for the port protocol. An unrepaired build fails the fixture check with the
 sticky header and the fixed bar each appearing twice, which is exactly what the
 real page did.
 
+## D63: What is fixed is asked again as the page is walked
+
+A capture of a real course page came back with the site's header in it three
+times and a floating card beside it three times, and the obvious reading was that
+the stitching had gone wrong. It had not. `markSpecialElements()` walks the page
+once, before the walk starts, and tags everything the browser then calls fixed so
+a stylesheet can hide it after the first screenful. It cannot tag what is not
+fixed yet.
+
+**A great many pages make an element fixed only after you start scrolling.** A
+header that reappears on the way down, a course card that follows you and docks
+above the footer, a chat bubble that arrives late. None of those are fixed while
+the page is still at the top, so none of them were ever tagged, and each one rode
+every screenful of the capture.
+
+`remarkFixed()` runs after each scroll and before each photograph, from the
+second screenful on. It is a `getComputedStyle` per element, which measures about
+five milliseconds on a page of two and a half thousand elements against a
+screenful that costs hundreds, so there is nothing to be clever about.
+
+**It lifts marks as well as applying them.** An element that has stopped being
+fixed has rejoined the flow and belongs in the picture where it now sits. The
+fixture exercises both edges: its latecomer sticks itself on the first scroll and
+lets go again near the foot of the page.
+
+**It waits two frames when it changed anything.** Hiding something is a paint,
+and `captureVisibleTab` hands back the last frame the compositor presented rather
+than photographing the page on demand, so returning straight into the shot would
+photograph the banner that was just hidden. Same reason as D56, same two frames.
+
+The check is in `verifyFixture`, and it is worth reading the failure it produces
+without the repair: the latecomer appears five times, at the top of every
+screenful. That is the shape of the bug as a user sees it.
+
 ## D60: A caption has a width, and its height is a consequence
 
 F43. A text shape had no width: its box was measured from the longest line it

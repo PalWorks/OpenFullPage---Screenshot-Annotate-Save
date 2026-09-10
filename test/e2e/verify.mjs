@@ -93,6 +93,7 @@ const ODD = [0xf4, 0xf4, 0xf5];
 const EVEN = [0xe4, 0xe4, 0xe7];
 const LAZY_LOADED = [0xdc, 0xfc, 0xe7];
 const LAZY_MISSING = [0xfe, 0xe2, 0xe2];
+const LATECOMER = [0xa1, 0x62, 0x07];
 
 /** Rows where a colour appears in the left margin, collapsed into ranges. */
 function bandsOf(img, colour, x = 4) {
@@ -133,6 +134,22 @@ export function verifyFixture(path) {
     problems.push(`fixed bar appears ${bars.length} times: ${JSON.stringify(bars)}`);
   } else {
     notes.push(`fixed bar once at ${bars[0][0]}..${bars[0][1]}`);
+  }
+
+  // 2b. The latecomer is only fixed once the page has been scrolled, so tagging
+  //     the page once before the walk cannot see it. It belongs in the picture
+  //     where it sits at the top of the page and nowhere else. Read at the right
+  //     margin, which is the only column it occupies.
+  const late = bandsOf(img, LATECOMER, img.width - 10);
+  if (late.length !== 1) {
+    problems.push(
+      `the element that turns fixed on scroll appears ${late.length} times: ${JSON.stringify(late)}`
+        + ' (what is fixed is not being reconsidered as the page is walked)',
+    );
+  } else if (late[0][0] < 290 || late[0][1] > 375) {
+    problems.push(`the latecomer sits at ${late[0][0]}..${late[0][1]}, expected about 300..360`);
+  } else {
+    notes.push(`the element that turns fixed on scroll appears once, at ${late[0][0]}..${late[0][1]}`);
   }
 
   // 3. Lazy content below the fold must have loaded during the warm-up pass.

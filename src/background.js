@@ -29,6 +29,7 @@ import {
   expandSameOriginFrames,
   markSpecialElements,
   pauseMedia,
+  remarkFixed,
   resumeMedia,
   repaintAt,
   reportFrameHeights,
@@ -447,6 +448,13 @@ async function runCapture(tab, mode, settings) {
       let shot;
       try {
         at = await inPage(tabId, scrollAndSettle, [target.x, target.y, SETTLE_BUDGET_MS]);
+        // Only once the hiding stylesheet is in, which is also only once we have
+        // scrolled at all. A page that makes its header fixed the moment you
+        // move was not fixed when the page was tagged, so what is fixed is asked
+        // again here rather than assumed to be what it was at the top. Never at
+        // the cost of the capture: a page that has stopped answering loses its
+        // repeated banner, not the screenful it was sitting on.
+        if (fixedHidden) await inPage(tabId, remarkFixed).catch(() => {});
         shot = await captureViewport(tab.windowId, delay);
         shot = await retakeIfStale(tabId, tab.windowId, shots[shots.length - 1], at, shot);
       } catch (error) {

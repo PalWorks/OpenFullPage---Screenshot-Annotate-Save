@@ -21,6 +21,22 @@
   }
   .row:nth-child(odd) { background: #f4f4f5; }
   .row:nth-child(even) { background: #e4e4e7; }
+  /* A LATECOMER
+     Not fixed while the page is at the top, and fixed the moment it is scrolled.
+     This is the shape of a great many real headers and floating cards, and it is
+     invisible to a page that is tagged once before the walk: it appears here in
+     the first screenful and then, unrepaired, at the top of every screenful
+     after it. Absolutely positioned and over on the right so it sits outside the
+     column the band checks read, and so adding it moves no other pixel. The
+     colour is a long way from every colour the editor checks scan for: the first
+     try was a teal that fell inside the ink scan's tolerance for the caption
+     green, so three unrelated checks started reading this box as a caption. */
+  #latecomer {
+    position: absolute; top: 300px; right: 0; width: 220px; height: 60px;
+    z-index: 15; background: #a16207; color: #fff; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #latecomer.stuck { position: fixed; top: 0; }
   #lazy {
     height: 140px; display: flex; align-items: center; justify-content: center;
     background: #fee2e2; color: #991b1b; font-size: 30px; font-weight: 800;
@@ -38,6 +54,7 @@
 <main id="rows"></main>
 <div id="lazy">LAZY NOT LOADED</div>
 <div id="cookiebar">FIXED COOKIE BAR</div>
+<div id="latecomer">LATECOMER</div>
 <video id="clip" muted playsinline></video>
 
 <script>
@@ -50,6 +67,17 @@
     el.textContent = `ROW ${String(i).padStart(2, '0')}`;
     rows.appendChild(el);
   }
+
+  // The latecomer sticks itself on the first scroll and lets go again near the
+  // foot of the page, which is exactly what a floating course card or a chat
+  // bubble with an end boundary does. Both edges matter: one is what has to be
+  // noticed mid-walk, the other is what must not stay hidden afterwards.
+  const latecomer = document.getElementById('latecomer');
+  addEventListener('scroll', () => {
+    const y = window.scrollY;
+    const bottom = document.documentElement.scrollHeight - window.innerHeight;
+    latecomer.classList.toggle('stuck', y > 200 && y < bottom - 400);
+  }, { passive: true });
 
   // A video that is genuinely playing, without shipping a video file: a canvas
   // repainting on a timer, captured as a stream. It needs no codec, no network
