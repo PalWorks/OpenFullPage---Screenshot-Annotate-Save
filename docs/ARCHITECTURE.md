@@ -58,6 +58,9 @@ button (clicking it captures immediately), and no page can reach the extension
   7  for each tile:                   ONE pass down the page
         stop requested? end the walk  Finish now, checked at the start of a row
         scrollAndSettle()             scroll, wait for images in shot, report height
+        remarkFixed()                 once the hiding CSS is in: tag what only
+                                      turned fixed now that we have scrolled,
+                                      and untag what stopped being fixed
         captureVisibleTab()           with backoff on Chrome's rate limit
         after tile 0: insertCSS(HIDE_FIXED_CSS)
         if the page grew: re-plan

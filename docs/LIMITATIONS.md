@@ -13,7 +13,7 @@ Status key: **open** (a real gap, unfixed), **by design** (a deliberate trade),
 | L1 | A page longer than the canvas limits is downscaled to 50% and then truncated. The user is told, which does not make it good | **open**, F10 is the fix |
 | L2 | Cross origin frames contribute only their visible box unless the user opts into advanced access. `contentDocument` throws, so their height cannot be read at all | **by design** |
 | L3 | The walk stops at `MAX_TILES` (400). A live blog appending faster than we photograph is bounded here | **by design** |
-| L4 | `markSpecialElements()` calls `getComputedStyle` on every element in the document. On a 50,000 node page this is the slowest step before the walk begins | **open**, low priority |
+| L4 | `markSpecialElements()` calls `getComputedStyle` on every element in the document. On a 50,000 node page this is the slowest step before the walk begins. Since D63 `remarkFixed()` pays a second walk per screenful, measured at 4.7ms over 2,488 elements against the hundreds of milliseconds a screenful costs, so the walk is not what makes a capture slow | **open**, low priority |
 | L5 | Chrome rate limits `captureVisibleTab`. The walk backs off and retries up to six times, so a slow page can take noticeably longer than its screenful count suggests | **by design** |
 | L6 | Playing video is not paused during the walk, so a frame can differ between what was photographed and what the user saw | **closed** 2026-09-10, F2. Only what was playing is paused, and it is started again in the tidy-up |
 | L7 | `chrome://` pages, the Web Store, and other extension pages cannot be captured. Chrome forbids it | **by design** |

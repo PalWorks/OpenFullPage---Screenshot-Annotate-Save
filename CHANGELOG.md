@@ -11,7 +11,72 @@ a clean checkout with `./tools/pack.sh`, not merely checkable against one downlo
 ## [Unreleased]
 
 Everything below is on `main` and not yet packaged. It covers the toolbar rework
-and the capture reliability work of 2026-09-08 and 2026-09-09.
+and the capture reliability work of 2026-09-08 to 2026-09-10.
+
+### Fixed: the screenshot run left the download menu open
+Test harness only. The shipped extension was never affected, but the bug hid two real
+checks for as long as it lived.
+
+`FPC_SHOT_DIR` photographs the download menu open and did not close it. `#download`
+is a toggle, so the block that checks what each format would cost closed the menu it
+meant to open, then drove a slider inside it. The first check passed on numbers the
+screenshot's own click had measured, the check that the menu survives being used
+failed, and the run died ninety seconds later on a wait whose message named the
+slider rather than the click fifteen hundred lines away.
+
+The screenshot pass puts the menu back, and the checks read the state and open it
+rather than toggling whatever they were handed. A menu left up by an earlier block is
+now one named line instead of a timeout that aborts the run. D64.
+
+### Changed: one colour panel everywhere, zoom beside undo, and a toolbar with an edge
+Zoom moves to the left of Delete, where it is used, and the overview pane stops
+painting over the panels that reach it. The toolbar is sticky and so a stacking
+context of its own, which meant the pane at `z-index: 35` beat every popover inside
+it whatever the popover asked for. The pane already had a switch on the options page,
+under View, and still does.
+
+A panel inside a panel is dismissed on its own. Clicking a colour well a second time
+is how a reader puts the palette away, and it used to take the whole text inspector
+with it. The three wells in that inspector were the only nested popovers in the
+product, and the check that now covers them runs for every nested popover, so the
+next one inherits the check rather than the bug. D61.
+
+Every paint that describes something drawn behind or around the content offers no
+colour: Border, Fill, Frame and Plate. Text is the single exception, because a caption
+with no colour is not a caption, and `inkOf` falls back to the frame colour and then
+to near-black rather than drawing nothing. No border had to become a real state
+instead of a swatch that writes null and hopes: **canvas keeps the colour it was last
+given when handed one it cannot parse**, so a null-coloured shape came out in the
+previous shape's colour. D62.
+
+The text inspector is 252px rather than 272, and the frame thickness field is pushed
+to the right edge instead of stretched to it. Two digits at the most did not need to
+be the widest control on the panel.
+
+The toolbar has its own colour in daylight, a warm grey a step off white, so the
+panels that open out of it are no longer the same sheet. It is one token, `--bar`,
+and dark mode is untouched. The overview pane sits at 55 per cent until the pointer
+arrives, the way a scrollbar does; faded on hover would be the wrong way round,
+because hovering it is how you drag the marker.
+
+### Fixed: an element that only becomes fixed once you scroll is hidden too
+A capture of a real course page came back with the site's header in it three times
+and a floating card beside it three times. The stitching was right. `markSpecialElements`
+walks the page once, before the walk starts, and it cannot tag what is not fixed yet:
+a header that reappears on the way down, a card that follows you and docks above the
+footer, a chat bubble that arrives late. None of those were tagged, so the stylesheet
+that hides fixed elements never reached them, and each one rode every screenful.
+
+`remarkFixed` now runs after each scroll and before each photograph, from the second
+screenful on. It lifts marks as well as applying them, because something that has
+stopped being fixed has rejoined the flow and belongs in the picture where it now
+sits. It waits two frames when it changed anything, for the same reason T30 does:
+hiding something is a paint, and `captureVisibleTab` hands back the last frame the
+compositor presented.
+
+The fixture grows a latecomer that sticks itself on the first scroll and lets go near
+the foot of the page. Without the repair it appears five times, at the top of every
+screenful, which is the shape of the bug as a user sees it. D63, T31.
 
 ### Added: a caption wraps inside a width you set
 A text box had no width. Its box was whatever its longest line happened to be, so

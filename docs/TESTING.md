@@ -45,7 +45,9 @@ FPC_URLS=https://example.com/a,https://example.com/b node test/e2e/run.mjs
 ```
 
 `FPC_SHOT_DIR=/some/dir` also screenshots the result tab, which is the quickest way
-to review its UI.
+to review its UI. It photographs the download menu open as well as the toolbar at
+rest, and **puts the menu back afterwards**: every pass that opens something owes
+the passes after it the state it was handed.
 
 Launches real Chrome, installs the extension over CDP (`Extensions.loadUnpacked`,
 because Chrome 137 and later ignore `--load-extension`), captures pages, drives the
@@ -140,7 +142,7 @@ the model rather than by lists typed into this file. That list used to be twelve
 names written out by hand, and it was wrong within one release: two shapes were
 added to the popover and the sweep went on testing the old twelve without a word.
 
-Four failures worth remembering, all found this way:
+Failures worth remembering, all found this way:
 
 - A `setIcon` call per screenful made Chrome's icon reads overlap and cancel. Only
   actual frame changes are sent now.
@@ -162,6 +164,16 @@ Four failures worth remembering, all found this way:
   check. The failure surfaced three hundred lines away, in the loupe redaction test,
   as a redaction that suddenly had less to change. Undo until the canvas is clean
   and assert that it is, rather than counting.
+- **A helper that toggles a control depends on state it did not set.** The
+  `FPC_SHOT_DIR` pass photographs the download menu open and used to leave it open.
+  `#download` is a toggle, so `exerciseFileSizes` closed the menu it meant to open,
+  and every check after that drove a menu nobody could see: the sizes it read were
+  the ones the screenshot's own click had produced, the slider check failed, and the
+  wait for a lower quality never ended, because a hidden menu does not re-measure.
+  Shots runs died there after ninety seconds, with no hint that the cause was fifteen
+  hundred lines away. Read the state and open it, rather than flipping whatever you
+  were handed, and **say when it was already open**: the leak is the defect, and a
+  silent repair would have hidden it. D64.
 
 ### What the harness widens, and why
 

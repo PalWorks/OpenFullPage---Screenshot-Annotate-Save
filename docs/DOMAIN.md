@@ -74,6 +74,13 @@ the document height, which is why the page is prepared before it is measured.
 so a fixed header appears once at the top and then stops repeating. A cookie banner
 is a fixed element, so it is already absent from every screenful except the first.
 
+**Re-marking.** `markSpecialElements()` runs once, before the walk, and cannot tag
+what is not fixed yet. Plenty of headers and floating cards are ordinary elements
+until a script makes them fixed on the first scroll, and those rode every screenful.
+`remarkFixed()` asks the question again after each scroll and before each
+photograph, and lifts marks as well as applying them: something that has stopped
+being fixed has rejoined the flow and belongs in the picture where it now sits. D63.
+
 **Settling.** Waiting for the page to stop changing height, and for the images
 actually in shot to finish loading, rather than sleeping a fixed amount. A page with
 no lazy content waits almost nothing.
@@ -87,8 +94,27 @@ uniform across drawing, moving, resizing, restyling and cropping.
 **Present.** `{shapes[], crop, selected}`.
 
 **Shape.** A live object, not a baked stroke. Once drawn it can be selected, moved,
-resized, restyled or deleted. Kinds: `arrow`, `line`, `rect`, `ellipse`,
-`highlight`, `pixelate`, `text`, `counter`.
+resized, restyled or deleted. Kinds carry the model: `arrow`, `line`, `text`,
+`counter`, and the eleven in `GEOMETRY_KINDS` (`rect`, `highlight`, `pixelate`,
+`ellipse`, `rhombus`, `triangle`, `hexagon`, `parallelogram`, `cylinder`, `callout`,
+`loupe`), each described once as path operations that the canvas and the hit tester
+both read.
+
+**Tool entry.** What the Shapes popover offers, which is not the same list.
+`SHAPE_TOOLS` in `src/lib/edit.js` holds fourteen entries, because **Rounded box**
+and **Stadium** pick `rect` and set a corner radius rather than adding two kinds to
+the model. Anything that needs the list derives it from `SHAPE_TOOLS` rather than
+repeating it: the hand-written copy went stale within one release, and the sweep
+tested twelve shapes without a word about the two it had never heard of. D51.
+
+**Paint.** One of the five things a shape can be given a colour for, declared once in
+`PAINTS`: `border` and `fill` on a shape, `text`, `frame` and `plate` on a caption.
+Every colour popover in the product is built from that description, so a control
+cannot exist in one panel and be missing from another. Four of the five offer **no
+colour** as a real stored value, not an absence: `null` means the reader asked for
+nothing to be drawn, and `undefined` means they never said. Text is the exception,
+because `inkOf` falls back to the frame colour and then to near-black, so the control
+would promise something the model does not do. D57, D62.
 
 **commit vs amend.** `commit()` records a new state and makes the previous one
 undoable. `amend()` changes the present without touching history, used for live

@@ -1553,6 +1553,42 @@ for the port protocol. An unrepaired build fails the fixture check with the
 sticky header and the fixed bar each appearing twice, which is exactly what the
 real page did.
 
+## D64: A check opens what it needs, and says so when it was already open
+
+**2026-09-10.** The store screenshot pass photographs the download menu open,
+because that is the part a picture of the resting toolbar cannot show. It clicked
+`#download` and moved on. `#download` is a toggle, so the next block, the one that
+checks what each format costs, closed the menu it meant to open.
+
+Nothing said so. The size cells still held the numbers the screenshot's own click
+had measured, so the first check passed while measuring nothing. The quality slider
+then blanked the two lossy rows, because `showSizes` writes into the cells whether
+the menu is on screen or not, while `measureSizes` returns immediately on
+`ui.formats.hidden`. Those rows could never refill, and the run died ninety seconds
+later on a wait whose message named the slider, fifteen hundred lines from the click
+that caused it.
+
+**Decision.** A block that opens something puts it back, and a helper reads the
+state it needs rather than toggling whatever it was handed. `exerciseFileSizes` asks
+whether `#formats` is hidden, opens it only if it is, and **checks that it was
+closed**.
+
+The check is the point. Closing the menu in the screenshot pass alone would have
+fixed today's run and left the next leak to be found the same way, as a timeout
+naming the wrong thing. Reading the state alone would have repaired the symptom
+silently, which is worse: the suite would have gone green over a pass that leaves
+the interface in a state no user could reach.
+
+**Consequences.** A menu left up by an earlier block is now one line of output, and
+the run finishes. Removing the closing click again produces exactly that: `the
+download menu was already open before the file size checks ran`, a complete run in
+seventy four seconds, and the other five checks still passing, where before it hung
+for ninety and threw.
+
+This is the same shape as the undo counting failure in
+[TESTING.md](TESTING.md): a check that depends on state it did not establish is a
+check that reports its neighbour's bug as its own.
+
 ## D63: What is fixed is asked again as the page is walked
 
 A capture of a real course page came back with the site's header in it three
