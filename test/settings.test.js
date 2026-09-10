@@ -65,6 +65,16 @@ test('a colour has to be a hex colour, not arbitrary CSS', () => {
   }
 });
 
+test('no border is a stored value, and only null asks for it', () => {
+  // The border palette has a no-colour swatch, so "nothing" has to survive a
+  // reload the way no fill already does. Everything else unusable still leaves
+  // the remembered colour alone, which is what separates this from the fill:
+  // there the default is nothing, here the default is a colour.
+  assert.equal(sanitise({ colour: null }).colour, null);
+  assert.equal(sanitise({}).colour, DEFAULTS.colour);
+  assert.equal(sanitise({ colour: undefined }).colour, DEFAULTS.colour);
+});
+
 // The ceiling is 64 rather than 24 because the stroke style popover has an
 // exact px box, and the three preset buttons are no longer the only way in.
 test('the stroke width is clamped and rounded', () => {

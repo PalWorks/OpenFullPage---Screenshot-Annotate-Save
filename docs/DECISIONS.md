@@ -823,8 +823,13 @@ directly on the mat. The rendered-page audit caught it, which is what it is for.
 The change was applied to the settings page too, so the two pages do not drift
 apart over a colour neither of them needs to differ on.
 
-**What it deliberately does not touch.** The toolbar, which keeps `--surface`, so
-it still reads as browser chrome above the mat rather than as part of the image.
+**What it deliberately did not touch.** The toolbar, which kept `--surface`, so it
+still read as browser chrome above the mat rather than as part of the image. That
+turned out to be half a decision: the panels that open out of the toolbar are
+`--surface` too, so in daylight the row of controls and the panels hanging from it
+were the same sheet. The toolbar has its own `--bar` since, a warm grey a step off
+white, and the panels stay white and now have something to sit on. In the dark
+theme `--bar` is the surface, because there it was already doing this job.
 
 ## D37: `hidden` is not a property of SVGElement
 
@@ -1581,6 +1586,45 @@ photograph the banner that was just hidden. Same reason as D56, same two frames.
 The check is in `verifyFixture`, and it is worth reading the failure it produces
 without the repair: the latecomer appears five times, at the top of every
 screenful. That is the shape of the bug as a user sees it.
+
+## D62: Every paint offers nothing, except the one that cannot mean it
+
+D57 built the five colour popovers from one description so they could not drift
+apart. They drifted anyway, in the one place the description still allowed:
+whether the panel has a no-colour swatch at the head of its colours. Fill and
+Frame had one, Border, Text and Plate did not, and the line between them was not
+one a reader could see. **Frame is a stroke and had the swatch. Fill and Plate
+write the same property and disagreed about it.**
+
+So every paint that describes something drawn behind or around the content offers
+"nothing": Border, Fill, Frame and Plate. **Text is the single exception**, and
+the reason is not layout. A caption with no colour is not a caption, and `inkOf`
+falls back to the frame colour and then to near black, so a slash on that panel
+would promise something the model does not do. Making the words disappear is what
+its opacity slider is for, and that at least says so on a scale you can drag back.
+
+**No border had to become a real state, not a swatch that writes null and hopes.**
+Canvas keeps whatever colour it was last given when it is handed one it cannot
+parse, so a shape with `colour: null` and no guard is drawn in the previous
+shape's colour: a drawing that looks wrong rather than absent. `drawShape` resolves
+the paint through `strokeOf` and falls back to `transparent`, which is one line
+and covers every shape kind, arrowheads and counters included. `sanitise()` takes
+null and only null, because the default here is a colour rather than nothing.
+
+## D61: A panel inside a panel is dismissed on its own
+
+The three colour wells in the text inspector are popovers inside a popover.
+Clicking a well a second time is how a reader puts the palette away, and it took
+the inspector down with it, so the panel vanished on the ordinary path rather
+than an unusual one.
+
+One expression: opening keeps the panel being opened, and closing keeps whatever
+the panel was sitting inside. It was `null` in the closing case, which means
+"close everything", and everything included the container.
+
+`exerciseChevrons` now toggles every nested popover shut and asserts its
+containers are still open, so the next popover built inside another one inherits
+the check rather than the bug.
 
 ## D60: A caption has a width, and its height is a consequence
 

@@ -14,6 +14,15 @@
     --muted: #6b6b73;
     --line: #e4e4e7;
     --surface: #ffffff;
+    /* THE BAR
+       The toolbar is chrome, not content, and it used to be the same white as
+       the panels that open out of it, so in daylight the page had no top: the
+       controls appeared to float on the same sheet as the picture. A warm grey a
+       step off white is enough to say "this row is the tool, that is your work",
+       and it keeps the panels reading as panels, since they stay white and now
+       have something to sit on. In the dark theme the surface already does this,
+       so the token is the surface there rather than a second invented colour. */
+    --bar: #f0eee9;
     --sunken: #fafafa;
     --danger: #dc2626;
     /* The answer to "did that work". Green-700, which clears 4.5:1 on both the
@@ -47,6 +56,7 @@
       --muted: #a1a1aa;
       --line: #3f3f46;
       --surface: #18181b;
+      --bar: #18181b;
       --sunken: #101012;
       --mat: #002b36;
       --mat-edge: #073642;
@@ -59,6 +69,7 @@
     --muted: #a1a1aa;
     --line: #3f3f46;
     --surface: #18181b;
+    --bar: #18181b;
     --sunken: #101012;
     --mat: #002b36;
     --mat-edge: #073642;
@@ -161,7 +172,7 @@
     gap: 6px;
     flex-wrap: wrap;
     padding: 8px 16px;
-    background: var(--surface);
+    background: var(--bar);
     border-bottom: 1px solid var(--line);
   }
   #toolbar .sep { width: 1px; height: 22px; background: var(--line); margin: 0 3px; }
@@ -617,13 +628,26 @@
     position: fixed;
     top: 66px;
     right: 16px;
-    z-index: 35;
+    /* Below the toolbar, not above it. #toolbar is sticky with a z-index of its
+       own, so every popover inside it is stacked as one layer against this pane:
+       at 35 the pane painted over an open panel, whatever the panel asked for. */
+    z-index: 4;
     padding: 6px;
     border: 1px solid var(--line);
     border-radius: 9px;
     background: var(--surface);
     box-shadow: 0 8px 28px rgb(0 0 0 / 0.28);
+    /* Quiet until it is wanted. The pane sits over the top right of the picture
+       for the whole of a long capture, and for most of that time it is being
+       read rather than used, so it is faded at rest and solid the moment the
+       pointer arrives, the way a scrollbar behaves. Faded on hover would be the
+       wrong way round: hovering it is how you drag the marker, and a control
+       that dims exactly when it is being used is a control you cannot aim at. */
+    opacity: 0.55;
+    transition: opacity 120ms ease;
   }
+  .overview:hover, .overview:focus-within, .overview:has(.port.held) { opacity: 1; }
+  @media (prefers-reduced-motion: reduce) { .overview { transition: none; } }
   .overview[hidden] { display: none; }
   .overview .sheet {
     position: relative;
@@ -670,12 +694,13 @@
     text-transform: uppercase;
     color: var(--muted);
   }
-  /* Both rows fill the panel and end in the same place, which is what makes them
-     read as a pair. The slider takes the room the Frame row gives its stepper,
-     and the stepper takes the room the Plate row gives its slider. */
+  /* Both rows end in the same place, which is what makes them read as a pair.
+     The Plate slider takes whatever room is left on its row; the Frame stepper is
+     pushed to that same right edge instead of being stretched to it. A thickness
+     is two digits at the most, and a field wide enough for a paragraph was the
+     largest control on the panel holding the smallest number on it. */
   .framer input.grow-range { flex: 1 1 auto; min-width: 0; accent-color: var(--indigo); }
-  .framer .stepper { flex: 1 1 auto; }
-  .framer .stepper input { flex: 1 1 auto; width: auto; min-width: 0; }
+  .framer .stepper { margin-left: auto; }
   .framer output {
     flex: none; width: 38px; text-align: right;
     font: 600 11px/1 ui-monospace, monospace; font-variant-numeric: tabular-nums;
@@ -735,7 +760,7 @@
   .custom input[type="text"]:invalid { border-color: var(--danger); }
 
   /* Text inspector. */
-  .pop.text { width: 272px; display: flex; flex-direction: column; gap: 8px; }
+  .pop.text { width: 252px; display: flex; flex-direction: column; gap: 8px; }
   /* Four alignments in one row, sized like the stroke and dash options so the
      popovers do not each invent their own button. */
   .pop.text .aligns { display: flex; gap: 4px; }
@@ -1188,7 +1213,7 @@
   <span class="grp" data-button="border">
     <button class="icon combo" type="button" id="border-combo" data-pop="pop-border"
             aria-haspopup="true" aria-expanded="false" aria-label="Border colour" title="Border colour">
-      <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect id="border-glyph" x="3.5" y="3.5" width="13" height="13" rx="2.5" fill="none" stroke="#ef4444" stroke-width="2.6"/></svg>
+      <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect id="border-glyph" x="3.5" y="3.5" width="13" height="13" rx="2.5" fill="none" stroke="#ef4444" stroke-width="2.6"/><path id="border-slash" d="M4.6 15.4 15.4 4.6" stroke="#dc2626" stroke-width="1.9" stroke-linecap="round" hidden/></svg>
       <svg class="caret" viewBox="0 0 8 8" aria-hidden="true" focusable="false"><path d="M1.4 2.9 4 5.5l2.6-2.6"/></svg>
     </button>
     <div class="pop paint" id="pop-border" data-paint-pop="border"
@@ -1206,6 +1231,40 @@
   </span>
 
   <span class="sep"></span>
+
+  <!-- Zoom sits with the controls that act on the picture rather than at the
+       far right with Theme and Settings. Two reasons, and the second is the
+       one that matters: it is used while drawing, next to Undo, and a panel
+       hanging off the right end opened underneath the overview pane. -->
+  <span class="grp" data-button="zoom">
+    <button class="icon combo" type="button" id="zoom-combo" data-pop="pop-zoom"
+            aria-haspopup="true" aria-expanded="false" aria-label="Zoom" title="Zoom">
+      <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="8.6" cy="8.6" r="5.2"/><path d="M12.5 12.5 17.2 17.2"/><path d="M6.3 8.6h4.6"/></svg>
+      <svg class="caret" viewBox="0 0 8 8" aria-hidden="true" focusable="false"><path d="M1.4 2.9 4 5.5l2.6-2.6"/></svg>
+    </button>
+    <div class="pop zoom" id="pop-zoom" role="group" aria-labelledby="pop-zoom-title" hidden>
+      <p class="pop-title" id="pop-zoom-title">Zoom</p>
+      <!-- One reading of the zoom, not two. The number beside the slider is the
+           readout and the way to set an exact value, so the separate 100% button
+           it replaced would have been the same fact twice. -->
+      <div class="paintrow">
+        <input id="zoom-level" type="range" min="10" max="400" step="1" value="100" aria-label="Zoom">
+        <span class="stepper zoomfield">
+          <input id="zoom-exact" type="number" min="10" max="400" step="1" value="100"
+                 aria-label="Zoom, as a percentage">
+          <span class="unit">%</span>
+        </span>
+      </div>
+      <div class="fits">
+        <button type="button" data-fit="width" aria-pressed="true" aria-label="Fit the width" title="Fit the width">
+          <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M3 4v12"/><path d="M17 4v12"/><path d="M6 10h8"/><path d="m8.4 7.6-2.4 2.4 2.4 2.4"/><path d="m11.6 7.6 2.4 2.4-2.4 2.4"/></svg>
+        </button>
+        <button type="button" data-fit="height" aria-pressed="false" aria-label="Fit the height" title="Fit the height">
+          <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M4 3h12"/><path d="M4 17h12"/><path d="M10 6v8"/><path d="m7.6 8.4 2.4-2.4 2.4 2.4"/><path d="m7.6 11.6 2.4 2.4 2.4-2.4"/></svg>
+        </button>
+      </div>
+    </div>
+  </span>
 
   <button class="icon" id="delete" data-button="delete" type="button" disabled aria-label="Delete selected" title="Delete selected (Backspace)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M3.6 5.6h12.8"/><path d="M8 5.6V3.4h4v2.2"/><path d="M5.6 5.6 6.4 16.6h7.2l.8-11"/></svg></button>
   <button class="icon" id="undo" data-button="undo" type="button" disabled aria-label="Undo" title="Undo (Cmd/Ctrl+Z)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M7 6.4h4.6a4.3 4.3 0 0 1 0 8.6H5.4"/><path d="M9.4 3.6 6 6.9l3.4 3.3"/></svg></button>
@@ -1270,36 +1329,6 @@
         Copies the image and opens the site so you can paste it there. OpenFullPage
         does not upload anything and cannot: it has no network access.
       </p>
-    </div>
-  </span>
-
-  <span class="grp" data-button="zoom">
-    <button class="icon combo" type="button" id="zoom-combo" data-pop="pop-zoom"
-            aria-haspopup="true" aria-expanded="false" aria-label="Zoom" title="Zoom">
-      <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="8.6" cy="8.6" r="5.2"/><path d="M12.5 12.5 17.2 17.2"/><path d="M6.3 8.6h4.6"/></svg>
-      <svg class="caret" viewBox="0 0 8 8" aria-hidden="true" focusable="false"><path d="M1.4 2.9 4 5.5l2.6-2.6"/></svg>
-    </button>
-    <div class="pop zoom" id="pop-zoom" role="group" aria-labelledby="pop-zoom-title" hidden>
-      <p class="pop-title" id="pop-zoom-title">Zoom</p>
-      <!-- One reading of the zoom, not two. The number beside the slider is the
-           readout and the way to set an exact value, so the separate 100% button
-           it replaced would have been the same fact twice. -->
-      <div class="paintrow">
-        <input id="zoom-level" type="range" min="10" max="400" step="1" value="100" aria-label="Zoom">
-        <span class="stepper zoomfield">
-          <input id="zoom-exact" type="number" min="10" max="400" step="1" value="100"
-                 aria-label="Zoom, as a percentage">
-          <span class="unit">%</span>
-        </span>
-      </div>
-      <div class="fits">
-        <button type="button" data-fit="width" aria-pressed="true" aria-label="Fit the width" title="Fit the width">
-          <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M3 4v12"/><path d="M17 4v12"/><path d="M6 10h8"/><path d="m8.4 7.6-2.4 2.4 2.4 2.4"/><path d="m11.6 7.6 2.4 2.4-2.4 2.4"/></svg>
-        </button>
-        <button type="button" data-fit="height" aria-pressed="false" aria-label="Fit the height" title="Fit the height">
-          <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M4 3h12"/><path d="M4 17h12"/><path d="M10 6v8"/><path d="m7.6 8.4 2.4-2.4 2.4 2.4"/><path d="m7.6 11.6 2.4 2.4 2.4-2.4"/></svg>
-        </button>
-      </div>
     </div>
   </span>
 

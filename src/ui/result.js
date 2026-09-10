@@ -51,6 +51,7 @@ const ui = {
   styleGlyph: el('style-glyph'),
   strokePx: el('stroke-px'),
   borderGlyph: el('border-glyph'),
+  borderSlash: el('border-slash'),
   fillGlyph: el('fill-glyph'),
   fillSlash: el('fill-slash'),
   textFamily: el('text-family'),
@@ -785,7 +786,7 @@ function buildPaintPopovers() {
       off.className = 'sw none';
       off.dataset.paintNone = kind;
       off.setAttribute('aria-pressed', 'false');
-      off.setAttribute('aria-label', kind === 'fill' ? 'No fill' : 'No frame');
+      off.setAttribute('aria-label', `No ${paint.title.replace(' colour', '').toLowerCase()}`);
       off.title = off.getAttribute('aria-label');
       quick.append(off);
     }
@@ -876,10 +877,18 @@ function showStyle(style, tool) {
   markPressed('[data-corner]', (b) => Number(b.dataset.corner) === (style.corner ?? 0));
   showCorner(style.corner ?? 0, tool, style.selectedKind);
 
-  ui.borderGlyph.setAttribute('stroke', style.colour);
-  ui.borderGlyph.setAttribute('stroke-opacity', String(style.strokeOpacity ?? 1));
-  markPressed('[data-paint="border"]', (b) => b.dataset.colour === style.colour);
-  setHex('border', style.colour);
+  // Shaped like the Fill button when it is holding nothing: the box drawn as a
+  // hairline in the toolbar's own ink, and the same slash across it, so a reader
+  // who has met one has met both.
+  const border = style.colour ?? null;
+  if (border) lastBorderColour = border;
+  ui.borderGlyph.setAttribute('stroke', border ?? 'currentColor');
+  ui.borderGlyph.setAttribute('stroke-width', border ? '2.6' : '1.3');
+  ui.borderGlyph.setAttribute('stroke-opacity', border ? String(style.strokeOpacity ?? 1) : '0.45');
+  showGlyph(ui.borderSlash, !border);
+  markPressed('[data-paint="border"]', (b) => Boolean(border) && b.dataset.colour === border);
+  markNone('border', !border);
+  setHex('border', border ?? lastBorderColour);
   showOpacity('border', style.strokeOpacity ?? 1);
 
   ui.fillGlyph.setAttribute('fill', style.fill ?? 'none');
@@ -925,6 +934,7 @@ function showStyle(style, tool) {
   ui.plateWell.style.opacity = String(Math.max(0.12, plateAlpha));
   setHex('plate', plate ?? lastPlateColour);
   markPressed('[data-paint="plate"]', (b) => b.dataset.colour === plate);
+  markNone('plate', !plate);
   showOpacity('plate', plateAlpha);
   ui.plateOpacity.value = String(Math.round(plateAlpha * 100));
   ui.plateOpacityOut.textContent = `${Math.round(plateAlpha * 100)}%`;
@@ -961,6 +971,7 @@ let glyphShape = null;
 // A switch that turns a colour off has to remember which colour, or turning it
 // back on is a second decision the reader never asked to make. Seeded from the
 // remembered style, and updated whenever either is set from anywhere.
+let lastBorderColour = '#ef4444';
 let lastFrameColour = '#ef4444';
 let lastPlateColour = '#ffffff';
 
@@ -1007,7 +1018,13 @@ for (const trigger of ui.toolbar.querySelectorAll('[data-pop]')) {
     const pop = el(trigger.dataset.pop);
     const open = pop.hidden;
     openMenu(false);
-    closePopovers(open ? pop : null);
+    // What stays open. Opening keeps the panel itself, and closing keeps
+    // whatever it was sitting inside: the three colour wells in the text
+    // inspector are popovers within a popover, and closing one used to pass
+    // null here, which took the inspector down with it. Clicking a well twice
+    // is how a reader dismisses the palette, so the bug was on the common path
+    // rather than an edge, and it cost the panel every time. D61.
+    closePopovers(open ? pop : pop.parentElement.closest('.pop'));
     pop.hidden = !open;
     trigger.setAttribute('aria-expanded', String(open));
     if (open) keepInView(pop);
@@ -1122,20 +1139,26 @@ function applyPaint(kind, colour) {
 }
 
 /**
- * The no-colour button, for the two popovers that have one.
+ * The no-colour button, on every popover that has one.
  *
- * Fill and Frame, and nothing else. A stroke has no no-colour state, and the
- * plate says invisible with its slider instead, so PAINTS is what decides
- * whether this button exists at all rather than a list written out here.
+ * Which popovers those are is PAINTS' decision, not a list written out here, so
+ * this only has to know how each paint is written. Text is the one paint with no
+ * such button: see the note on PAINTS in src/lib/edit.js.
  */
 function clearPaint(kind) {
-  if (kind === 'frame') {
+  if (kind === 'border') {
+    editor?.setColour(null);
+    saveSettings({ colour: null });
+  } else if (kind === 'frame') {
     editor?.setTextStyle({ colour: null });
     saveSettings({ textFrameColour: null });
-    return;
+  } else if (kind === 'plate') {
+    editor?.setTextStyle({ fill: null });
+    saveSettings({ textFramePlate: null });
+  } else {
+    editor?.setFill(null);
+    saveSettings({ fill: null });
   }
-  editor?.setFill(null);
-  saveSettings({ fill: null });
 }
 
 /**

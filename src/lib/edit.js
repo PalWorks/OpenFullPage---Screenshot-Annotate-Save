@@ -259,20 +259,23 @@ export const inkAlphaOf = (shape) => alphaOr(shape.inkOpacity, 1);
  * so they are one property reached from two places rather than two properties
  * that have to be kept in step. Fill and Plate are the same pair again.
  */
+// One panel, one shape, four of the five with the same first cell. The earlier
+// reading was that a stroke has no no-colour state and that a plate says
+// invisible with its slider instead, which produced three panels laid out one
+// way and two the other, and the line between them was not one a reader could
+// see: Frame is a stroke and had the swatch, Fill and Plate are the same
+// property and disagreed about it.
+//
+// So every paint that describes something drawn behind or around the content
+// offers "nothing", and Text is the single exception, because a caption with no
+// colour is not a caption. Making the words disappear is what its opacity
+// slider is for, and that at least says so on a scale you can drag back.
 export const PAINTS = {
-  // A stroke has no no-colour state. Every shape that carries one is drawn with
-  // it, and a box with neither stroke nor fill is a box nobody can see.
-  border: { title: 'Border colour', property: 'colour', opacity: 'strokeOpacity', none: false },
+  border: { title: 'Border colour', property: 'colour', opacity: 'strokeOpacity', none: true },
   fill: { title: 'Fill colour', property: 'fill', opacity: 'fillOpacity', none: true },
   text: { title: 'Text colour', property: 'ink', opacity: 'inkOpacity', none: false },
-  // The frame does have one, and it is how the frame is switched off. That is
-  // the switch that used to sit beside it, moved into the control it was
-  // describing.
   frame: { title: 'Frame colour', property: 'colour', opacity: 'strokeOpacity', none: true },
-  // No "no plate" swatch. Off is nought per cent, and one way to say a thing is
-  // invisible is enough: two would let the well and the slider disagree about
-  // whether a plate is there.
-  plate: { title: 'Plate colour', property: 'fill', opacity: 'fillOpacity', none: false },
+  plate: { title: 'Plate colour', property: 'fill', opacity: 'fillOpacity', none: true },
 };
 
 export const PAINT_KINDS = Object.keys(PAINTS);

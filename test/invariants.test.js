@@ -283,6 +283,20 @@ test('a colour popover shell carries nothing the builder would have to overwrite
   }
 });
 
+test('zoom sits with the controls that act on the picture, not at the far end', () => {
+  // It is used while drawing, so it belongs beside Undo rather than out past
+  // Copy and Download with Theme and Settings. It was at the far right until a
+  // panel of it opened underneath the overview pane, which is fixed to that
+  // corner of the window.
+  const markup = readFileSync(join(REPO_ROOT, 'src/ui/result.html'), 'utf8');
+  const zoom = markup.indexOf('data-button="zoom"');
+  const remove = markup.indexOf('data-button="delete"');
+  const copy = markup.indexOf('data-button="copy"');
+  assert.ok(zoom > 0 && remove > 0 && copy > 0, 'a control went missing from the toolbar');
+  assert.ok(zoom < remove, 'zoom is no longer left of the delete button');
+  assert.ok(remove < copy, 'the toolbar order itself changed, so this test is measuring nothing');
+});
+
 test('every toolbar control in the markup can be switched off on the settings page', () => {
   const markup = readFileSync(join(REPO_ROOT, 'src/ui/result.html'), 'utf8');
   const named = [...markup.matchAll(/data-button="([\w-]+)"/g)].map((m) => m[1]);

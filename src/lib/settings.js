@@ -249,6 +249,11 @@ export function sanitise(raw) {
   if (TOOLS.includes(raw.tool)) clean.tool = raw.tool;
   if (typeof raw.colour === 'string' && /^#[0-9a-f]{6}$/i.test(raw.colour)) {
     clean.colour = raw.colour.toLowerCase();
+  } else if (raw.colour === null) {
+    // No border is a value, the same way no fill is. Only null asks for it,
+    // because the default here is a colour rather than nothing: anything else
+    // unusable leaves the remembered colour alone instead of clearing it.
+    clean.colour = null;
   }
   if (Number.isFinite(raw.strokeWidth)) {
     clean.strokeWidth = Math.min(64, Math.max(1, Math.round(raw.strokeWidth)));

@@ -106,7 +106,9 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
 
   let doc = createDocument(base.width, base.height);
   let tool = initial.tool ?? 'arrow';
-  let colour = initial.colour ?? '#ef4444';
+  // null is a value here: it is the border switched off, and it has to survive a
+  // reload the way no fill already does.
+  let colour = initial.colour === null ? null : (initial.colour ?? '#ef4444');
   let width = initial.strokeWidth ?? 4;
   // Style that new shapes inherit. Each is also editable on the selected shape,
   // which is why every one of them lives here rather than only on the shape.
@@ -318,7 +320,7 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
     ctx.restore();
 
     ctx.save();
-    ctx.strokeStyle = shape.colour;
+    ctx.strokeStyle = strokeOf(shape) ?? 'transparent';
     ctx.lineWidth = shape.width;
     applyDash(shape);
     ctx.beginPath();
@@ -344,8 +346,13 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
     // hide it only partly: an opacity set for an arrow and inherited by a
     // pixelated block would be a way to read through it.
     ctx.globalAlpha = shape.kind === 'pixelate' ? 1 : strokeAlphaOf(shape);
-    ctx.strokeStyle = shape.colour;
-    ctx.fillStyle = shape.colour;
+    // No border colour means nothing is drawn with it. Transparent rather than
+    // a guard around every stroke and fill below: canvas ignores an assignment
+    // it cannot parse and keeps whatever colour it had, so handing it a null
+    // would draw the shape in the last shape's colour rather than not at all.
+    const paint = strokeOf(shape) ?? 'transparent';
+    ctx.strokeStyle = paint;
+    ctx.fillStyle = paint;
     ctx.lineWidth = shape.width;
     ctx.lineCap = dashOf(shape) === 'dotted' ? 'round' : 'round';
     ctx.lineJoin = 'round';

@@ -28,6 +28,7 @@ import { planPdfPages } from '../../src/lib/pdf.js';
 import { SHAPE_TOOLS } from '../../src/lib/edit.js';
 import { DOWNLOAD_FORMATS, extensionOf } from '../../src/lib/encode.js';
 import { TOOLBAR_BUTTONS } from '../../src/lib/settings.js';
+import { PAINTS } from '../../src/lib/edit.js';
 import { decodePng, thumbnail, verifyFixture, verifyIframes } from './verify.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -453,6 +454,41 @@ async function dragOn(cdp, session, from, to, steps = 8, held = []) {
 }
 
 /**
+ * Somewhere on the canvas that is actually on the screen, and the part of the
+ * image it lands in.
+ *
+ * A capture is often six screens tall while the window is one, so a point given
+ * as a fraction of the picture is usually below the bottom of the window, and a
+ * press there does not land where it was aimed: it is clamped to the edge of the
+ * window. A shape then appears somewhere else, or not at all, and a check
+ * written that way can pass for a reason that has nothing to do with what it
+ * says. So the box is measured now, the drag is placed inside the window, and
+ * the region to read afterwards comes from the same rectangle.
+ */
+async function visibleSpot(cdp, session, { across = 0.3, down = 220 } = {}) {
+  return JSON.parse(await evaluate(cdp, session, `(() => {
+    const c = document.getElementById('canvas');
+    const b = c.getBoundingClientRect();
+    const s = c.width / b.width;
+    const top = Math.max(b.top, 140) + 40;
+    const from = { x: Math.round(b.left + b.width * 0.3), y: Math.round(top) };
+    const to = {
+      x: Math.round(b.left + b.width * (0.3 + ${across})),
+      y: Math.round(top + ${down}),
+    };
+    const at = (pt) => ({ x: Math.round((pt.x - b.left) * s), y: Math.round((pt.y - b.top) * s) });
+    const a = at(from);
+    const z = at(to);
+    return JSON.stringify({
+      from,
+      to,
+      middle: { x: Math.round((from.x + to.x) / 2), y: Math.round((from.y + to.y) / 2) },
+      scan: { x: a.x - 24, y: a.y - 24, w: (z.x - a.x) + 48, h: (z.y - a.y) + 48 },
+    });
+  })()`));
+}
+
+/**
  * A real right click, so the canvas menu opens the way it does for a person.
  *
  * A synthetic `contextmenu` event would prove the handler runs and nothing
@@ -539,6 +575,26 @@ const canvasState = (cdp, session) =>
       redo: !document.getElementById('redo').disabled,
     });
   })()`).then(JSON.parse);
+
+/**
+ * How many pixels in a region are dark.
+ *
+ * "Not the colour it used to be" is not the same statement as "not drawn", and
+ * the difference is exactly what a missing guard looks like: canvas ignores a
+ * colour it cannot parse and keeps the one it already had, so a shape drawn with
+ * no colour comes out in whatever was set last, which here is black. Counting
+ * the dark pixels is how a check can tell those two apart.
+ */
+const countDark = (cdp, session, rect) =>
+  evaluate(cdp, session, `(() => {
+    const c = document.getElementById('canvas');
+    const d = c.getContext('2d').getImageData(${rect.x}, ${rect.y}, ${rect.w}, ${rect.h}).data;
+    let n = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      if (d[i] < 90 && d[i + 1] < 90 && d[i + 2] < 90) n += 1;
+    }
+    return n;
+  })()`);
 
 /** How many pixels of a colour are inside a region of the canvas. */
 const countColour = (cdp, session, rect, rgb) =>
@@ -936,11 +992,36 @@ async function exerciseStyleToolbar(cdp, session, check, p) {
   await clickButton(cdp, session, '#upload');
 
   await clickButton(cdp, session, '#border-combo');
-  const swatches = await evaluate(cdp, session,
-    `document.querySelectorAll('[data-paint="border"]').length`);
-  check(swatches === 70,
-    `the border palette built ${swatches} swatches, expected 70`,
-    `the border palette built all ${swatches} swatches`);
+
+  // ONE PANEL, FIVE TIMES
+  //
+  // Every palette is the same object: the same number of cells in the same grid,
+  // and a no-colour square as the first of them wherever PAINTS says a paint can
+  // be switched off. Read off the built panels and compared against PAINTS, so a
+  // panel that quietly grows a row of its own is caught by the description it was
+  // supposed to have been built from rather than by a number written here.
+  const palettes = JSON.parse(await evaluate(cdp, session, `(() => {
+    const out = {};
+    for (const pop of document.querySelectorAll('[data-paint-pop]')) {
+      out[pop.dataset.paintPop] = {
+        cells: pop.querySelectorAll('.sw').length,
+        none: pop.querySelectorAll('[data-paint-none]').length,
+        rows: [...pop.children].map((n) => n.tagName.toLowerCase() + '.' + n.className).join(' '),
+      };
+    }
+    return JSON.stringify(out);
+  })()`));
+  const shape = palettes.border?.rows;
+  for (const [kind, paint] of Object.entries(PAINTS)) {
+    const got = palettes[kind];
+    check(Boolean(got) && got.cells === 70 && got.rows === shape,
+      `the ${kind} palette is ${got ? `${got.cells} cells laid out as "${got.rows}"` : 'missing'},`
+        + ` and the border palette is 70 cells laid out as "${shape}"`,
+      `the ${kind} palette is the same panel as the others (${got?.cells} cells)`);
+    check(got?.none === (paint.none ? 1 : 0),
+      `the ${kind} palette has ${got?.none} no-colour swatches and PAINTS says ${paint.none ? 1 : 0}`,
+      `the ${kind} palette ${paint.none ? 'offers' : 'does not offer'} no colour, as PAINTS says`);
+  }
 
   // A typed hex reaches the glyph. This is the custom colour path, and it is
   // what takes the product past the six colours it used to have.
@@ -965,18 +1046,31 @@ async function exerciseStyleToolbar(cdp, session, check, p) {
   check(kept === '#22c55e', `an unusable hex changed the colour to ${kept}`,
     'an unusable hex was refused and the colour kept');
 
-  // Fill. A box with no fill leaves its middle alone; a box with one does not.
-  await clickButton(cdp, session, '[data-tool="rect"]');
-  const middle = p(0.55, 0.55);
-  await dragOn(cdp, session, p(0.4, 0.4), p(0.7, 0.7));
-  const unfilled = await evaluate(cdp, session, `(() => {
+  // FILL, AND NO BORDER
+  //
+  // Both are drawn where the window actually is. The fractions this used to use
+  // put the press a thousand pixels below the bottom of the screen, where Chrome
+  // clamps it: the box was never drawn, and the check passed on a shape an
+  // earlier step had left selected.
+  const spot = await visibleSpot(cdp, session);
+  const GREEN = [0x22, 0xc5, 0x5e];
+  // A blue wash over a near-white page cannot raise the blue channel, which is
+  // already at the ceiling. What it does is pull red and green down, so the
+  // measurement that means "bluer" is the gap between the channels, not blue.
+  const blueness = (rgb) => rgb[2] - (rgb[0] + rgb[1]) / 2;
+  const middleAt = `(() => {
     const c = document.getElementById('canvas');
     const box = c.getBoundingClientRect();
     const s = c.width / box.width;
     const d = c.getContext('2d').getImageData(
-      Math.round((${middle.x} - box.x) * s), Math.round((${middle.y} - box.y) * s), 1, 1).data;
+      Math.round((${spot.middle.x} - box.x) * s), Math.round((${spot.middle.y} - box.y) * s), 1, 1).data;
     return JSON.stringify([d[0], d[1], d[2]]);
-  })()`).then(JSON.parse);
+  })()`;
+
+  await clickButton(cdp, session, '[data-tool="rect"]');
+  await dragOn(cdp, session, spot.from, spot.to);
+  await sleep(160);
+  const unfilled = JSON.parse(await evaluate(cdp, session, middleAt));
   await clickButton(cdp, session, '#undo');
 
   await clickButton(cdp, session, '#fill-combo');
@@ -986,25 +1080,67 @@ async function exerciseStyleToolbar(cdp, session, check, p) {
   check(fillGlyph === '#3b82f6', `the fill glyph shows ${fillGlyph}`,
     'the fill glyph took the colour that was picked');
 
-  await clickButton(cdp, session, '[data-tool="rect"]');
-  await dragOn(cdp, session, p(0.4, 0.4), p(0.7, 0.7));
-  const filled = await evaluate(cdp, session, `(() => {
-    const c = document.getElementById('canvas');
-    const box = c.getBoundingClientRect();
-    const s = c.width / box.width;
-    const d = c.getContext('2d').getImageData(
-      Math.round((${middle.x} - box.x) * s), Math.round((${middle.y} - box.y) * s), 1, 1).data;
-    return JSON.stringify([d[0], d[1], d[2]]);
-  })()`).then(JSON.parse);
+  // What is already this colour inside the region, before anything is drawn.
+  // Counted rather than assumed to be nothing: the checks above this one draw on
+  // the same canvas, and a baseline is what keeps this honest when they change.
+  const green0 = await countColour(cdp, session, spot.scan, GREEN);
+  const dark0 = await countDark(cdp, session, spot.scan);
 
-  // A blue wash over a near-white page cannot raise the blue channel, which is
-  // already at the ceiling. What it does is pull red and green down, so the
-  // measurement that means "bluer" is the gap between the channels, not blue.
-  const blueness = (rgb) => rgb[2] - (rgb[0] + rgb[1]) / 2;
+  await clickButton(cdp, session, '[data-tool="rect"]');
+  await dragOn(cdp, session, spot.from, spot.to);
+  await sleep(160);
+  const filled = JSON.parse(await evaluate(cdp, session, middleAt));
+
   check(blueness(filled) > blueness(unfilled) + 20,
     `the fill did not tint the inside of the box (empty ${unfilled}, filled ${filled})`,
     `the fill tinted the inside of the box (${unfilled} became ${filled})`);
-  await clickButton(cdp, session, '#undo');
+
+  // NO BORDER
+  //
+  // The border palette carries the same no-colour swatch the fill has, and it
+  // has to reach the pixels rather than only the button. Canvas keeps whatever
+  // colour it was last given when it is handed one it cannot parse, so a shape
+  // with no border colour and no guard is drawn in the previous shape's colour:
+  // a drawing that looks merely wrong rather than absent. The box is blue inside
+  // from the step above, so this says what did not change as well.
+  const outlined = await countColour(cdp, session, spot.scan, GREEN) - green0;
+  await clickButton(cdp, session, '#border-combo');
+  await clickButton(cdp, session, '[data-paint-none="border"]');
+  await sleep(220);
+  const bare = await countColour(cdp, session, spot.scan, GREEN) - green0;
+  const darkened = await countDark(cdp, session, spot.scan) - dark0;
+  // The fill is read at the middle rather than counted, because a fill is
+  // translucent by default: none of its pixels are the colour that was picked.
+  const stillFilled = blueness(JSON.parse(await evaluate(cdp, session, middleAt)));
+  check(outlined > 200 && bare * 8 < outlined,
+    `no border left ${bare} of the ${outlined} pixels the border had drawn`,
+    `no border takes the outline off the shape (${outlined} pixels to ${bare})`);
+  // And it is gone, rather than merely no longer green.
+  check(darkened * 20 < outlined,
+    `the outline came back in another colour: ${darkened} dark pixels appeared where`
+      + ` the ${outlined} pixel border had been`,
+    `nothing is drawn in its place (${darkened} dark pixels against a ${outlined} pixel border)`);
+  check(Math.abs(stillFilled - blueness(filled)) < 6,
+    `taking the border off also moved the fill: ${blueness(filled)} became ${stillFilled}`,
+    'the fill is untouched by it');
+  const slashed = await evaluate(cdp, session,
+    `document.getElementById('border-slash').hasAttribute('hidden') === false`);
+  check(slashed, 'the border button does not show that it is holding nothing',
+    'the border button wears the same slash the fill button does');
+
+  // Undo exactly what these two added, however many steps that took: drawing the
+  // box is one and restyling it is another, and a fixed count here would eat a
+  // step belonging to the checks before it the day that changes.
+  await evaluate(cdp, session, 'document.body.click()');
+  let back = 0;
+  const middleNow = async () => blueness(JSON.parse(await evaluate(cdp, session, middleAt)));
+  while (back < 6 && await middleNow() > blueness(unfilled) + 20) {
+    await clickButton(cdp, session, '#undo');
+    await sleep(110);
+    back += 1;
+  }
+  check(back > 0 && back < 6, `undoing the borderless box took ${back} steps`,
+    `the borderless box undoes in ${back} steps`);
 
   // Put the defaults back so the steps after this one see what they expect.
   await evaluate(cdp, session, `document.querySelector('[data-paint-none="fill"]').click()`);
@@ -3134,6 +3270,12 @@ async function exerciseChevrons(cdp, session, check) {
   check(chevrons.length > 0, 'no chevrons found in the toolbar',
     `${chevrons.length} chevrons to open`);
 
+  // How many panels actually reached the overview pane. Reported rather than
+  // asserted: the number depends on the window and on where the buttons sit, and
+  // a layout where nothing overlaps is not a failure. It is here so a run that
+  // tested the stacking on nothing at all says so out loud.
+  let overlaps = 0;
+
   for (const popId of chevrons) {
     // A popover can now live inside another one: the text colour palette hangs
     // off a well in the text inspector. Its trigger is unreachable, and its own
@@ -3155,11 +3297,30 @@ async function exerciseChevrons(cdp, session, check) {
       const pop = document.getElementById(${JSON.stringify(popId)});
       const r = pop.getBoundingClientRect();
       const at = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+      // WHAT IS PAINTED OVER WHAT
+      //
+      // The centre of the panel is not enough. The overview pane is fixed to the
+      // top right of the window and the toolbar is a stacking context of its
+      // own, so the pane was painting over the corner of any panel that reached
+      // it while the middle of that panel stayed perfectly clickable. Hit test
+      // where the two actually overlap, and only where they do.
+      const pane = document.getElementById('overview');
+      const q = pane.hidden ? null : pane.getBoundingClientRect();
+      const lap = q && {
+        x1: Math.max(r.left, q.left), y1: Math.max(r.top, q.top),
+        x2: Math.min(r.right, q.right), y2: Math.min(r.bottom, q.bottom),
+      };
+      const clash = lap && lap.x2 > lap.x1 + 2 && lap.y2 > lap.y1 + 2
+        ? document.elementFromPoint((lap.x1 + lap.x2) / 2, (lap.y1 + lap.y2) / 2)
+        : undefined;
       return JSON.stringify({
         open: !pop.hidden,
         painted: getComputedStyle(pop).display !== 'none' && r.width > 0 && r.height > 0,
         reachable: !!(at && (pop === at || pop.contains(at))),
         blockedBy: at ? (at.id || at.className || at.tagName) : null,
+        overlapsPane: clash !== undefined,
+        abovePane: clash === undefined || !!(clash && (pop === clash || pop.contains(clash))),
+        paneBlockedBy: clash ? (clash.id || clash.className || clash.tagName) : null,
         inWindow: r.x >= 0 && r.y >= 0
           && r.right <= document.documentElement.clientWidth
           && r.bottom <= document.documentElement.clientHeight,
@@ -3170,8 +3331,37 @@ async function exerciseChevrons(cdp, session, check) {
     check(state.reachable,
       `#${popId} opened but nothing of it is painted at its own centre, ${state.blockedBy} is there instead`,
       `#${popId} is clickable where it says it is`);
+    if (state.overlapsPane) overlaps += 1;
+    check(state.abovePane,
+      `#${popId} reaches the overview pane and ${state.paneBlockedBy} is painted over it there`,
+      `#${popId} is painted above the overview pane where the two meet`);
     check(state.inWindow, `#${popId} opened partly outside the window`,
       `#${popId} stays inside the window`);
+
+    // TOGGLING ONE PANEL SHUT LEAVES ITS CONTAINER OPEN
+    //
+    // The three colour wells in the text inspector are popovers inside a
+    // popover. Clicking a well a second time is how a reader puts the palette
+    // away, and it used to close the inspector holding it as well, so the panel
+    // vanished on the ordinary path rather than an unusual one.
+    if (ancestors.length > 0) {
+      await clickButton(cdp, session, `[data-pop="${popId}"]`);
+      await sleep(80);
+      const dismissed = JSON.parse(await evaluate(cdp, session, `(() => {
+        const shown = (id) => {
+          const node = document.getElementById(id);
+          return !node.hidden && node.getClientRects().length > 0;
+        };
+        return JSON.stringify({
+          self: shown(${JSON.stringify(popId)}),
+          holders: ${JSON.stringify(ancestors)}.filter(shown),
+        });
+      })()`));
+      check(!dismissed.self && dismissed.holders.length === ancestors.length,
+        `dismissing #${popId} left it ${dismissed.self ? 'open' : 'closed'} and `
+          + `${dismissed.holders.length} of its ${ancestors.length} containers open`,
+        `#${popId} can be put away without taking ${ancestors.join(', ')} with it`);
+    }
     await evaluate(cdp, session, `document.body.click()`);
     await sleep(60);
     const stillOpen = JSON.parse(await evaluate(cdp, session, `(() => JSON.stringify(
@@ -3182,6 +3372,8 @@ async function exerciseChevrons(cdp, session, check) {
       `clicking away left ${stillOpen.join(', ')} open after #${popId}`,
       `clicking away closes #${popId}`);
   }
+
+  console.log(`  (${overlaps} of ${chevrons.length} panels reached the overview pane)`);
 }
 
 /**
