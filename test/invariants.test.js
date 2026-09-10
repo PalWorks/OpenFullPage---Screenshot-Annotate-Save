@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { SHAPE_GROUPS, SHAPE_TOOLS, TOOLS } from '../src/lib/edit.js';
+import { PAINTS, PAINT_KINDS, SHAPE_GROUPS, SHAPE_TOOLS, TOOLS } from '../src/lib/edit.js';
 import { DOWNLOAD_FORMATS, OUTPUT_FORMATS } from '../src/lib/encode.js';
 import { TOOLBAR_BUTTONS } from '../src/lib/settings.js';
 import { makeZip } from '../tools/lib/zip.mjs';
@@ -246,6 +246,40 @@ test('the download menu and the model agree about which formats exist', () => {
     // The note in the table is what the menu row says, so a format cannot be
     // described one way in the code and another way on screen.
     assert.ok(menu.includes(OUTPUT_FORMATS[name].note), `"${name}" says something different in the menu`);
+  }
+});
+
+test('every colour popover in the markup is one PAINTS describes, and the reverse', () => {
+  // The five colour panels used to be five copies of the same markup, and the
+  // opacity slider would have made them five copies of a bigger one. They are
+  // built from PAINTS now, so this is the pair that can still drift: a shell in
+  // the markup that PAINTS says nothing about is a panel that stays empty on
+  // screen, and a kind in PAINTS with no shell is a control nobody can reach.
+  // Neither throws.
+  const markup = readFileSync(join(REPO_ROOT, 'src/ui/result.html'), 'utf8');
+  const shells = [...markup.matchAll(/data-paint-pop="(\w+)"/g)].map((m) => m[1]);
+
+  assert.deepEqual(shells.sort(), [...PAINT_KINDS].sort());
+  for (const kind of PAINT_KINDS) {
+    const paint = PAINTS[kind];
+    assert.ok(paint.property, `"${kind}" writes no shape property`);
+    assert.ok(paint.opacity, `"${kind}" has no opacity property`);
+    assert.equal(typeof paint.none, 'boolean', `"${kind}" does not say whether it offers no-colour`);
+  }
+});
+
+test('a colour popover shell carries nothing the builder would have to overwrite', () => {
+  // The builder skips a shell that already has children, so markup left inside
+  // one would silently win over PAINTS and the panel would be the old hand
+  // written one again with no slider in it.
+  const markup = readFileSync(join(REPO_ROOT, 'src/ui/result.html'), 'utf8');
+  for (const kind of PAINT_KINDS) {
+    const at = markup.indexOf(`data-paint-pop="${kind}"`);
+    assert.ok(at > 0, `no shell for "${kind}"`);
+    const rest = markup.slice(at);
+    const open = rest.indexOf('>');
+    const close = rest.indexOf('</div>');
+    assert.equal(rest.slice(open + 1, close).trim(), '', `the "${kind}" shell is not empty`);
   }
 });
 

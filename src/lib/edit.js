@@ -207,15 +207,75 @@ export const textRadius = (shape) => shape.size * 0.35;
  * how a fill already works. That is the "enable and disable" without a switch to
  * explain: the border colour popover already has a no-colour state and the
  * button already carries a slash glyph for it.
+ *
+ * Fully transparent counts as off, and it has to. A caption's plate keeps its
+ * colour while its opacity is zero, so that turning it on is one drag of a
+ * slider rather than a hunt for a colour first. If a colour alone made a caption
+ * framed, every caption would carry the frame's padding in its selection box,
+ * its hover outline and its hit test while showing nothing at all.
  */
 export const isFramedText = (shape) =>
-  shape.kind === 'text' && (strokeOf(shape) !== null || fillOf(shape) !== null);
+  shape.kind === 'text'
+  && ((strokeOf(shape) !== null && strokeAlphaOf(shape) > 0)
+    || (fillOf(shape) !== null && fillAlphaOf(shape) > 0));
 
-export function fillAlphaOf(shape) {
-  const raw = shape.fillOpacity;
-  if (!Number.isFinite(raw)) return DEFAULT_FILL_OPACITY;
-  return Math.min(1, Math.max(0, raw));
-}
+/** A stored opacity, clamped, or the default when the shape carries none. */
+const alphaOr = (raw, fallback) =>
+  (Number.isFinite(raw) ? Math.min(1, Math.max(0, raw)) : fallback);
+
+export const fillAlphaOf = (shape) => alphaOr(shape.fillOpacity, DEFAULT_FILL_OPACITY);
+
+/**
+ * The opacity of a stroke, and of the glyphs in a caption.
+ *
+ * Both default to 1, which is what every shape drawn before they existed had,
+ * so an opacity nobody has touched is indistinguishable from one that was never
+ * stored. That is the whole migration: no shape has to be converted, and a
+ * capture annotated last week draws exactly as it did.
+ *
+ * A fill defaults to 0.35 instead, because a fill is drawn over the picture and
+ * an opaque one hides what it is pointing at. A stroke is a line around
+ * something, and a translucent line by default would just look like a mistake.
+ */
+export const strokeAlphaOf = (shape) => alphaOr(shape.strokeOpacity, 1);
+export const inkAlphaOf = (shape) => alphaOr(shape.inkOpacity, 1);
+
+/**
+ * The colour controls, described once.
+ *
+ * There are five wells in the toolbar and they were five hand-written copies of
+ * the same panel: a row of quick colours, a grid of shades, a system picker and
+ * a hex field. Adding opacity to all of them would have made that five copies of
+ * a bigger panel, which is exactly the shape of the bug D52 removed from the
+ * output formats: three lists that could disagree in either direction with
+ * nothing failing.
+ *
+ * So the panel is built from this table and the markup is checked against it.
+ * `property` is the shape property the swatches write, `opacity` the one the
+ * slider writes, and `none` says whether the well offers a no-colour state.
+ *
+ * Border and Frame write the same two properties on purpose. `colour` is the
+ * stroke of every shape, and the stroke of a text shape is the frame around it,
+ * so they are one property reached from two places rather than two properties
+ * that have to be kept in step. Fill and Plate are the same pair again.
+ */
+export const PAINTS = {
+  // A stroke has no no-colour state. Every shape that carries one is drawn with
+  // it, and a box with neither stroke nor fill is a box nobody can see.
+  border: { title: 'Border colour', property: 'colour', opacity: 'strokeOpacity', none: false },
+  fill: { title: 'Fill colour', property: 'fill', opacity: 'fillOpacity', none: true },
+  text: { title: 'Text colour', property: 'ink', opacity: 'inkOpacity', none: false },
+  // The frame does have one, and it is how the frame is switched off. That is
+  // the switch that used to sit beside it, moved into the control it was
+  // describing.
+  frame: { title: 'Frame colour', property: 'colour', opacity: 'strokeOpacity', none: true },
+  // No "no plate" swatch. Off is nought per cent, and one way to say a thing is
+  // invisible is enough: two would let the well and the slider disagree about
+  // whether a plate is there.
+  plate: { title: 'Plate colour', property: 'fill', opacity: 'fillOpacity', none: false },
+};
+
+export const PAINT_KINDS = Object.keys(PAINTS);
 
 /** The resolved CSS font for a text shape, defaults included. */
 export const alignOf = (shape) =>

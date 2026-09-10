@@ -459,6 +459,26 @@ async function dragOn(cdp, session, from, to, steps = 8, held = []) {
  * canvas and on preventDefault stopping the browser's own menu, and neither of
  * those is exercised by a dispatched event object.
  */
+/**
+ * Drag a range input to a value, the way a pointer would leave it.
+ *
+ * `input` is what a drag fires and `change` is what release fires, and a control
+ * listening for only one of them answers a keyboard and not a mouse, or the
+ * other way round. Both go out, so neither can be the one that was never wired.
+ */
+async function setRange(cdp, session, id, percent) {
+  const value = await evaluate(cdp, session, `(() => {
+    const slider = document.getElementById(${JSON.stringify(id)});
+    if (!slider) return 'missing';
+    slider.value = String(${percent});
+    slider.dispatchEvent(new Event('input', { bubbles: true }));
+    slider.dispatchEvent(new Event('change', { bubbles: true }));
+    return slider.value;
+  })()`);
+  await sleep(90);
+  return value;
+}
+
 async function rightClickOn(cdp, session, at) {
   await cdp.send('Input.dispatchMouseEvent',
     { type: 'mousePressed', ...at, button: 'right', buttons: 2, clickCount: 1 }, session);
@@ -986,7 +1006,7 @@ async function exerciseStyleToolbar(cdp, session, check, p) {
   await clickButton(cdp, session, '#undo');
 
   // Put the defaults back so the steps after this one see what they expect.
-  await evaluate(cdp, session, `document.querySelector('[data-fill="none"]').click()`);
+  await evaluate(cdp, session, `document.querySelector('[data-paint-none="fill"]').click()`);
   await evaluate(cdp, session, `(() => {
     const hex = document.getElementById('border-hex');
     hex.value = '#ef4444';
@@ -1098,6 +1118,39 @@ async function exerciseEditor(cdp, session, log) {
   const afterRedact = await evaluate(cdp, session, sample);
   check(beforeRedact !== afterRedact, 'redaction changed nothing',
     'redaction resampled the pixels underneath');
+
+  // A REDACTION IS NEVER TRANSLUCENT
+  //
+  // Stroke opacity reaches every other shape, and this is the one it must not
+  // reach. A redaction that took it would be a redaction you could read through,
+  // and the control that did it sits three popovers away from the tool, so
+  // nobody would connect the two.
+  //
+  // The same region, redacted again with the stroke opacity dragged to nothing.
+  // It has to change the pixels underneath exactly as it did at full opacity: a
+  // build that let the opacity through would draw nothing at all here, and the
+  // sample would come back as the untouched page.
+  await clickButton(cdp, session, '#undo');
+  await sleep(140);
+  const restored = await evaluate(cdp, session, sample);
+  check(restored === beforeRedact,
+    'undo did not put the redacted pixels back, so the check below proves nothing',
+    'undo puts the redacted pixels back');
+
+  await clickButton(cdp, session, '[data-pop="pop-border"]');
+  await setRange(cdp, session, 'border-opacity', 0);
+  await evaluate(cdp, session, 'document.body.click()');
+  await clickButton(cdp, session, '[data-tool="pixelate"]');
+  await dragOn(cdp, session, p(0.05, 0.05), p(0.4, 0.35));
+  await sleep(140);
+  const redactedClear = await evaluate(cdp, session, sample);
+  check(redactedClear !== beforeRedact,
+    'a redaction drawn at zero stroke opacity left the page unchanged, so opacity reached it',
+    'a redaction is opaque even with the stroke opacity dragged to nothing');
+
+  await clickButton(cdp, session, '[data-pop="pop-border"]');
+  await setRange(cdp, session, 'border-opacity', 100);
+  await evaluate(cdp, session, 'document.body.click()');
 
   // 7. Inline text entry.
   await exerciseTextEntry(cdp, session, check, p, problems);
@@ -1449,39 +1502,74 @@ async function exerciseTextFrame(cdp, session, check, p) {
 
   await holdCaption();
   const knows = await evaluate(cdp, session,
-    'document.getElementById("frame-on").getAttribute("aria-checked") === "true"');
+    `document.getElementById('frame-hex').value.toLowerCase() === '#3b82f6'`);
   check(knows,
-    'the Frame switch did not notice the frame the Border well had just drawn',
-    'the Frame switch shows the frame the Border well drew');
+    'the Frame well did not notice the frame the Border well had just drawn',
+    'the Frame well shows the frame the Border well drew');
 
-  await clickButton(cdp, session, '#frame-on');
+  // Taking the frame off is the no-colour swatch in the Frame popover, not a
+  // switch beside it. That is the change: "off" is a colour you can pick, the
+  // same way it already was for a fill.
+  await clickButton(cdp, session, '[data-pop="pop-frame-colour"]');
+  await clickButton(cdp, session, '[data-paint-none="frame"]');
   await settle();
   const blueOff = await countColour(cdp, session, scan, BLUE);
   check(blueOff < blueAfter - 40,
-    `the Frame switch did not take the frame off (${blueAfter} to ${blueOff} blue pixels)`,
-    `the Frame switch takes the frame off (${blueAfter} to ${blueOff} blue pixels)`);
+    `no-colour in the Frame popover did not take the frame off (${blueAfter} to ${blueOff} blue pixels)`,
+    `no-colour in the Frame popover takes the frame off (${blueAfter} to ${blueOff} blue pixels)`);
 
   await holdCaption();
-  await clickButton(cdp, session, '#frame-on');
+  await clickButton(cdp, session, '[data-pop="pop-frame-colour"]');
+  await clickButton(cdp, session, '[data-paint="frame"][data-colour="#3b82f6"]');
   await settle();
   const blueBack = await countColour(cdp, session, scan, BLUE);
   check(blueBack > blueOff + 40,
-    `the Frame switch would not put the frame back (${blueOff} to ${blueBack} blue pixels)`,
-    `the Frame switch puts back the colour it took off (${blueOff} to ${blueBack} blue pixels)`);
+    `picking a colour would not put the frame back (${blueOff} to ${blueBack} blue pixels)`,
+    `picking a colour puts the frame back (${blueOff} to ${blueBack} blue pixels)`);
 
-  // The plate goes behind the words, so it must not take the words with it.
+  // THE FRAME'S OWN OPACITY
+  //
+  // New, and the reason the popovers were rebuilt from one description. A frame
+  // at nought per cent is invisible without losing the colour it had, which is
+  // what the well still showing blue proves.
   await holdCaption();
-  await clickButton(cdp, session, '#frame-plate');
+  await clickButton(cdp, session, '[data-pop="pop-frame-colour"]');
+  await setRange(cdp, session, 'frame-opacity', 0);
+  await settle();
+  const blueClear = await countColour(cdp, session, scan, BLUE);
+  const stillBlue = await evaluate(cdp, session,
+    `document.getElementById('frame-hex').value.toLowerCase() === '#3b82f6'`);
+  check(blueClear < blueBack - 40,
+    `the frame opacity slider did not fade the frame (${blueBack} to ${blueClear} blue pixels)`,
+    `the frame opacity slider fades the frame out (${blueBack} to ${blueClear} blue pixels)`);
+  check(stillBlue,
+    'fading the frame threw away the colour it had',
+    'and the well keeps the colour, so one drag brings it back');
+
+  await holdCaption();
+  await clickButton(cdp, session, '[data-pop="pop-frame-colour"]');
+  await setRange(cdp, session, 'frame-opacity', 100);
+  await settle();
+
+  // THE PLATE
+  //
+  // It was a switch. It is an opacity now, off at nought, and it must still go
+  // behind the words rather than over them.
+  await holdCaption();
+  await setRange(cdp, session, 'plate-opacity', 100);
   await settle();
   const glyphsPlated = await countColour(cdp, session, scan, GREEN);
-  const plated = await evaluate(cdp, session,
-    'document.getElementById("frame-plate").getAttribute("aria-checked") === "true"');
-  check(plated, 'the Plate switch did not stay on', 'the Plate switch stays on once it is set');
+  const platedAt = await evaluate(cdp, session,
+    'document.getElementById("plate-opacity-out").textContent');
+  check(platedAt === '100%',
+    `the plate opacity readout says ${platedAt} after being dragged to the top`,
+    'the plate opacity readout says what the slider was dragged to');
   check(glyphsPlated > glyphsPlain * 0.85,
     `the plate covered the words it sits behind: ${glyphsPlain} pixels of ink became ${glyphsPlated}`,
     `the plate goes behind the words rather than over them (${glyphsPlated} pixels of ink)`);
+
   await holdCaption();
-  await clickButton(cdp, session, '#frame-plate');
+  await setRange(cdp, session, 'plate-opacity', 0);
   await settle();
 
   // Undo until the caption itself is gone, not a fixed number of times. This
@@ -2098,7 +2186,7 @@ async function exercisePaintOrder(cdp, session, check, p) {
     const slider = document.getElementById('fill-opacity');
     slider.value = '35';
     slider.dispatchEvent(new Event('input', { bubbles: true }));
-    document.querySelector('[data-fill="none"]').click();
+    document.querySelector('[data-paint-none="fill"]').click();
     const hex = document.getElementById('border-hex');
     hex.value = '#ef4444';
     hex.dispatchEvent(new Event('change', { bubbles: true }));

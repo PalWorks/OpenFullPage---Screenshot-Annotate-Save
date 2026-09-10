@@ -1547,3 +1547,64 @@ capture step serve the previous frame once, the same staging trick `--stale` use
 for the port protocol. An unrepaired build fails the fixture check with the
 sticky header and the fixed bar each appearing twice, which is exactly what the
 real page did.
+
+## D57: One description of the colour popovers, and opacity in all of them
+
+Three requests from the maintainer, on the same day, that turned out to be one
+piece of work.
+
+**The switches go.** The Frame block carried an on/off switch beside a colour
+well, and a second switch reading "Plate behind the words". Both described
+something the control next to them could already say. A frame is on when it has a
+colour, which is exactly what "no fill" already means and what the slashed well
+already shows, so the switch was a second way to say a thing the well was
+saying. `isFramedText` had said so in a comment since the day it was written.
+
+**The plate is a quantity, not a yes.** A plate exists to make words readable
+over a busy screenshot, and whether it works is a matter of how solid it is: too
+light and the words still fight the picture, too solid and the caption looks
+pasted on. That is a number. It is an opacity slider now, at nought per cent by
+default, and the plate keeps its colour while it is invisible so that bringing
+one back is one drag rather than a hunt for a colour first.
+
+**So transparent has to count as off.** `isFramedText` used to be true whenever
+a caption had a stroke or a fill colour. With a plate that keeps white at nought
+per cent, that would make every plain caption framed, and a framed caption is
+visibly bigger than its words by the padding: the selection outline, the hover
+outline, the hit test and the export all grow. A caption you cannot click where
+you can see it. So the test is now whether anything would actually be drawn.
+
+**Opacity everywhere, and the condition attached to it.** A translucent border
+or arrow over a screenshot is genuinely wanted and there was no way to get one.
+Translucent text is rarer, though it is exactly what F23's watermark will need.
+The cost was the part worth arguing about: there were five colour popovers in the
+markup and they were five hand-written copies of one panel, so a slider in each
+would have been five copies of a bigger panel. That is the shape D52 removed from
+the output formats, where a format in two lists and missing from the third failed
+silently in both directions.
+
+So `PAINTS` in `src/lib/edit.js` describes them once, `buildPaintPopovers()` in
+`result.js` builds all five from it, and `test/invariants.test.js` holds the two
+together in both directions: a shell the table says nothing about, and a kind
+with no shell, are both build failures. The Frame popover gained the sixty step
+grid it never had as a side effect of being built the same way as the others,
+which was the third request and cost nothing.
+
+**Border and Frame write the same property, and so do Fill and Plate.** `colour`
+is the stroke of every shape and the stroke of a caption is the frame around it.
+Two controls reaching one property, rather than two properties that have to be
+kept in step, which is what the old text panel got wrong before D46.
+
+**A redaction never takes the stroke opacity.** It is the one shape here that
+exists to remove part of the picture rather than mark it, and an opacity it could
+inherit would be a way to read through it, set from a popover three controls away
+from the tool. `drawShape` refuses it and `drawPixelated` sets the alpha back to
+one, which is deliberately saying it twice: both lines have to be deleted before
+a redaction can be made see-through. The e2e draws one with the stroke opacity at
+nothing and checks it still hides, and the mutation that lets the opacity through
+fails it.
+
+**Migration is nothing.** Stroke and ink opacity default to one, which is what
+every shape drawn before they existed had, so an opacity nobody has touched
+cannot be told apart from one that was never stored. No shape is converted and no
+capture annotated last week draws differently.

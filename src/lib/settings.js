@@ -96,9 +96,11 @@ export const TOOLBAR_GROUPS = [
  */
 export const STYLE_KEYS = [
   'tool', 'colour', 'strokeWidth', 'dash', 'lineEnds', 'corner', 'fill', 'fillOpacity',
+  'strokeOpacity',
   'textSize', 'textFamily', 'textBold', 'textItalic', 'textUnderline',
-  'textAlign', 'textColour',
-  'textFrameColour', 'textFramePlate', 'textFrameWidth',
+  'textAlign', 'textColour', 'textInkOpacity',
+  'textFrameColour', 'textFrameOpacity', 'textFramePlate', 'textFrameWidth',
+  'textPlateOpacity',
 ];
 
 /** A fresh copy of the shipped style. */
@@ -126,6 +128,10 @@ export const DEFAULTS = {
   // null is a value here: it means an outlined shape with nothing behind it.
   fill: null,
   fillOpacity: 0.35,
+  // How solid a stroke is. One, because a translucent line nobody asked for
+  // reads as a rendering fault rather than a choice. A fill starts at 0.35
+  // instead, since a fill sits over the thing it is pointing at.
+  strokeOpacity: 1,
   // Type, in points, matching the inspector rather than being derived from the
   // stroke width the way it used to be.
   textSize: 24,
@@ -139,12 +145,19 @@ export const DEFAULTS = {
   // rarely wanted in the same colour. The default matches the stroke colour, so
   // nothing changes for anyone who never opens the control.
   textColour: '#ef4444',
+  textInkOpacity: 1,
   // The frame around a label and the plate behind it. Both null, meaning off:
   // a caption is words, and anyone who wants a box around them says so. The
   // frame keeps its own thickness because a 4px rule, which is a fine arrow,
   // reads as heavy around 24pt type.
   textFrameColour: null,
+  textFrameOpacity: 1,
+  // The plate keeps a colour while it is invisible, so that bringing one back is
+  // one drag of the opacity slider rather than a hunt for a colour first. Null
+  // here means the editor seeds white, and nought per cent is what makes a plain
+  // caption plain.
   textFramePlate: null,
+  textPlateOpacity: 0,
   textFrameWidth: 2,
   // What the lossy encoders are given, as a percentage. Deliberately outside
   // STYLE_KEYS: Reset puts the drawing tools back, and how a file is written out
@@ -241,6 +254,10 @@ export function sanitise(raw) {
       ? raw.fill.toLowerCase()
       : null;
 
+  for (const key of ['strokeOpacity', 'textInkOpacity', 'textFrameOpacity', 'textPlateOpacity']) {
+    if (!Number.isFinite(raw[key])) continue;
+    clean[key] = Math.min(1, Math.max(0, Math.round(raw[key] * 100) / 100));
+  }
   if (Number.isFinite(raw.fillOpacity)) {
     clean.fillOpacity = Math.min(1, Math.max(0, Math.round(raw.fillOpacity * 100) / 100));
   }

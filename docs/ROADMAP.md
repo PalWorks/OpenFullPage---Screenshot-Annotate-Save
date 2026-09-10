@@ -47,6 +47,7 @@ already scoped and ready to start, or **planned** with the effort in the form
 | 1.8.0 toolbar | F40 | Text is a shape, with a frame and a plate | shipped 2026-09-10 | D46, D50. The Frame block replaced the hint that stood in for it |
 | 1.8.0 toolbar | F6 | Navigate a large capture: zoom and an overview pane | planned, 2d / 1.5h | What makes a 16,000 pixel capture workable. Watch L17 |
 | 1.8.0 toolbar | F4 | Freehand pen and object eraser | planned, 2d / 45m | No pixel eraser: it would bake pixels into the immutable base |
+| 1.8.0 toolbar | F44 | Opacity in every colour popover, and the frame switches removed | shipped 2026-09-10 | D57. Five hand-written colour panels became one built from `PAINTS`. A redaction still cannot take an opacity |
 | 1.8.0 toolbar | F43 | A caption wraps inside a width you set | planned, 2d / 45m | L41. Two side handles set the width, the height follows the words, the way Preview does it |
 | 1.9.0 long pages | F10 | Multi-part export for very long pages | planned, 5d / 2h | **The known defect.** Must stream part by part or Chrome kills the worker |
 | 1.9.0 long pages | F13 | Runtime seam verification | planned, 5d / 2h | We verify seams in tests. This verifies them in the field |

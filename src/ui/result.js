@@ -12,7 +12,7 @@
 
 import { applyFilename, captureBasename } from '../lib/plan.js';
 import { buildPdf, deflate, planPdfPages, rgbaToRgb } from '../lib/pdf.js';
-import { CORNERED_KINDS, SHAPE_TOOLS, kindOfTool } from '../lib/edit.js';
+import { CORNERED_KINDS, PAINTS, PAINT_KINDS, SHAPE_TOOLS, kindOfTool } from '../lib/edit.js';
 import { DOWNLOAD_FORMATS, OUTPUT_FORMATS, encodeOrThrow, extensionOf } from '../lib/encode.js';
 import { PROTOCOL_MISMATCH, speaksOurProtocol } from '../lib/protocol.js';
 import { createEditor } from './editor.js';
@@ -52,18 +52,17 @@ const ui = {
   borderGlyph: el('border-glyph'),
   fillGlyph: el('fill-glyph'),
   fillSlash: el('fill-slash'),
-  fillOpacity: el('fill-opacity'),
-  fillOpacityOut: el('fill-opacity-out'),
   textFamily: el('text-family'),
   textWell: el('text-well'),
   textSize: el('text-size'),
   textBold: el('text-bold'),
   textItalic: el('text-italic'),
   textUnderline: el('text-underline'),
-  frameOn: el('frame-on'),
-  framePlate: el('frame-plate'),
   frameWell: el('frame-well'),
   frameWidth: el('frame-width'),
+  plateWell: el('plate-well'),
+  plateOpacity: el('plate-opacity'),
+  plateOpacityOut: el('plate-opacity-out'),
   ctx: el('ctx'),
   quality: el('quality'),
   qualityOut: el('quality-out'),
@@ -337,7 +336,6 @@ async function finish() {
     },
   });
 
-  buildPalettes();
   editor.render();
   applyHiddenButtons(settings.hiddenButtons ?? []);
   applyHiddenShapes(settings.hiddenShapes ?? []);
@@ -694,31 +692,106 @@ function swatchButton(colour, kind) {
 }
 
 /**
- * Fill the colour palettes.
+ * Build the five colour popovers out of one description.
  *
- * Text is in the list but has no `data-grid`, so it gets the ten quick colours
- * and the system picker and not the sixty step grid. Border and fill each own a
- * whole popover and can afford one; the text inspector is a mixed panel that
- * already carries a family, a size, three type toggles and four alignments, and
- * sixty more swatches in it would bury all of them. Arbitrary colour is still
- * one click away through the picker and the hex field.
+ * They were five hand-written panels in the markup: a row of quick colours, a
+ * sixty step grid, a system picker and a hex field, repeated. Adding an opacity
+ * slider to all of them would have made five copies of a bigger panel, which is
+ * the shape D52 removed from the output formats, where a format present in two
+ * lists and missing from the third failed silently in both directions.
+ *
+ * So the shells carry `data-paint-pop` and PAINTS says what goes in them.
+ * `test/invariants.test.js` holds the two together in both directions: a kind
+ * with no shell and a shell with no kind are both build failures.
+ *
+ * This runs at module load, before `ui` is built, because the ids it creates are
+ * ids `ui` looks up.
  */
-function buildPalettes() {
-  for (const kind of ['border', 'fill', 'text', 'frame']) {
-    const quick = ui.toolbar.querySelector(`[data-quick="${kind}"]`);
-    const grid = ui.toolbar.querySelector(`[data-grid="${kind}"]`);
-    if (!quick || quick.childElementCount > 0) continue;
+function buildPaintPopovers() {
+  for (const pop of document.querySelectorAll('[data-paint-pop]')) {
+    const kind = pop.dataset.paintPop;
+    const paint = PAINTS[kind];
+    if (!paint || pop.childElementCount > 0) continue;
+
+    const title = document.createElement('p');
+    title.className = 'pop-title';
+    title.id = `pop-${kind}-title`;
+    title.textContent = paint.title;
+    pop.append(title);
+    // The shells carry aria-labelledby pointing at ids that only exist once this
+    // has run, so the two are written from the same string rather than by hand
+    // in two files.
+    pop.setAttribute('aria-labelledby', title.id);
+
+    const row = document.createElement('div');
+    row.className = 'paintrow';
+    if (paint.none) {
+      const off = document.createElement('button');
+      off.type = 'button';
+      off.className = 'nofill';
+      off.dataset.paintNone = kind;
+      off.setAttribute('aria-pressed', 'false');
+      off.setAttribute('aria-label', `No ${kind === 'fill' ? 'fill' : kind}`);
+      off.title = off.getAttribute('aria-label');
+      row.append(off);
+    }
+    const label = document.createElement('label');
+    label.setAttribute('for', `${kind}-opacity`);
+    label.textContent = 'Opacity';
+    const slider = document.createElement('input');
+    slider.id = `${kind}-opacity`;
+    slider.type = 'range';
+    slider.min = '0';
+    slider.max = '100';
+    slider.step = '5';
+    slider.value = '100';
+    slider.setAttribute('aria-label', `${paint.title.replace(' colour', '')} opacity`);
+    const out = document.createElement('output');
+    out.id = `${kind}-opacity-out`;
+    out.setAttribute('for', slider.id);
+    out.textContent = '100%';
+    row.append(label, slider, out);
+    pop.append(row);
+
+    const quick = document.createElement('div');
+    quick.className = 'quickrow';
+    quick.dataset.quick = kind;
+    const grid = document.createElement('div');
+    grid.className = 'swgrid';
+    grid.dataset.grid = kind;
+    pop.append(quick, grid);
 
     for (const colour of QUICK_COLOURS) quick.append(swatchButton(colour, kind));
-    if (!grid) continue;
-    for (let row = 0; row < GREYS.length; row += 1) {
-      grid.append(swatchButton(GREYS[row], kind));
+    for (let step = 0; step < GREYS.length; step += 1) {
+      grid.append(swatchButton(GREYS[step], kind));
       for (const colour of QUICK_COLOURS.slice(0, 9)) {
-        grid.append(swatchButton(shade(colour, row), kind));
+        grid.append(swatchButton(shade(colour, step), kind));
       }
     }
+
+    const custom = document.createElement('div');
+    custom.className = 'custom';
+    const picker = document.createElement('input');
+    picker.type = 'color';
+    picker.id = `${kind}-picker`;
+    picker.value = '#ef4444';
+    picker.setAttribute('aria-label', `Custom ${paint.title.toLowerCase()}`);
+    picker.title = 'Custom colour';
+    const hex = document.createElement('input');
+    hex.type = 'text';
+    hex.id = `${kind}-hex`;
+    hex.value = '#EF4444';
+    hex.spellcheck = false;
+    hex.autocomplete = 'off';
+    hex.pattern = '#?[0-9a-fA-F]{6}';
+    hex.placeholder = '#RRGGBB';
+    hex.setAttribute('aria-label', `${paint.title} as hex`);
+    custom.append(picker, hex);
+    pop.append(custom);
   }
 }
+
+buildPaintPopovers();
 
 const normaliseHex = (raw) => {
   const value = String(raw).trim().replace(/^#/, '');
@@ -772,17 +845,18 @@ function showStyle(style, tool) {
   showCorner(style.corner ?? 0, tool, style.selectedKind);
 
   ui.borderGlyph.setAttribute('stroke', style.colour);
+  ui.borderGlyph.setAttribute('stroke-opacity', String(style.strokeOpacity ?? 1));
   markPressed('[data-paint="border"]', (b) => b.dataset.colour === style.colour);
   setHex('border', style.colour);
+  showOpacity('border', style.strokeOpacity ?? 1);
 
   ui.fillGlyph.setAttribute('fill', style.fill ?? 'none');
   ui.fillGlyph.setAttribute('fill-opacity', String(style.fill ? style.fillOpacity : 1));
   showGlyph(ui.fillSlash, !style.fill);
   markPressed('[data-paint="fill"]', (b) => Boolean(style.fill) && b.dataset.colour === style.fill);
-  ui.toolbar.querySelector('[data-fill="none"]').setAttribute('aria-pressed', String(!style.fill));
+  markNone('fill', !style.fill);
   if (style.fill) setHex('fill', style.fill);
-  ui.fillOpacity.value = String(Math.round(style.fillOpacity * 100));
-  ui.fillOpacityOut.textContent = `${Math.round(style.fillOpacity * 100)}%`;
+  showOpacity('fill', style.fillOpacity);
 
   ui.textFamily.value = style.text.family;
   ui.textSize.value = String(style.text.size);
@@ -792,20 +866,52 @@ function showStyle(style, tool) {
   markPressed('[data-align]', (b) => b.dataset.align === style.text.align);
   markPressed('[data-paint="text"]', (b) => b.dataset.colour === style.text.ink);
   ui.textWell.style.background = style.text.ink;
+  ui.textWell.style.opacity = String(style.text.inkOpacity ?? 1);
   setHex('text', style.text.ink);
+  showOpacity('text', style.text.inkOpacity ?? 1);
 
-  // The frame and the plate. Off is null, which is a value rather than an
-  // absence, so the well keeps showing the colour the switch would put back.
+  // THE FRAME AND THE PLATE
+  //
+  // Neither has a switch any more. The frame is off when it has no colour, which
+  // is what "no fill" already means and what the slashed well already shows, and
+  // the plate is off at nought per cent. Both keep the colour they had while
+  // they are off, so turning either back on is one act rather than two.
   const frame = style.text.colour ?? null;
   const plate = style.text.fill ?? null;
   if (frame) lastFrameColour = frame;
   if (plate) lastPlateColour = plate;
-  ui.frameOn.setAttribute('aria-checked', String(Boolean(frame)));
-  ui.framePlate.setAttribute('aria-checked', String(Boolean(plate)));
   ui.frameWell.style.background = frame ?? lastFrameColour;
+  ui.frameWell.classList.toggle('off', !frame);
   markPressed('[data-paint="frame"]', (b) => b.dataset.colour === frame);
+  markNone('frame', !frame);
   setHex('frame', frame ?? lastFrameColour);
+  showOpacity('frame', style.text.strokeOpacity ?? 1);
   ui.frameWidth.value = String(style.text.width ?? 2);
+
+  const plateAlpha = style.text.fillOpacity ?? 0;
+  ui.plateWell.style.background = plate ?? lastPlateColour;
+  ui.plateWell.style.opacity = String(Math.max(0.12, plateAlpha));
+  setHex('plate', plate ?? lastPlateColour);
+  markPressed('[data-paint="plate"]', (b) => b.dataset.colour === plate);
+  showOpacity('plate', plateAlpha);
+  ui.plateOpacity.value = String(Math.round(plateAlpha * 100));
+  ui.plateOpacityOut.textContent = `${Math.round(plateAlpha * 100)}%`;
+}
+
+/** The opacity slider and its readout inside one colour popover. */
+function showOpacity(kind, alpha) {
+  const slider = el(`${kind}-opacity`);
+  const out = el(`${kind}-opacity-out`);
+  if (!slider || document.activeElement === slider) return;
+  const percent = Math.round(alpha * 100);
+  slider.value = String(percent);
+  out.textContent = `${percent}%`;
+}
+
+/** The no-colour button, on the popovers that have one. */
+function markNone(kind, on) {
+  const button = ui.toolbar.querySelector(`[data-paint-none="${kind}"]`);
+  if (button) button.setAttribute('aria-pressed', String(on));
 }
 
 function setHex(kind, colour) {
@@ -970,9 +1076,60 @@ function applyPaint(kind, colour) {
     // one property the way they used to.
     editor?.setTextStyle({ ink: colour });
     saveSettings({ textColour: colour });
+  } else if (kind === 'plate') {
+    // The plate is the caption's own fill. Picking a colour here does not switch
+    // it on: the opacity slider beside it does that, and a colour chosen while
+    // the plate is at nought is a choice waiting for the drag that reveals it.
+    lastPlateColour = colour;
+    editor?.setTextStyle({ fill: colour });
+    saveSettings({ textFramePlate: colour });
   } else {
     editor?.setFill(colour);
     saveSettings({ fill: colour });
+  }
+}
+
+/**
+ * The no-colour button, for the two popovers that have one.
+ *
+ * Fill and Frame, and nothing else. A stroke has no no-colour state, and the
+ * plate says invisible with its slider instead, so PAINTS is what decides
+ * whether this button exists at all rather than a list written out here.
+ */
+function clearPaint(kind) {
+  if (kind === 'frame') {
+    editor?.setTextStyle({ colour: null });
+    saveSettings({ textFrameColour: null });
+    return;
+  }
+  editor?.setFill(null);
+  saveSettings({ fill: null });
+}
+
+/**
+ * The opacity slider in each colour popover.
+ *
+ * Border and Frame write the same shape property, and so do Fill and Plate,
+ * which is why this is a switch on where the control is rather than on what it
+ * writes: the same value reached from a caption's panel and from the shared one
+ * has to travel through the setter that knows about captions.
+ */
+function applyOpacity(kind, alpha) {
+  if (kind === 'border') {
+    editor?.setStrokeOpacity(alpha);
+    saveSettings({ strokeOpacity: alpha });
+  } else if (kind === 'fill') {
+    editor?.setFillOpacity(alpha);
+    saveSettings({ fillOpacity: alpha });
+  } else if (kind === 'text') {
+    editor?.setTextStyle({ inkOpacity: alpha });
+    saveSettings({ textInkOpacity: alpha });
+  } else if (kind === 'frame') {
+    editor?.setTextStyle({ strokeOpacity: alpha });
+    saveSettings({ textFrameOpacity: alpha });
+  } else {
+    editor?.setTextStyle({ fillOpacity: alpha });
+    saveSettings({ textPlateOpacity: alpha });
   }
 }
 
@@ -983,19 +1140,20 @@ for (const pop of ui.toolbar.querySelectorAll('.pop.paint')) {
   });
 }
 
-ui.toolbar.querySelector('[data-fill="none"]').addEventListener('click', () => {
-  editor?.setFill(null);
-  saveSettings({ fill: null });
-});
+for (const button of ui.toolbar.querySelectorAll('[data-paint-none]')) {
+  button.addEventListener('click', () => clearPaint(button.dataset.paintNone));
+}
 
-ui.fillOpacity.addEventListener('input', () => {
-  const percent = Number(ui.fillOpacity.value);
-  ui.fillOpacityOut.textContent = `${percent}%`;
-  editor?.setFillOpacity(percent / 100);
-  saveSettings({ fillOpacity: percent / 100 });
-});
+for (const kind of PAINT_KINDS) {
+  const slider = el(`${kind}-opacity`);
+  slider.addEventListener('input', () => {
+    const percent = Number(slider.value);
+    el(`${kind}-opacity-out`).textContent = `${percent}%`;
+    applyOpacity(kind, percent / 100);
+  });
+}
 
-for (const kind of ['border', 'fill', 'text', 'frame']) {
+for (const kind of PAINT_KINDS) {
   // The native colour input is the operating system's own picker, which is where
   // a "more colours" control normally leads. It brings an eyedropper and keyboard
   // support that a hand-drawn spectrum would have to reimplement badly.
@@ -1125,27 +1283,14 @@ document.addEventListener('pointerdown', (event) => {
 // plate is its fill. That is why these and the Border and Fill wells never
 // disagree about a selected caption. They all read and write the one shape.
 
-ui.frameOn.addEventListener('click', () => {
-  const on = ui.frameOn.getAttribute('aria-checked') !== 'true';
-  const colour = on ? lastFrameColour : null;
-  editor?.setTextStyle({ colour });
-  saveSettings({ textFrameColour: colour });
-});
-
-ui.framePlate.addEventListener('click', () => {
-  const on = ui.framePlate.getAttribute('aria-checked') !== 'true';
-  if (!on) {
-    editor?.setTextStyle({ fill: null });
-    saveSettings({ textFramePlate: null });
-    return;
-  }
-  // A plate exists to make words readable over a busy screenshot, so it starts
-  // opaque. The 35% that a fill starts at is tuned for shading a box, and a
-  // plate at 35% is a wash rather than a plate. This is a starting value on a
-  // shape that had no fill at all, not an override of a choice already made:
-  // the opacity slider in the Fill popover still owns it from here.
-  editor?.setTextStyle({ fill: lastPlateColour, fillOpacity: 1 });
-  saveSettings({ textFramePlate: lastPlateColour });
+ui.plateOpacity.addEventListener('input', () => {
+  const percent = Number(ui.plateOpacity.value);
+  ui.plateOpacityOut.textContent = `${percent}%`;
+  // setTextStyle gives the plate a colour when this is raised off nought and it
+  // has none, because raising it is the reader asking for a plate and a plate
+  // with no colour cannot answer.
+  editor?.setTextStyle({ fillOpacity: percent / 100 });
+  saveSettings({ textPlateOpacity: percent / 100 });
 });
 
 function setFrameWidth(px) {

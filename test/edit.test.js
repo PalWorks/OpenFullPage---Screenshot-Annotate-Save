@@ -9,6 +9,9 @@ import test from 'node:test';
 
 import {
   CROP_HANDLES,
+  DEFAULT_FILL_OPACITY,
+  PAINTS,
+  PAINT_KINDS,
   MAX_TEXT_SIZE,
   MIN_CROP,
   MIN_TEXT_SIZE,
@@ -36,7 +39,10 @@ import {
   glyphBoxOf,
   handleAt,
   handlesFor,
+  fillAlphaOf,
+  inkAlphaOf,
   inkOf,
+  strokeAlphaOf,
   isFramedText,
   strokeOf,
   textPadding,
@@ -781,4 +787,61 @@ test('a reorder leaves every other part of the document alone', () => {
 test('an unknown direction is refused rather than guessed at', () => {
   const present = ordered('a', 'b');
   assert.equal(reorderShapes(present, ['a'], 'sideways'), present);
+});
+
+// OPACITY
+//
+// Three properties, one rule: a shape that has never been given one draws
+// exactly as it did before they existed. That is the whole migration, and it is
+// the thing worth a test, because the alternative is every capture annotated
+// before today opening slightly wrong.
+
+test('a shape with no opacity of its own is fully opaque', () => {
+  assert.equal(strokeAlphaOf({}), 1);
+  assert.equal(inkAlphaOf({}), 1);
+  // A fill is the exception, and stays where it was: it sits over the thing it
+  // is pointing at, so it starts translucent.
+  assert.equal(fillAlphaOf({}), DEFAULT_FILL_OPACITY);
+});
+
+test('a stored opacity is clamped rather than trusted', () => {
+  for (const [given, want] of [[0, 0], [0.5, 0.5], [1, 1], [-3, 0], [9, 1]]) {
+    assert.equal(strokeAlphaOf({ strokeOpacity: given }), want, `stroke ${given}`);
+    assert.equal(inkAlphaOf({ inkOpacity: given }), want, `ink ${given}`);
+    assert.equal(fillAlphaOf({ fillOpacity: given }), want, `fill ${given}`);
+  }
+  // Anything that is not a number is not an opacity, and falls back rather than
+  // becoming NaN and painting nothing at all.
+  for (const junk of [null, undefined, '0.5', {}, NaN, Infinity]) {
+    assert.equal(strokeAlphaOf({ strokeOpacity: junk }), 1, String(junk));
+  }
+});
+
+test('a caption is framed only when something would actually be drawn', () => {
+  // The plate keeps its colour at nought per cent so that one drag brings it
+  // back. If a colour alone counted, every plain caption would carry the frame's
+  // padding in its selection box, its hover outline and its hit test while
+  // showing nothing, which is a shape you cannot click where you can see it.
+  assert.equal(isFramedText({ kind: 'text' }), false);
+  assert.equal(isFramedText({ kind: 'text', fill: '#ffffff', fillOpacity: 0 }), false);
+  assert.equal(isFramedText({ kind: 'text', colour: '#ef4444', strokeOpacity: 0 }), false);
+  assert.equal(isFramedText({ kind: 'text', fill: '#ffffff', fillOpacity: 0.4 }), true);
+  assert.equal(isFramedText({ kind: 'text', colour: '#ef4444' }), true);
+  // And it is still only ever true for a caption.
+  assert.equal(isFramedText({ kind: 'rect', colour: '#ef4444' }), false);
+});
+
+test('every colour popover writes a property and an opacity, and says if it can be none', () => {
+  for (const kind of PAINT_KINDS) {
+    const paint = PAINTS[kind];
+    assert.ok(paint.property, `${kind} writes nothing`);
+    assert.ok(paint.opacity, `${kind} has no opacity`);
+    assert.equal(typeof paint.none, 'boolean', `${kind} does not say`);
+    assert.ok(paint.title.length > 0, `${kind} has no title`);
+  }
+  // Border and Frame are one property reached from two places, and so are Fill
+  // and Plate. If that ever stops being true they are two properties that have
+  // to be kept in step by hand, which is the thing this table exists to avoid.
+  assert.equal(PAINTS.border.property, PAINTS.frame.property);
+  assert.equal(PAINTS.fill.property, PAINTS.plate.property);
 });

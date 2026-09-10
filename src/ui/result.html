@@ -543,6 +543,21 @@
     outline-offset: 1px;
   }
   .paintrow { display: flex; align-items: center; gap: 7px; }
+  /* The plate's opacity slider sits in the Frame block rather than in a popover,
+     so it takes the row's spare width the way the one in a popover does. */
+  .framer input.grow-range { flex: 1 1 auto; min-width: 0; accent-color: var(--indigo); }
+  .framer output {
+    flex: none; width: 34px; text-align: right;
+    font: 600 11px/1 ui-monospace, monospace; font-variant-numeric: tabular-nums;
+    color: var(--muted);
+  }
+  /* A well whose colour is off. The swatch keeps the colour it would put back,
+     with the same slash the no-fill button uses, so the two read as one idea. */
+  #toolbar .well .wellswatch.off, #toolbar .well.off .wellswatch {
+    background-image: linear-gradient(to bottom right,
+      transparent calc(50% - 1px), var(--danger) calc(50% - 1px),
+      var(--danger) calc(50% + 1px), transparent calc(50% + 1px));
+  }
   .paintrow label { flex: none; font-size: 11px; }
   #toolbar button.nofill {
     width: 26px;
@@ -891,16 +906,12 @@
             <span class="wellswatch" id="text-well"></span>
             <svg class="caret" viewBox="0 0 8 8" aria-hidden="true" focusable="false"><path d="M1.4 2.9 4 5.5l2.6-2.6"/></svg>
           </button>
-          <div class="pop paint" id="pop-text-colour" role="group" aria-labelledby="pop-text-colour-title" hidden>
-            <p class="pop-title" id="pop-text-colour-title">Text colour</p>
-            <div class="quickrow" data-quick="text"></div>
-            <div class="swgrid" data-grid="text"></div>
-            <div class="custom">
-              <input type="color" id="text-picker" value="#ef4444" aria-label="Custom text colour" title="Custom colour">
-              <input type="text" id="text-hex" value="#EF4444" spellcheck="false" autocomplete="off"
-                     pattern="#?[0-9a-fA-F]{6}" aria-label="Text colour as hex" placeholder="#RRGGBB">
-            </div>
-          </div>
+          <!-- Filled in from PAINTS in src/lib/edit.js. There were five colour
+               popovers written out by hand here and they were five copies of one
+               panel, so adding opacity to all of them would have been five copies
+               of a bigger one. D57. -->
+          <div class="pop paint" id="pop-text-colour" data-paint-pop="text"
+               role="group" aria-labelledby="pop-text-colour-title" hidden></div>
         </span>
       </div>
       <div class="r2">
@@ -946,23 +957,14 @@
       <div class="framer" role="group" aria-labelledby="pop-frame-title">
         <p class="pop-title sub" id="pop-frame-title">Frame</p>
         <div class="r3">
-          <button class="sw-toggle" type="button" id="frame-on" role="switch" aria-checked="false"
-                  title="Draw a frame around the words">Frame</button>
           <span class="grp">
             <button class="icon well" type="button" data-pop="pop-frame-colour"
                     aria-haspopup="true" aria-expanded="false" aria-label="Frame colour" title="Frame colour">
               <span class="wellswatch" id="frame-well"></span>
               <svg class="caret" viewBox="0 0 8 8" aria-hidden="true" focusable="false"><path d="M1.4 2.9 4 5.5l2.6-2.6"/></svg>
             </button>
-            <div class="pop paint" id="pop-frame-colour" role="group" aria-labelledby="pop-frame-colour-title" hidden>
-              <p class="pop-title" id="pop-frame-colour-title">Frame colour</p>
-              <div class="quickrow" data-quick="frame"></div>
-              <div class="custom">
-                <input type="color" id="frame-picker" value="#ef4444" aria-label="Custom frame colour" title="Custom colour">
-                <input type="text" id="frame-hex" value="#EF4444" spellcheck="false" autocomplete="off"
-                       pattern="#?[0-9a-fA-F]{6}" aria-label="Frame colour as hex" placeholder="#RRGGBB">
-              </div>
-            </div>
+            <div class="pop paint" id="pop-frame-colour" data-paint-pop="frame"
+                 role="group" aria-labelledby="pop-frame-colour-title" hidden></div>
           </span>
           <span class="stepper">
             <input id="frame-width" type="number" min="1" max="64" step="1" value="2" aria-label="Frame thickness in pixels">
@@ -973,8 +975,29 @@
             </span>
           </span>
         </div>
-        <button class="sw-toggle wide" type="button" id="frame-plate" role="switch" aria-checked="false"
-                title="Put a solid plate behind the words">Plate behind the words</button>
+
+        <!-- THE PLATE
+             It was a switch that said "Plate behind the words", and a switch is
+             the wrong control for something that is really a quantity: a plate
+             is only readable when it is solid enough to hide what is behind it
+             and light enough not to look pasted on, and that is a number, not a
+             yes. The colour keeps its value at nought per cent, so bringing a
+             plate back is one drag rather than a hunt for a colour first. -->
+        <p class="pop-title sub" id="pop-plate-title">Plate</p>
+        <div class="r3">
+          <span class="grp">
+            <button class="icon well" type="button" data-pop="pop-plate-colour"
+                    aria-haspopup="true" aria-expanded="false" aria-label="Plate colour" title="Plate colour">
+              <span class="wellswatch" id="plate-well"></span>
+              <svg class="caret" viewBox="0 0 8 8" aria-hidden="true" focusable="false"><path d="M1.4 2.9 4 5.5l2.6-2.6"/></svg>
+            </button>
+            <div class="pop paint" id="pop-plate-colour" data-paint-pop="plate"
+                 role="group" aria-labelledby="pop-plate-colour-title" hidden></div>
+          </span>
+          <input id="plate-opacity" type="range" min="0" max="100" step="5" value="0"
+                 aria-label="Plate opacity" class="grow-range">
+          <output id="plate-opacity-out" for="plate-opacity">0%</output>
+        </div>
       </div>
     </div>
   </span>
@@ -1035,16 +1058,8 @@
       <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect id="border-glyph" x="3.5" y="3.5" width="13" height="13" rx="2.5" fill="none" stroke="#ef4444" stroke-width="2.6"/></svg>
       <svg class="caret" viewBox="0 0 8 8" aria-hidden="true" focusable="false"><path d="M1.4 2.9 4 5.5l2.6-2.6"/></svg>
     </button>
-    <div class="pop paint" id="pop-border" role="group" aria-labelledby="pop-border-title" hidden>
-      <p class="pop-title" id="pop-border-title">Border colour</p>
-      <div class="quickrow" data-quick="border"></div>
-      <div class="swgrid" data-grid="border"></div>
-      <div class="custom">
-        <input type="color" id="border-picker" value="#ef4444" aria-label="Custom border colour" title="Custom colour">
-        <input type="text" id="border-hex" value="#EF4444" spellcheck="false" autocomplete="off"
-               pattern="#?[0-9a-fA-F]{6}" aria-label="Border colour as hex" placeholder="#RRGGBB">
-      </div>
-    </div>
+    <div class="pop paint" id="pop-border" data-paint-pop="border"
+         role="group" aria-labelledby="pop-border-title" hidden></div>
   </span>
 
   <span class="grp" data-button="fill">
@@ -1053,22 +1068,8 @@
       <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect id="fill-glyph" x="3.5" y="3.5" width="13" height="13" rx="2.5" fill="none" stroke="currentColor" stroke-opacity="0.45" stroke-width="1.3"/><path id="fill-slash" d="M4.6 15.4 15.4 4.6" stroke="#dc2626" stroke-width="1.9" stroke-linecap="round"/></svg>
       <svg class="caret" viewBox="0 0 8 8" aria-hidden="true" focusable="false"><path d="M1.4 2.9 4 5.5l2.6-2.6"/></svg>
     </button>
-    <div class="pop paint" id="pop-fill" role="group" aria-labelledby="pop-fill-title" hidden>
-      <p class="pop-title" id="pop-fill-title">Fill colour</p>
-    <div class="paintrow">
-      <button class="nofill" type="button" data-fill="none" aria-pressed="true" aria-label="No fill" title="No fill"></button>
-      <label for="fill-opacity">Opacity</label>
-      <input id="fill-opacity" type="range" min="0" max="100" step="5" value="35" aria-label="Fill opacity">
-      <output id="fill-opacity-out" for="fill-opacity">35%</output>
-    </div>
-      <div class="quickrow" data-quick="fill"></div>
-      <div class="swgrid" data-grid="fill"></div>
-      <div class="custom">
-        <input type="color" id="fill-picker" value="#ef4444" aria-label="Custom fill colour" title="Custom colour">
-        <input type="text" id="fill-hex" value="#EF4444" spellcheck="false" autocomplete="off"
-               pattern="#?[0-9a-fA-F]{6}" aria-label="Fill colour as hex" placeholder="#RRGGBB">
-      </div>
-    </div>
+    <div class="pop paint" id="pop-fill" data-paint-pop="fill"
+         role="group" aria-labelledby="pop-fill-title" hidden></div>
   </span>
 
   <span class="sep"></span>

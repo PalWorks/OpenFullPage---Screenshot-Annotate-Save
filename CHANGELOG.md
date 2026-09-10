@@ -13,6 +13,33 @@ a clean checkout with `./tools/pack.sh`, not merely checkable against one downlo
 Everything below is on `main` and not yet packaged. It covers the toolbar rework
 and the capture reliability work of 2026-09-08 and 2026-09-09.
 
+### Added: opacity in every colour control, and two switches removed
+A translucent border or arrow over a screenshot was not possible: opacity existed
+only for a fill. Every colour popover now carries an Opacity slider, so a stroke, a
+caption's ink, its frame and the plate behind it can all be set to sit lightly over
+the picture instead of on top of it.
+
+The Frame block in the text panel loses both its switches. A frame is on when it has
+a colour and off when it does not, which is what "no fill" already means and what the
+slashed well already showed, so the switch beside it was a second way of saying the
+same thing. And "Plate behind the words" was a switch for something that is really a
+quantity: a plate works when it is solid enough to hide what is behind it and light
+enough not to look pasted on. It is an opacity now, at nought per cent by default,
+and it keeps its colour while it is invisible, so bringing one back is one drag.
+
+Underneath, the five colour panels were five hand-written copies of the same markup,
+and a slider in each would have made five copies of a bigger one. They are built from
+one table now, and a test fails the build if the table and the markup ever disagree in
+either direction. The Frame popover gained the full shade grid it never had, purely as
+a consequence of being built like the others.
+
+One shape refuses the new control on purpose: a redaction is always opaque. An opacity
+it could inherit would be a way to read through it, set from a popover three controls
+away from the tool.
+
+Nothing already drawn changes. Stroke and ink opacity default to fully opaque, which is
+what every shape drawn before today had.
+
 ### Fixed: a screenful the browser had already handed over is photographed again
 Reported from a real capture of a news page: the top of the article appeared twice.
 The two copies were the same photograph, and the giveaway was that both carried the

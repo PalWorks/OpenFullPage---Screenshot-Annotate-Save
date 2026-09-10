@@ -60,6 +60,8 @@ import {
   dashPattern,
   effectiveCrop,
   fillAlphaOf,
+  inkAlphaOf,
+  strokeAlphaOf,
   fillOf,
   endsOf,
   fontOf,
@@ -110,6 +112,10 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
   let ends = initial.lineEnds ?? 'end';
   let fill = initial.fill ?? null;
   let fillOpacity = initial.fillOpacity ?? DEFAULT_FILL_OPACITY;
+  // How solid the stroke is. One, unless someone says otherwise, because a
+  // translucent line by default would read as a rendering fault rather than a
+  // choice. It is the Border popover's slider, and on a caption it is the frame.
+  let strokeOpacity = initial.strokeOpacity ?? 1;
   // Corner radius is a property of the Box, not three separate tools.
   let corner = initial.corner ?? 0;
   let text = {
@@ -124,11 +130,18 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
     // same colour, and the default matches the stroke so nothing changes for
     // anyone who never opens the control.
     ink: initial.textColour ?? initial.colour ?? '#ef4444',
-    // The frame around the words, and the plate behind them. Both off by
-    // default. The Frame block in the text inspector is where they are set, and
-    // Border colour and Fill reach the same two properties on a selected label.
+    inkOpacity: initial.textInkOpacity ?? 1,
+    // The frame around the words, and the plate behind them.
+    //
+    // The frame is off by default because it has no colour, which is the same
+    // thing "no fill" already means and needs no switch to explain it. The plate
+    // is off by default because it is fully transparent, and it keeps a colour
+    // while it is off so that turning it on is one drag of the opacity slider
+    // rather than a hunt for a colour first.
     colour: initial.textFrameColour ?? null,
-    fill: initial.textFramePlate ?? null,
+    strokeOpacity: initial.textFrameOpacity ?? 1,
+    fill: initial.textFramePlate ?? '#ffffff',
+    fillOpacity: initial.textPlateOpacity ?? 0,
     // The frame's own thickness, kept apart from the stroke width that arrows
     // and boxes share. A 4px rule reads as heavy around 24pt type, and nobody
     // wants setting a frame to 2 to thin every arrow they draw next.
@@ -324,6 +337,11 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
     const dy = -crop.y;
 
     ctx.save();
+    // A redaction is never translucent. Every other shape takes the stroke
+    // opacity, and the one that hides something must not be able to be told to
+    // hide it only partly: an opacity set for an arrow and inherited by a
+    // pixelated block would be a way to read through it.
+    ctx.globalAlpha = shape.kind === 'pixelate' ? 1 : strokeAlphaOf(shape);
     ctx.strokeStyle = shape.colour;
     ctx.fillStyle = shape.colour;
     ctx.lineWidth = shape.width;
@@ -382,7 +400,10 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
    * the size below the baseline, thick enough to survive the export.
    */
   function drawText(shape, dx, dy) {
+    // The frame first, at the stroke opacity drawShape already set, because the
+    // frame is this shape's stroke. Then the glyphs, which carry their own.
     drawTextFrame(shape, dx, dy);
+    ctx.globalAlpha = inkAlphaOf(shape);
     ctx.fillStyle = inkOf(shape);
     ctx.font = fontOf(shape);
     // Every line is placed by hand from the block's own left edge, so the canvas
@@ -519,6 +540,10 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
   }
 
   function drawPixelated(shape, dx, dy) {
+    // Said twice on purpose. drawShape already refuses to make a redaction
+    // translucent, and this is the line that would have to be deleted as well
+    // before one could be, which is the point of writing it here too.
+    ctx.globalAlpha = 1;
     pixelateInto(ctx, shape, dx, dy);
   }
 
@@ -816,6 +841,7 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
         kind: kindOfTool(tool),
         rect: clampRect(normalizeRect(from, end), crop),
         colour,
+        strokeOpacity,
         width,
       };
       // Only the outlined boxes take a fill. A highlighter is already a fill, a
@@ -831,7 +857,9 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
       if (CORNERED_KINDS.includes(kindOfTool(tool)) && corner > 0) shape.corner = corner;
       return shape;
     }
-    return { id: newId(), kind: kindOfTool(tool), from, to: end, colour, width, dash, ends };
+    return {
+      id: newId(), kind: kindOfTool(tool), from, to: end, colour, strokeOpacity, width, dash, ends,
+    };
   }
 
   function applyTool(next) {
@@ -1321,8 +1349,10 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
         align: alignOf(existing),
         ink: inkOf(existing),
         colour: existing.colour ?? null,
+        strokeOpacity: existing.strokeOpacity ?? text.strokeOpacity,
         fill: existing.fill ?? null,
         fillOpacity: existing.fillOpacity,
+        inkOpacity: existing.inkOpacity ?? text.inkOpacity,
         width: existing.width ?? text.width,
       }
       : { ...text };
@@ -1400,7 +1430,9 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
         text: value,
         size,
         ink: style.ink,
+        inkOpacity: style.inkOpacity ?? 1,
         colour: style.colour,
+        strokeOpacity: style.strokeOpacity ?? 1,
         fill: style.fill,
         fillOpacity: style.fillOpacity ?? fillOpacity,
         // The frame's thickness, not the stroke width arrows and boxes share.
@@ -1510,6 +1542,7 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
           ? (many.every((sh) => fillOf(sh) === fillOf(many[0])) ? fillOf(many[0]) : fill)
           : fill,
         fillOpacity: agreed(many, (sh) => sh.fillOpacity) ?? fillOpacity,
+        strokeOpacity: agreed(many, (sh) => sh.strokeOpacity) ?? strokeOpacity,
         selectedKind: agreed(many, (sh) => sh.kind) ?? null,
         text: { ...text },
       };
@@ -1525,6 +1558,7 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
       selectedKind: chosen.kind,
       fill: fillOf(chosen),
       fillOpacity: fillOf(chosen) ? fillAlphaOf(chosen) : fillOpacity,
+      strokeOpacity: strokeAlphaOf(chosen),
       text: chosen.kind === 'text'
         ? {
           size: chosen.size,
@@ -1534,11 +1568,18 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
           underline: chosen.underline === true,
           align: alignOf(chosen),
           ink: inkOf(chosen),
+          inkOpacity: inkAlphaOf(chosen),
           // The frame and the plate, read off the shape rather than off the
           // pending style, for the same reason every other swatch does it: the
           // control that shows a value is also the control that sets it.
           colour: strokeOf(chosen),
-          fill: fillOf(chosen),
+          strokeOpacity: strokeAlphaOf(chosen),
+          // The plate keeps a colour even at zero opacity, so the slider on its
+          // own is enough to bring it back. Falling back to the pending colour
+          // rather than to null is what makes that true for a caption drawn
+          // before the plate had a colour of its own.
+          fill: fillOf(chosen) ?? text.fill,
+          fillOpacity: fillOf(chosen) ? fillAlphaOf(chosen) : 0,
           width: chosen.width ?? text.width,
         }
         : { ...text },
@@ -1637,9 +1678,33 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
       restyleSelection({ fillOpacity }, (shape) => fillOf(shape) !== null);
       notify();
     },
+    /**
+     * How solid the stroke is, on everything that has one.
+     *
+     * A redaction is excluded, and that is not tidiness. Every other shape here
+     * is a mark drawn over the picture, and this one exists to remove part of
+     * the picture: an opacity it could take would be a way to read through it.
+     */
+    setStrokeOpacity(next) {
+      strokeOpacity = clamp(next, 0, 1);
+      restyleSelection({ strokeOpacity }, (shape) => shape.kind !== 'pixelate');
+      notify();
+    },
     setTextStyle(patch) {
       if (Number.isFinite(patch.size)) {
         patch.size = clamp(Math.round(patch.size), MIN_TEXT_SIZE, MAX_TEXT_SIZE);
+      }
+      for (const key of ['inkOpacity', 'strokeOpacity', 'fillOpacity']) {
+        if (Number.isFinite(patch[key])) patch = { ...patch, [key]: clamp(patch[key], 0, 1) };
+      }
+      // A plate with no colour cannot be brought back by its own slider, and
+      // asking for one is what raising that slider means. So it takes the colour
+      // the well beside it is already showing, which is the colour the reader
+      // would have got if they had picked one first.
+      if (Number.isFinite(patch.fillOpacity) && patch.fillOpacity > 0) {
+        const selected = selectedShape(doc);
+        const has = selected && selected.kind === 'text' ? fillOf(selected) : text.fill;
+        if (!has) patch = { ...patch, fill: text.fill ?? '#ffffff' };
       }
       text = { ...text, ...patch };
       const chosen = selectedShape(doc);

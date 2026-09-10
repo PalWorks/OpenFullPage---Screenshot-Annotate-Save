@@ -128,9 +128,11 @@ test('every key sanitise knows about is one DEFAULTS declares', () => {
     strokeWidth: 8, captureDelay: 3, progressPopup: false, directDownload: true,
     theme: 'dark', format: 'jpeg', quality: 78,
     dash: 'dashed', lineEnds: 'none', corner: 12, fill: '#abcdef', fillOpacity: 0.5,
+    strokeOpacity: 0.7,
     textSize: 40, textFamily: 'serif', textBold: false, textItalic: true,
-    textUnderline: true, textAlign: 'justify', textColour: '#00ff88',
-    textFrameColour: '#00aa11', textFramePlate: '#ffffff', textFrameWidth: 3,
+    textUnderline: true, textAlign: 'justify', textColour: '#00ff88', textInkOpacity: 0.9,
+    textFrameColour: '#00aa11', textFrameOpacity: 0.6, textFramePlate: '#ffffff',
+    textPlateOpacity: 0.25, textFrameWidth: 3,
     hiddenButtons: ['crop'], hiddenShapes: ['cylinder'],
   };
   const clean = sanitise(sample);
