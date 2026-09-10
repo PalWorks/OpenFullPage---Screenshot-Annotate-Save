@@ -94,6 +94,7 @@ export const STYLE_KEYS = [
   'tool', 'colour', 'strokeWidth', 'dash', 'lineEnds', 'corner', 'fill', 'fillOpacity',
   'textSize', 'textFamily', 'textBold', 'textItalic', 'textUnderline',
   'textAlign', 'textColour',
+  'textFrameColour', 'textFramePlate', 'textFrameWidth',
 ];
 
 /** A fresh copy of the shipped style. */
@@ -134,6 +135,13 @@ export const DEFAULTS = {
   // rarely wanted in the same colour. The default matches the stroke colour, so
   // nothing changes for anyone who never opens the control.
   textColour: '#ef4444',
+  // The frame around a label and the plate behind it. Both null, meaning off:
+  // a caption is words, and anyone who wants a box around them says so. The
+  // frame keeps its own thickness because a 4px rule, which is a fine arrow,
+  // reads as heavy around 24pt type.
+  textFrameColour: null,
+  textFramePlate: null,
+  textFrameWidth: 2,
   // Toolbar controls the user has switched off. Empty means the curated set.
   hiddenButtons: [],
   // Which shapes are hidden from the Shapes popover.
@@ -235,6 +243,19 @@ export function sanitise(raw) {
   if (TEXT_ALIGNS.includes(raw.textAlign)) clean.textAlign = raw.textAlign;
   if (typeof raw.textColour === 'string' && /^#[0-9a-f]{6}$/i.test(raw.textColour)) {
     clean.textColour = raw.textColour.toLowerCase();
+  }
+  // Off is a value here, the same way no fill is, so anything that is not a hex
+  // colour becomes null rather than falling back to whatever was there before.
+  clean.textFrameColour =
+    typeof raw.textFrameColour === 'string' && /^#[0-9a-f]{6}$/i.test(raw.textFrameColour)
+      ? raw.textFrameColour.toLowerCase()
+      : null;
+  clean.textFramePlate =
+    typeof raw.textFramePlate === 'string' && /^#[0-9a-f]{6}$/i.test(raw.textFramePlate)
+      ? raw.textFramePlate.toLowerCase()
+      : null;
+  if (Number.isFinite(raw.textFrameWidth)) {
+    clean.textFrameWidth = Math.min(64, Math.max(1, Math.round(raw.textFrameWidth)));
   }
   clean.textBold = raw.textBold !== false;
   clean.textItalic = raw.textItalic === true;

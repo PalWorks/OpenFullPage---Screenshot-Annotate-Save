@@ -62,6 +62,8 @@ import {
   toggleSelected,
   shapeAt,
   undo,
+  reorderShapes,
+  wouldReorder,
 } from '../src/lib/edit.js';
 
 const doc = () => createDocument(1000, 4000);
@@ -702,3 +704,81 @@ test('undo puts back the size a text shape had before it was scaled', () => {
   assert.equal(undo(doc).present.shapes[0].size, 20);
 });
 
+
+// THE PAINT ORDER
+//
+// Shapes are drawn in array order, so the last one is on top. Every case below
+// is one a reader can produce with two clicks, and the ones with a block of
+// several selected are the ones a naive loop gets wrong: a single pass in the
+// wrong direction carries a shape to the front in one press, and a pass that
+// does not check its neighbour lets one member of a selection leapfrog another.
+
+const ordered = (...ids) => ({ shapes: ids.map((id) => ({ id })), selection: [] });
+const idsOf = (present) => present.shapes.map((s) => s.id);
+
+test('one shape moves one step through the paint order', () => {
+  const present = ordered('a', 'b', 'c');
+  assert.deepEqual(idsOf(reorderShapes(present, ['a'], 'forward')), ['b', 'a', 'c']);
+  assert.deepEqual(idsOf(reorderShapes(present, ['c'], 'backward')), ['a', 'c', 'b']);
+});
+
+test('front and back move a shape all the way, in one step', () => {
+  const present = ordered('a', 'b', 'c');
+  assert.deepEqual(idsOf(reorderShapes(present, ['a'], 'front')), ['b', 'c', 'a']);
+  assert.deepEqual(idsOf(reorderShapes(present, ['c'], 'back')), ['c', 'a', 'b']);
+});
+
+test('a shape already at one end does not move, and says so', () => {
+  const present = ordered('a', 'b', 'c');
+  for (const [id, where] of [['c', 'forward'], ['c', 'front'], ['a', 'backward'], ['a', 'back']]) {
+    assert.deepEqual(idsOf(reorderShapes(present, [id], where)), ['a', 'b', 'c'], where);
+    assert.equal(wouldReorder(present, [id], where), false, where);
+  }
+});
+
+test('a selection moves as a block and keeps its own order', () => {
+  // The bug this exists to catch: stepping through the list in the wrong
+  // direction moves `a` up, meets it again at the next index, and carries it to
+  // the front in a single press.
+  const present = ordered('a', 'b', 'c', 'd');
+  assert.deepEqual(idsOf(reorderShapes(present, ['a', 'b'], 'forward')), ['c', 'a', 'b', 'd']);
+  assert.deepEqual(idsOf(reorderShapes(present, ['c', 'd'], 'backward')), ['a', 'c', 'd', 'b']);
+});
+
+test('a block already at the top is blocked by its own members, not by nothing', () => {
+  // `b` cannot move because `c` is selected too, and `c` cannot move because it
+  // is at the top. Without the neighbour check `b` would jump over `c`.
+  const present = ordered('a', 'b', 'c');
+  assert.deepEqual(idsOf(reorderShapes(present, ['b', 'c'], 'forward')), ['a', 'b', 'c']);
+  assert.equal(wouldReorder(present, ['b', 'c'], 'forward'), false);
+  assert.equal(wouldReorder(present, ['b', 'c'], 'backward'), true);
+});
+
+test('front and back keep the selection in the order it was drawn', () => {
+  const present = ordered('a', 'b', 'c', 'd');
+  assert.deepEqual(idsOf(reorderShapes(present, ['a', 'c'], 'front')), ['b', 'd', 'a', 'c']);
+  assert.deepEqual(idsOf(reorderShapes(present, ['b', 'd'], 'back')), ['b', 'd', 'a', 'c']);
+});
+
+test('reordering nothing, or everything, changes nothing', () => {
+  const present = ordered('a', 'b', 'c');
+  for (const ids of [[], ['a', 'b', 'c']]) {
+    for (const where of ['front', 'back', 'forward', 'backward']) {
+      assert.deepEqual(idsOf(reorderShapes(present, ids, where)), ['a', 'b', 'c']);
+      assert.equal(wouldReorder(present, ids, where), false);
+    }
+  }
+});
+
+test('a reorder leaves every other part of the document alone', () => {
+  const present = { ...ordered('a', 'b'), selection: ['a'], crop: { x: 1, y: 2, w: 3, h: 4 } };
+  const next = reorderShapes(present, ['a'], 'front');
+  assert.deepEqual(next.selection, ['a']);
+  assert.deepEqual(next.crop, present.crop);
+  assert.equal(next.shapes.length, 2);
+});
+
+test('an unknown direction is refused rather than guessed at', () => {
+  const present = ordered('a', 'b');
+  assert.equal(reorderShapes(present, ['a'], 'sideways'), present);
+});

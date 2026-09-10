@@ -1249,3 +1249,107 @@ donation page, and this project is not asking for one.
 anyone who does not pay. No reward for paying. No count of donors displayed inside
 the extension. The moment money buys anything, the non transfer covenant is a
 promise made by someone with an incentive to break it.
+
+## D49: The paint order is reached by right clicking, not by four more buttons
+
+**2026-09-10.** Shapes are drawn in array order, so the last one drawn is the one
+on top, and until now there was no way to change that. A box drawn over a
+highlighter covered it permanently and the only repair was to delete both and draw
+them again. ROADMAP F27 had carried "a right click menu carrying the z order that
+is unreachable today" since the toolbar was regrouped.
+
+**The menu is a right click on the canvas.** Four toolbar buttons were the
+alternative, and they were rejected: the toolbar already carries sixty-eight
+controls behind sixteen buttons, and reordering is something a person reaches for
+perhaps once in twenty captures. A right click is also where people look for it.
+
+Three things were decided along the way, and each is a rule the code follows:
+
+- **A right click on empty canvas keeps Chrome's own menu.** Chrome offers "Save
+  image as" and "Copy image" on a canvas. Replacing that with our menu, every item
+  of it greyed out because nothing is selected, would take something away and give
+  nothing back. `menuTarget()` returns false when nothing is under the pointer and
+  the handler never calls `preventDefault`.
+- **A right click on an unselected shape selects it; on one already in a selection
+  it changes nothing.** That is the convention everywhere, and it is what lets the
+  menu act on a whole selection.
+- **Items are disabled, not hidden.** A shape already at the front should show that
+  the option exists and does not apply. Hiding it would make the menu a different
+  height each time it opens, under a pointer that has not moved.
+
+**The keys are `[` and `]` for one step, and the platform accelerator with either
+for all the way.** They are what the drawing tools have used for decades, and every
+one of them is named in the menu, so pressing one is something learned by having
+used the menu once.
+
+`reorderShapes` in `src/lib/edit.js` is pure and unit tested. A whole selection
+moves as a block and keeps its own internal order, which is the part a naive
+implementation gets wrong in two distinct ways: walking the list in the wrong
+direction carries a shape to the front in a single press, and failing to check the
+neighbour lets one member of a selection leapfrog another. Both are covered, and
+both were confirmed by mutation.
+
+## D50: The frame block is a second way to write the same two properties, and that is the point
+
+**2026-09-10, reversing a decision made a day earlier.**
+
+A caption over a busy screenshot is often unreadable, and a frame around it or a
+plate behind it is the repair. Both were already possible: on a text shape,
+`colour` is the frame and `fill` is the plate (D46), so the Border colour and Fill
+wells have always written them with a caption selected.
+
+That shipped with **a line of copy in the text inspector saying so**, on the
+argument that a second control writing a property from a different place is
+duplication, and that one hint is cheaper than a second border colour control.
+
+**The argument was correct about the code and wrong about the reader.** Nobody
+reads a hint to learn that an unrelated control changes meaning while a particular
+kind of shape is selected. A frame nobody can find is a frame that does not exist,
+and the hint was standing in for a control rather than replacing one.
+
+The text inspector now carries a **Frame** block: a switch, a colour well, a
+thickness, and a switch for the plate. It writes `colour`, `width` and `fill` on the
+text shape, which is exactly what Border colour, Stroke style and Fill write, so the
+four controls cannot disagree: all of them read the selected shape.
+
+Two things stayed as they were. **The padding and the corner radius are still
+derived from the type size** and are still not controls, because a framed label has
+to look right at 12pt and at 96pt and a padding slider is a control almost nobody
+moves. And **off is still `null`**, not a separate flag, which is how a fill already
+works everywhere in this editor.
+
+One thing is new. **The frame keeps its own thickness**, `textFrameWidth`, separate
+from the stroke width that arrows and boxes share. A 4px rule is a good arrow and a
+heavy frame around 24pt type, and nobody setting a frame to 2 expects every arrow
+they draw next to become thin. The property on the shape is still `width`: only the
+value a *new* text shape starts with is kept apart.
+
+## D51: Rounded box and Stadium are tool presets, not new kinds of shape
+
+**2026-09-10, after user feedback.** The corner radius is a property of the Box
+rather than three separate tools. That is still true, and the reasoning still holds:
+at nineteen pixels a square corner and a small radius are the same icon, so three
+cells in the Shapes popover would have looked like one cell three times.
+
+But readers asked for the rounded rectangle and the stadium as shapes they could
+see, and they were right about the cost they were paying. Reaching a rounded box
+meant opening the Shapes popover for the Box and then the Stroke style popover for
+the corner, which is two popovers to draw one shape, and the second one is only
+discoverable by someone who already knows the property exists.
+
+**They are entries in the Shapes popover that pick the Box tool and set its corner
+in one click.** `TOOL_PRESETS` in `src/lib/edit.js` maps the tool name to a kind and
+a radius, and `kindOfTool()` is what everything downstream reads. So:
+
+- The drawn shape is still `kind: 'rect'`. No saved shape gained a new kind, no
+  migration exists, and every capture made before today still renders identically.
+- The corner row in the Stroke style popover still reads and writes them, so the
+  preset is a starting value and never a cage. Setting a Rounded box back to square
+  is one click, and it stays square.
+- The model has fourteen shape *tools* and twelve shape *kinds*, and the difference
+  is written down in one place rather than inferred.
+
+The alternative was two more kinds in `SHAPE_GEOMETRY` that render exactly like a
+rect. That would have put three indistinguishable rectangles in the model to save
+one line of mapping, and it is the kind of duplication that is invisible until
+something has to switch on kind.

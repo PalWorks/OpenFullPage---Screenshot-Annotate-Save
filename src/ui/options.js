@@ -42,7 +42,8 @@ const toolbarButtons = el('toolbarButtons');
 /** The names the options page shows for each shape, in the popover's own order. */
 const SHAPE_LABELS = {
   arrow: 'Arrow', line: 'Line', rect: 'Box', ellipse: 'Ellipse', callout: 'Callout',
-  loupe: 'Loupe', highlight: 'Highlighter', rhombus: 'Rhombus', hexagon: 'Hexagon',
+  loupe: 'Loupe', highlight: 'Highlighter', rounded: 'Rounded box', stadium: 'Stadium',
+  rhombus: 'Rhombus', hexagon: 'Hexagon',
   parallelogram: 'Parallelogram', triangle: 'Triangle', cylinder: 'Cylinder',
 };
 
@@ -51,7 +52,7 @@ const HIDDEN_BY_DEFAULT = [];
 
 const shapeButtons = document.getElementById('shapeButtons');
 
-/** The twelve shapes, grouped exactly as the popover groups them. */
+/** Every shape, grouped exactly as the popover groups them. */
 function buildShapeList() {
   for (const [title, kinds] of SHAPE_GROUPS) {
     const heading = document.createElement('p');

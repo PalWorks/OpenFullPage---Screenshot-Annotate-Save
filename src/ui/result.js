@@ -12,7 +12,7 @@
 
 import { applyFilename, captureBasename } from '../lib/plan.js';
 import { buildPdf, deflate, planPdfPages, rgbaToRgb } from '../lib/pdf.js';
-import { CORNERED_KINDS, SHAPE_TOOLS } from '../lib/edit.js';
+import { CORNERED_KINDS, SHAPE_TOOLS, kindOfTool } from '../lib/edit.js';
 import { createEditor } from './editor.js';
 import { defaultStyle, saveSettings } from '../lib/settings.js';
 import { THEME_STATE, cycleTheme, startTheme, themeLabel } from '../lib/theme.js';
@@ -58,19 +58,44 @@ const ui = {
   textBold: el('text-bold'),
   textItalic: el('text-italic'),
   textUnderline: el('text-underline'),
+  frameOn: el('frame-on'),
+  framePlate: el('frame-plate'),
+  frameWell: el('frame-well'),
+  frameWidth: el('frame-width'),
+  ctx: el('ctx'),
 };
 
 // Single-key tool shortcuts, which is how tool palettes are normally driven.
 //
-// Only the two new shapes with a real mnemonic get a key: d for diamond and g
-// for hexagon. The other five would need arbitrary letters, and inventing five
-// arbitrary letters now makes ROADMAP F27, a discoverable shortcut for every
-// tool, harder rather than easier.
+/**
+ * One key per tool, and every one of them is in its own tooltip.
+ *
+ * The rule is: a letter from the tool's own name, or from the name people
+ * actually use for it. `v` for select, `r` for a rectangle and `o` for an oval
+ * are the three exceptions, and they are exceptions because every other editor
+ * uses them and muscle memory beats a rule. The rest read as `d` for diamond,
+ * `b` for bubble, `z` for zoom, and then the first free letter inside the word:
+ * parallelogra**m**, tr**i**angle, c**y**linder, ro**u**nded.
+ *
+ * A tooltip that names the key is the whole point. A shortcut nobody can find
+ * is a shortcut for the person who wrote it.
+ */
 const TOOL_KEYS = {
-  v: 'select', a: 'arrow', l: 'line', r: 'rect', o: 'ellipse',
-  h: 'highlight', p: 'pixelate', t: 'text', n: 'counter', c: 'crop',
-  d: 'rhombus', g: 'hexagon',
+  v: 'select', a: 'arrow', l: 'line', r: 'rect', u: 'rounded', s: 'stadium',
+  o: 'ellipse', b: 'callout', z: 'loupe', h: 'highlight', p: 'pixelate',
+  t: 'text', n: 'counter', c: 'crop',
+  d: 'rhombus', g: 'hexagon', m: 'parallelogram', i: 'triangle', y: 'cylinder',
 };
+
+/**
+ * The paint order, on the keys the drawing tools have used for decades.
+ *
+ * Square brackets alone move one step, and with the platform accelerator they
+ * go all the way. The menu names them, so pressing one is a thing you learn by
+ * having used the menu once rather than by reading a manual.
+ */
+const ORDER_KEYS = { '[': 'backward', ']': 'forward' };
+const ORDER_ENDS = { '[': 'back', ']': 'front' };
 
 /** Arrow keys move the selection. Ten times as far with Shift. */
 const NUDGES = {
@@ -219,6 +244,11 @@ async function drawTile({ dataUrl, x, y }) {
 async function finish() {
   if (!ctx) throw new Error('Nothing was captured.');
 
+  // What the two frame switches put back when they are turned on. The frame
+  // falls back to the stroke colour rather than to a colour nobody chose.
+  lastFrameColour = settings.textFrameColour ?? settings.colour ?? lastFrameColour;
+  lastPlateColour = settings.textFramePlate ?? lastPlateColour;
+
   editor = createEditor({
     base,
     canvas: ui.canvas,
@@ -233,6 +263,10 @@ async function finish() {
       // is deliberately null for a set, so reading it here would disable Delete
       // exactly when several things are selected.
       ui.delete.disabled = state.selectedCount === 0;
+      // The canvas menu is open while the reader looks at it, so its items have
+      // to answer to the document underneath rather than to whatever was true
+      // when it was opened.
+      showMenuState(state);
       ui.dimensions.textContent = `${state.crop.w} × ${state.crop.h} pixels`;
       markPressed('[data-tool]', (b) => b.dataset.tool === state.tool);
       showStyle(state.style, state.tool);
@@ -445,7 +479,13 @@ function selectTool(name) {
   // Picking Arrow or Line is also a statement about the arrowheads, and the
   // editor reconciles the two. Persist what it settled on rather than what was
   // asked for, or the next capture opens on the pair that disagreed.
-  saveSettings({ tool: editor.state.tool, lineEnds: editor.state.ends });
+  saveSettings({
+    tool: editor.state.tool,
+    lineEnds: editor.state.ends,
+    // Rounded and Stadium settle the corner radius the same way Arrow and Line
+    // settle the arrowheads, so the next capture opens on the pair that agreed.
+    corner: editor.state.corner,
+  });
 }
 
 /** Every tool is inert until there is an image to use it on. */
@@ -596,7 +636,7 @@ function swatchButton(colour, kind) {
  * one click away through the picker and the hex field.
  */
 function buildPalettes() {
-  for (const kind of ['border', 'fill', 'text']) {
+  for (const kind of ['border', 'fill', 'text', 'frame']) {
     const quick = ui.toolbar.querySelector(`[data-quick="${kind}"]`);
     const grid = ui.toolbar.querySelector(`[data-grid="${kind}"]`);
     if (!quick || quick.childElementCount > 0) continue;
@@ -630,7 +670,7 @@ const normaliseHex = (raw) => {
  * Exact field under the pointer.
  */
 function showCorner(radius, tool, selectedKind) {
-  const applies = CORNERED_KINDS.includes(tool)
+  const applies = CORNERED_KINDS.includes(kindOfTool(tool))
     || CORNERED_KINDS.includes(selectedKind ?? '');
   for (const button of ui.toolbar.querySelectorAll('[data-corner]')) {
     button.disabled = !applies;
@@ -685,6 +725,19 @@ function showStyle(style, tool) {
   markPressed('[data-paint="text"]', (b) => b.dataset.colour === style.text.ink);
   ui.textWell.style.background = style.text.ink;
   setHex('text', style.text.ink);
+
+  // The frame and the plate. Off is null, which is a value rather than an
+  // absence, so the well keeps showing the colour the switch would put back.
+  const frame = style.text.colour ?? null;
+  const plate = style.text.fill ?? null;
+  if (frame) lastFrameColour = frame;
+  if (plate) lastPlateColour = plate;
+  ui.frameOn.setAttribute('aria-checked', String(Boolean(frame)));
+  ui.framePlate.setAttribute('aria-checked', String(Boolean(plate)));
+  ui.frameWell.style.background = frame ?? lastFrameColour;
+  markPressed('[data-paint="frame"]', (b) => b.dataset.colour === frame);
+  setHex('frame', frame ?? lastFrameColour);
+  ui.frameWidth.value = String(style.text.width ?? 2);
 }
 
 function setHex(kind, colour) {
@@ -698,6 +751,12 @@ function setHex(kind, colour) {
 // active, so the button never goes blank when you pick Crop.
 let lastShape = 'arrow';
 let glyphShape = null;
+
+// A switch that turns a colour off has to remember which colour, or turning it
+// back on is a second decision the reader never asked to make. Seeded from the
+// remembered style, and updated whenever either is set from anywhere.
+let lastFrameColour = '#ef4444';
+let lastPlateColour = '#ffffff';
 
 // POPOVERS
 
@@ -830,6 +889,13 @@ function applyPaint(kind, colour) {
   if (kind === 'border') {
     editor?.setColour(colour);
     saveSettings({ colour });
+  } else if (kind === 'frame') {
+    // The frame is the text shape's own stroke, which is the same property the
+    // Border well writes with a caption selected. Picking a colour here is also
+    // how the frame is switched on, exactly as it is for a fill.
+    lastFrameColour = colour;
+    editor?.setTextStyle({ colour });
+    saveSettings({ textFrameColour: colour });
   } else if (kind === 'text') {
     // `ink` is the glyphs. `colour` on a text shape is the frame around them,
     // which the Border palette writes, so the two controls no longer fight over
@@ -861,7 +927,7 @@ ui.fillOpacity.addEventListener('input', () => {
   saveSettings({ fillOpacity: percent / 100 });
 });
 
-for (const kind of ['border', 'fill', 'text']) {
+for (const kind of ['border', 'fill', 'text', 'frame']) {
   // The native colour input is the operating system's own picker, which is where
   // a "more colours" control normally leads. It brings an eyedropper and keyboard
   // support that a hand-drawn spectrum would have to reimplement badly.
@@ -914,6 +980,119 @@ for (const [button, key] of [
     const next = button.getAttribute('aria-pressed') !== 'true';
     editor?.setTextStyle({ [key]: next });
     saveSettings({ [`text${key[0].toUpperCase()}${key.slice(1)}`]: next });
+  });
+}
+
+// THE CANVAS MENU
+//
+// The paint order has existed since the first shape was drawn and there has
+// never been a way to change it: a box drawn over a highlighter covered it for
+// good, and the only repair was to delete both and draw them again. A right
+// click is where people look for this, and four more toolbar buttons for
+// something reached once in twenty captures is the wrong trade.
+
+/** Grey out what cannot happen, rather than hiding it and resizing the menu. */
+function showMenuState(state) {
+  for (const item of ui.ctx.querySelectorAll('[data-order]')) {
+    const up = item.dataset.order === 'front' || item.dataset.order === 'forward';
+    item.disabled = up ? !state.canRaise : !state.canLower;
+  }
+  ui.ctx.querySelector('[data-ctx="delete"]').disabled = state.selectedCount === 0;
+}
+
+function closeCanvasMenu() {
+  ui.ctx.hidden = true;
+}
+
+/**
+ * Put the menu at the pointer, and keep it on screen.
+ *
+ * Measured after it is shown, because a hidden element has no size. A menu that
+ * opens near the bottom right corner would otherwise hang off the window and
+ * give the page scrollbars, which is the same problem `keepInView` solves for
+ * the toolbar popovers and is solved the same way.
+ */
+function openCanvasMenu(x, y) {
+  ui.ctx.hidden = false;
+  showMenuState(editor.state);
+  const gap = 8;
+  const room = {
+    w: document.documentElement.clientWidth,
+    h: document.documentElement.clientHeight,
+  };
+  const box = ui.ctx.getBoundingClientRect();
+  ui.ctx.style.left = `${Math.max(gap, Math.min(x, room.w - box.width - gap))}px`;
+  ui.ctx.style.top = `${Math.max(gap, Math.min(y, room.h - box.height - gap))}px`;
+}
+
+ui.canvas.addEventListener('contextmenu', (event) => {
+  // Empty canvas keeps Chrome's own menu, which offers "Save image as" on a
+  // canvas. Replacing that with a menu where every item is greyed out would be
+  // a straight loss.
+  if (!editor?.menuTarget(event)) {
+    closeCanvasMenu();
+    return;
+  }
+  event.preventDefault();
+  openCanvasMenu(event.clientX, event.clientY);
+});
+
+ui.ctx.addEventListener('click', (event) => {
+  const item = event.target.closest('[data-order], [data-ctx]');
+  if (!item || item.disabled) return;
+  closeCanvasMenu();
+  if (item.dataset.order) editor?.reorder(item.dataset.order);
+  else if (item.dataset.ctx === 'delete') editor?.deleteSelection();
+});
+
+// Anywhere else dismisses it, including a left click on the canvas, which is
+// how every menu of this kind behaves.
+document.addEventListener('pointerdown', (event) => {
+  if (!ui.ctx.hidden && !ui.ctx.contains(event.target)) closeCanvasMenu();
+});
+
+// THE FRAME AROUND A LABEL, AND THE PLATE BEHIND IT
+//
+// Both are properties of the text shape itself: the frame is its stroke and the
+// plate is its fill. That is why these and the Border and Fill wells never
+// disagree about a selected caption. They all read and write the one shape.
+
+ui.frameOn.addEventListener('click', () => {
+  const on = ui.frameOn.getAttribute('aria-checked') !== 'true';
+  const colour = on ? lastFrameColour : null;
+  editor?.setTextStyle({ colour });
+  saveSettings({ textFrameColour: colour });
+});
+
+ui.framePlate.addEventListener('click', () => {
+  const on = ui.framePlate.getAttribute('aria-checked') !== 'true';
+  if (!on) {
+    editor?.setTextStyle({ fill: null });
+    saveSettings({ textFramePlate: null });
+    return;
+  }
+  // A plate exists to make words readable over a busy screenshot, so it starts
+  // opaque. The 35% that a fill starts at is tuned for shading a box, and a
+  // plate at 35% is a wash rather than a plate. This is a starting value on a
+  // shape that had no fill at all, not an override of a choice already made:
+  // the opacity slider in the Fill popover still owns it from here.
+  editor?.setTextStyle({ fill: lastPlateColour, fillOpacity: 1 });
+  saveSettings({ textFramePlate: lastPlateColour });
+});
+
+function setFrameWidth(px) {
+  const next = Math.min(64, Math.max(1, Math.round(px) || 1));
+  ui.frameWidth.value = String(next);
+  editor?.setTextStyle({ width: next });
+  saveSettings({ textFrameWidth: next });
+}
+
+ui.frameWidth.addEventListener('change', () => setFrameWidth(Number(ui.frameWidth.value)));
+ui.frameWidth.addEventListener('keydown', (event) => event.stopPropagation());
+
+for (const button of ui.toolbar.querySelectorAll('[data-frame-step]')) {
+  button.addEventListener('click', () => {
+    setFrameWidth(Number(ui.frameWidth.value) + Number(button.dataset.frameStep));
   });
 }
 
@@ -1025,6 +1204,11 @@ document.addEventListener('keydown', (event) => {
       // propagation itself, and the guard above returns for any field.
       event.preventDefault();
       editor.selectAll();
+    } else if (ORDER_ENDS[event.key]) {
+      // All the way to one end. `event.key`, not the lowercased copy: these are
+      // punctuation and lowercasing a bracket does nothing but hide the intent.
+      event.preventDefault();
+      editor.reorder(ORDER_ENDS[event.key]);
     }
     return;
   }
@@ -1047,6 +1231,7 @@ document.addEventListener('keydown', (event) => {
   if (key === 'escape') {
     openMenu(false);
     closePopovers(null);
+    closeCanvasMenu();
     // A drag in progress is the most recent thing Escape could mean, so it
     // answers that first. Only when there is nothing to abandon does it fall
     // through to dropping the selection.
@@ -1059,6 +1244,12 @@ document.addEventListener('keydown', (event) => {
     const [dx, dy] = NUDGES[event.key];
     const step = event.shiftKey ? 10 : 1;
     if (editor.nudge(dx * step, dy * step)) event.preventDefault();
+  } else if (ORDER_KEYS[event.key]) {
+    // One step through the paint order. Tested before the tool keys because a
+    // bracket is not a letter and could never be one of them, and read here so
+    // the pair with the accelerator above stays in one place.
+    event.preventDefault();
+    editor.reorder(ORDER_KEYS[event.key]);
   } else if (TOOL_KEYS[key]) {
     event.preventDefault();
     selectTool(TOOL_KEYS[key]);

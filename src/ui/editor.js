@@ -35,6 +35,8 @@ import {
   FILLABLE_TOOLS,
   POINT_TOOLS,
   cornerOf,
+  kindOfTool,
+  TOOL_PRESETS,
   DEFAULT_FILL_OPACITY,
   MAX_STROKE,
   MAX_TEXT_SIZE,
@@ -77,6 +79,8 @@ import {
   normalizeRect,
   redo,
   removeShape,
+  reorderShapes,
+  wouldReorder,
   replaceShape,
   reset,
   resizeCrop,
@@ -121,10 +125,14 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
     // anyone who never opens the control.
     ink: initial.textColour ?? initial.colour ?? '#ef4444',
     // The frame around the words, and the plate behind them. Both off by
-    // default, and both turned on by picking a colour rather than by a switch,
-    // which is how a fill already works everywhere else in this editor.
-    colour: null,
-    fill: null,
+    // default. The Frame block in the text inspector is where they are set, and
+    // Border colour and Fill reach the same two properties on a selected label.
+    colour: initial.textFrameColour ?? null,
+    fill: initial.textFramePlate ?? null,
+    // The frame's own thickness, kept apart from the stroke width that arrows
+    // and boxes share. A 4px rule reads as heavy around 24pt type, and nobody
+    // wants setting a frame to 2 to thin every arrow they draw next.
+    width: initial.textFrameWidth ?? 2,
   };
 
   let drag = null;
@@ -177,6 +185,8 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
       edited: isEdited(doc),
       selected: selectedShape(doc),
       selectedCount: selectedIds(doc).length,
+      canRaise: wouldReorder(doc.present, selectedIds(doc), 'forward'),
+      canLower: wouldReorder(doc.present, selectedIds(doc), 'backward'),
       pendingCrop: pendingCrop ? { ...pendingCrop } : null,
       tool,
       style: currentStyle(),
@@ -800,7 +810,13 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
     }
     if (BOX_TOOLS.includes(tool)) {
       const shape = {
-        id: newId(), kind: tool, rect: clampRect(normalizeRect(from, end), crop), colour, width,
+        id: newId(),
+        // Rounded and Stadium are the Box with its corner already chosen, so
+        // what gets drawn is a `rect`. Nothing downstream has to learn a kind.
+        kind: kindOfTool(tool),
+        rect: clampRect(normalizeRect(from, end), crop),
+        colour,
+        width,
       };
       // Only the outlined boxes take a fill. A highlighter is already a fill, a
       // redaction has to stay opaque to be a redaction, and a loupe shows what
@@ -812,10 +828,10 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
           shape.fillOpacity = fillOpacity;
         }
       }
-      if (CORNERED_KINDS.includes(tool) && corner > 0) shape.corner = corner;
+      if (CORNERED_KINDS.includes(kindOfTool(tool)) && corner > 0) shape.corner = corner;
       return shape;
     }
-    return { id: newId(), kind: tool, from, to: end, colour, width, dash, ends };
+    return { id: newId(), kind: kindOfTool(tool), from, to: end, colour, width, dash, ends };
   }
 
   function applyTool(next) {
@@ -851,6 +867,13 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
   function chooseTool(next) {
     if (next === 'arrow' && ends === 'none') ends = 'end';
     else if (next === 'line') ends = 'none';
+    // Picking Rounded or Stadium is a statement about the corner radius, in the
+    // same way that picking Line is a statement about the arrowheads. It is set
+    // here rather than at draw time so the corner row in the Stroke popover
+    // agrees with the tool the moment the tool is picked, and so that changing
+    // it afterwards is still the reader's last word.
+    const preset = TOOL_PRESETS[next];
+    if (preset) corner = preset.corner;
     applyTool(next);
   }
 
@@ -1300,6 +1323,7 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
         colour: existing.colour ?? null,
         fill: existing.fill ?? null,
         fillOpacity: existing.fillOpacity,
+        width: existing.width ?? text.width,
       }
       : { ...text };
     const size = style.size;
@@ -1379,7 +1403,8 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
         colour: style.colour,
         fill: style.fill,
         fillOpacity: style.fillOpacity ?? fillOpacity,
-        width,
+        // The frame's thickness, not the stroke width arrows and boxes share.
+        width: style.width ?? width,
         family: style.family,
         bold: style.bold,
         italic: style.italic,
@@ -1509,6 +1534,12 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
           underline: chosen.underline === true,
           align: alignOf(chosen),
           ink: inkOf(chosen),
+          // The frame and the plate, read off the shape rather than off the
+          // pending style, for the same reason every other swatch does it: the
+          // control that shows a value is also the control that sets it.
+          colour: strokeOf(chosen),
+          fill: fillOf(chosen),
+          width: chosen.width ?? text.width,
         }
         : { ...text },
     };
@@ -1620,6 +1651,55 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
         render();
       }
       notify();
+    },
+    /**
+     * Move the selection through the paint order.
+     *
+     * One undo step, however many shapes moved, because history is whole
+     * document snapshots. Returns false when nothing could move, which is what
+     * keeps a menu item that is already at the front from writing an undo step
+     * that undoes nothing.
+     *
+     * @param {'front'|'back'|'forward'|'backward'} where
+     */
+    reorder(where) {
+      const ids = selectedIds(doc);
+      if (ids.length === 0) return false;
+      if (!wouldReorder(doc.present, ids, where)) return false;
+      doc = commit(doc, reorderShapes(doc.present, ids, where));
+      render();
+      notify();
+      return true;
+    },
+    /**
+     * What a right click is aimed at.
+     *
+     * A right click on a shape that is not selected selects it, which is what
+     * every editor does: the menu that follows has to act on what the pointer
+     * is over, not on whatever happened to be selected before. A right click on
+     * a shape that is already part of a selection leaves the whole selection
+     * alone, so a menu can act on all of it.
+     *
+     * A click on empty canvas is not a target at all, and the caller lets the
+     * browser's own menu through there. Chrome offers "Save image as" on a
+     * canvas, and taking that away to show a menu with everything disabled
+     * would be a straight loss.
+     *
+     * @returns {boolean} whether there is now something for a menu to act on
+     */
+    menuTarget(event) {
+      if (editing || pendingCrop) return false;
+      const hit = shapeAt(doc.present.shapes, toImage(event), pickTolerance());
+      if (!hit) return false;
+      if (!isSelected(doc, hit.id)) {
+        // The selection tool owns the handles, so a menu that offers to move a
+        // shape has to leave the reader able to grab it afterwards.
+        chooseTool('select');
+        doc = amend(doc, { ...doc.present, selection: [hit.id] });
+        render();
+        notify();
+      }
+      return true;
     },
     deleteSelection() {
       const ids = selectedIds(doc);
@@ -1739,7 +1819,14 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
     get state() {
       // `selectedKind` so the toolbar can disable a control that means nothing
       // for what is selected, without reaching into the document itself.
-      return { tool, edited: isEdited(doc), ...currentStyle() };
+      return {
+        tool,
+        edited: isEdited(doc),
+        selectedCount: selectedIds(doc).length,
+        canRaise: wouldReorder(doc.present, selectedIds(doc), 'forward'),
+        canLower: wouldReorder(doc.present, selectedIds(doc), 'backward'),
+        ...currentStyle(),
+      };
     },
     /**
      * Re-seed the pending style wholesale.
@@ -1765,8 +1852,9 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
         underline: next.textUnderline === true,
         align: next.textAlign ?? text.align,
         ink: next.textColour ?? text.ink,
-        colour: text.colour,
-        fill: text.fill,
+        colour: next.textFrameColour ?? null,
+        fill: next.textFramePlate ?? null,
+        width: clamp(Math.round(next.textFrameWidth ?? text.width), MIN_STROKE, MAX_STROKE),
       };
       render();
     },

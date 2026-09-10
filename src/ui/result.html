@@ -205,6 +205,47 @@
   #toolbar .menu button[aria-pressed="true"] { background: var(--indigo); color: #fff; }
   #toolbar .menu button[aria-pressed="true"] span { color: rgb(255 255 255 / 0.75); }
 
+  /* The canvas menu. Shaped like the download menu on purpose: a reader who has
+     opened one has already learned this one. */
+  .ctx {
+    position: fixed;
+    z-index: 40;
+    min-width: 196px;
+    padding: 5px;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: var(--surface);
+    box-shadow: 0 10px 28px rgb(0 0 0 / 0.16);
+  }
+  .ctx[hidden] { display: none; }
+  .ctx hr { height: 1px; margin: 4px 2px; border: 0; background: var(--line); }
+  .ctx .ctx-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    width: 100%;
+    padding: 7px 10px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: var(--ink);
+    font: 600 13px/1.2 inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .ctx .ctx-item:hover:not(:disabled) { background: var(--line); }
+  /* Disabled rather than hidden: a shape already at the front should show that
+     the option exists and does not apply, not make the menu a different height
+     every time it opens. */
+  .ctx .ctx-item:disabled { color: var(--muted); cursor: default; }
+  .ctx kbd {
+    font: 500 11px/1 ui-monospace, monospace;
+    color: var(--muted);
+    letter-spacing: 0.02em;
+  }
+  .ctx .ctx-item:disabled kbd { opacity: 0.55; }
+
   .grow { flex: 1 1 12px; }
 
   #filebar {
@@ -343,7 +384,7 @@
      which beats all of them whatever order they end up in. */
   #toolbar .pop[hidden] { display: none; }
   /* THE SHAPES POPOVER
-     Twelve shapes will not sit in one row: that is 442px, wider than the group
+     Fourteen shapes will not sit in one row: that is 516px, wider than the group
      the popover hangs off and twice any other popover here. Five tracks at the
      same 216px the two colour popovers use, which makes each cell 35.2 by 28,
      nineteen percent WIDER than the 30 by 28 of a toolbar button rather than
@@ -579,6 +620,30 @@
     line-height: 1;
   }
   #toolbar .stepper .arrows button + button { border-top: 1px solid var(--line); }
+  /* The frame block. Two switches, a colour well and a thickness, in the panel
+     that owns the words they go around. */
+  .framer { display: flex; flex-direction: column; gap: 5px; }
+  .framer .pop-title.sub { margin-top: 2px; }
+  .pop.text .r3 { display: flex; align-items: stretch; gap: 6px; }
+  #toolbar .framer button.sw-toggle {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+    height: 28px;
+    padding: 0 8px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: none;
+    color: var(--ink);
+    font: 600 12px/1 inherit;
+    white-space: nowrap;
+  }
+  #toolbar .framer button.sw-toggle.wide { flex: none; width: 100%; }
+  #toolbar .framer button.sw-toggle[aria-checked="true"] {
+    background: color-mix(in srgb, var(--indigo) 16%, transparent);
+    border-color: var(--indigo);
+    color: var(--indigo);
+  }
   .bir { display: flex; flex: 1 1 auto; gap: 4px; }
   #toolbar .bir button { flex: 1; width: auto; min-width: 0; padding: 4px 0; font-size: 13px; }
   #toolbar .bir button.b { font-weight: 700; }
@@ -719,9 +784,11 @@
         <p class="pop-title sub" id="pop-shapes-boxes">Boxes</p>
         <div class="grid" role="group" aria-labelledby="pop-shapes-boxes">
         <button class="icon" type="button" data-tool="rect" data-shape="rect" aria-pressed="false" aria-label="Box" title="Box (R)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect id="box-glyph" x="3.5" y="5" width="13" height="10" rx="0"/></svg></button>
+        <button class="icon" type="button" data-tool="rounded" data-shape="rounded" aria-pressed="false" aria-label="Rounded box" title="Rounded box (U)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect x="3.5" y="5" width="13" height="10" rx="3"/></svg></button>
+        <button class="icon" type="button" data-tool="stadium" data-shape="stadium" aria-pressed="false" aria-label="Stadium" title="Stadium (S)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect x="3.5" y="5" width="13" height="10" rx="5"/></svg></button>
         <button class="icon" type="button" data-tool="ellipse" data-shape="ellipse" aria-pressed="false" aria-label="Ellipse" title="Ellipse (O)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><ellipse cx="10" cy="10" rx="6.6" ry="5.4"/></svg></button>
-        <button class="icon" type="button" data-tool="callout" data-shape="callout" aria-pressed="false" aria-label="Callout" title="Callout"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M4.4 3.8h11.2a1.8 1.8 0 0 1 1.8 1.8v6.2a1.8 1.8 0 0 1-1.8 1.8H9.4l-3.6 3.4v-3.4H4.4a1.8 1.8 0 0 1-1.8-1.8V5.6a1.8 1.8 0 0 1 1.8-1.8Z"/></svg></button>
-        <button class="icon" type="button" data-tool="loupe" data-shape="loupe" aria-pressed="false" aria-label="Loupe" title="Loupe"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="8.7" cy="8.7" r="5.3"/><path d="M12.6 12.6 17.3 17.3"/></svg></button>
+        <button class="icon" type="button" data-tool="callout" data-shape="callout" aria-pressed="false" aria-label="Callout" title="Callout (B)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M4.4 3.8h11.2a1.8 1.8 0 0 1 1.8 1.8v6.2a1.8 1.8 0 0 1-1.8 1.8H9.4l-3.6 3.4v-3.4H4.4a1.8 1.8 0 0 1-1.8-1.8V5.6a1.8 1.8 0 0 1 1.8-1.8Z"/></svg></button>
+        <button class="icon" type="button" data-tool="loupe" data-shape="loupe" aria-pressed="false" aria-label="Loupe" title="Loupe (Z)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="8.7" cy="8.7" r="5.3"/><path d="M12.6 12.6 17.3 17.3"/></svg></button>
         <button class="icon" type="button" data-tool="highlight" data-shape="highlight" aria-pressed="false" aria-label="Highlighter" title="Highlighter (H)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M11.8 3.4 16.6 8.2l-6.2 6.2H5.6V9.6z"/><path d="M3.5 17.5h13"/></svg></button>
         </div>
       </div>
@@ -730,9 +797,9 @@
         <div class="grid" role="group" aria-labelledby="pop-shapes-flowchart">
         <button class="icon" type="button" data-tool="rhombus" data-shape="rhombus" aria-pressed="false" aria-label="Rhombus" title="Rhombus (D)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M10 3.6 16.4 10 10 16.4 3.6 10Z"/></svg></button>
         <button class="icon" type="button" data-tool="hexagon" data-shape="hexagon" aria-pressed="false" aria-label="Hexagon" title="Hexagon (G)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M6.5 4.7h7L17 10l-3.5 5.3h-7L3 10Z"/></svg></button>
-        <button class="icon" type="button" data-tool="parallelogram" data-shape="parallelogram" aria-pressed="false" aria-label="Parallelogram" title="Parallelogram"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M6.9 5h10.2l-4 10H2.9Z"/></svg></button>
-        <button class="icon" type="button" data-tool="triangle" data-shape="triangle" aria-pressed="false" aria-label="Triangle" title="Triangle"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M10 4 17 16H3Z"/></svg></button>
-        <button class="icon" type="button" data-tool="cylinder" data-shape="cylinder" aria-pressed="false" aria-label="Cylinder" title="Cylinder"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><ellipse cx="10" cy="6.1" rx="5" ry="1.9"/><path d="M5 6.1v7.8c0 1.05 2.24 1.9 5 1.9s5-.85 5-1.9V6.1"/></svg></button>
+        <button class="icon" type="button" data-tool="parallelogram" data-shape="parallelogram" aria-pressed="false" aria-label="Parallelogram" title="Parallelogram (M)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M6.9 5h10.2l-4 10H2.9Z"/></svg></button>
+        <button class="icon" type="button" data-tool="triangle" data-shape="triangle" aria-pressed="false" aria-label="Triangle" title="Triangle (I)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M10 4 17 16H3Z"/></svg></button>
+        <button class="icon" type="button" data-tool="cylinder" data-shape="cylinder" aria-pressed="false" aria-label="Cylinder" title="Cylinder (Y)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><ellipse cx="10" cy="6.1" rx="5" ry="1.9"/><path d="M5 6.1v7.8c0 1.05 2.24 1.9 5 1.9s5-.85 5-1.9V6.1"/></svg></button>
         </div>
       </div>
     </div>
@@ -796,11 +863,57 @@
         <button class="opt" type="button" data-align="justify" aria-pressed="false" aria-label="Justify" title="Justify"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M3 5h14"/><path d="M3 9h14"/><path d="M3 13h14"/><path d="M3 17h7"/></svg></button>
       </div>
       <p class="hint">Enter starts a new line. Escape, or clicking away, finishes the text.</p>
-      <!-- The frame is made of controls that already exist, so nothing in this
-           panel sets it and there is no way to discover it by looking. One line
-           of copy is cheaper than a second border colour control that writes the
-           same property from a different place. -->
-      <p class="hint">With text selected, Border colour draws a frame around it and Fill puts a plate behind it.</p>
+      <!-- THE FRAME BLOCK
+           A label over a busy screenshot is often unreadable, and a frame or a
+           plate behind it is the repair. Both were already possible: the frame
+           is the text shape's stroke and the plate is its fill, so Border colour
+           and Fill have always written them with a caption selected.
+
+           This shipped as one line of copy saying so, on the argument that a
+           second control writing the same property from a different place is
+           duplication. That argument was wrong about who it was for. Nobody
+           reads a hint to learn that an unrelated control changes meaning while
+           a caption is selected, and a frame you cannot find is a frame that
+           does not exist. These write the same two properties, which is why
+           they and the Border and Fill wells never disagree: all four read the
+           selected shape.
+
+           The padding and the corner radius stay derived from the type size
+           (D-text): a framed label has to look right at 12pt and at 96pt, and a
+           padding slider is a control almost nobody moves. -->
+      <div class="framer" role="group" aria-labelledby="pop-frame-title">
+        <p class="pop-title sub" id="pop-frame-title">Frame</p>
+        <div class="r3">
+          <button class="sw-toggle" type="button" id="frame-on" role="switch" aria-checked="false"
+                  title="Draw a frame around the words">Frame</button>
+          <span class="grp">
+            <button class="icon well" type="button" data-pop="pop-frame-colour"
+                    aria-haspopup="true" aria-expanded="false" aria-label="Frame colour" title="Frame colour">
+              <span class="wellswatch" id="frame-well"></span>
+              <svg class="caret" viewBox="0 0 8 8" aria-hidden="true" focusable="false"><path d="M1.4 2.9 4 5.5l2.6-2.6"/></svg>
+            </button>
+            <div class="pop paint" id="pop-frame-colour" role="group" aria-labelledby="pop-frame-colour-title" hidden>
+              <p class="pop-title" id="pop-frame-colour-title">Frame colour</p>
+              <div class="quickrow" data-quick="frame"></div>
+              <div class="custom">
+                <input type="color" id="frame-picker" value="#ef4444" aria-label="Custom frame colour" title="Custom colour">
+                <input type="text" id="frame-hex" value="#EF4444" spellcheck="false" autocomplete="off"
+                       pattern="#?[0-9a-fA-F]{6}" aria-label="Frame colour as hex" placeholder="#RRGGBB">
+              </div>
+            </div>
+          </span>
+          <span class="stepper">
+            <input id="frame-width" type="number" min="1" max="64" step="1" value="2" aria-label="Frame thickness in pixels">
+            <span class="unit">px</span>
+            <span class="arrows">
+              <button type="button" data-frame-step="1" aria-label="Thicker">&#9650;</button>
+              <button type="button" data-frame-step="-1" aria-label="Thinner">&#9660;</button>
+            </span>
+          </span>
+        </div>
+        <button class="sw-toggle wide" type="button" id="frame-plate" role="switch" aria-checked="false"
+                title="Put a solid plate behind the words">Plate behind the words</button>
+      </div>
     </div>
   </span>
 
@@ -833,12 +946,15 @@
       <button class="opt" type="button" data-ends="end" aria-pressed="true" aria-label="Arrow at the end" title="Arrow at the end"><svg viewBox="0 0 104 18" aria-hidden="true" focusable="false"><path d="M6 9h92" stroke-width="2.4"/><path d="M87 3.5 98 9l-11 5.5" stroke-width="2.4"/></svg></button>
       <button class="opt" type="button" data-ends="both" aria-pressed="false" aria-label="Arrows at both ends" title="Arrows at both ends"><svg viewBox="0 0 104 18" aria-hidden="true" focusable="false"><path d="M6 9h92" stroke-width="2.4"/><path d="M17 3.5 6 9l11 5.5" stroke-width="2.4"/><path d="M87 3.5 98 9l-11 5.5" stroke-width="2.4"/></svg></button>
       <hr>
-      <!-- Corner radius. A property of the Box rather than two more tools:
-           rounded rectangle and stadium would have been two more cells in a
-           popover that is already twelve, and at nineteen pixels a square
-           corner and a small radius are the same picture. Disabled, not hidden,
-           when the current tool has no corners, so the popover does not change
-           height as the tool changes. -->
+      <!-- Corner radius, still a property of the Box rather than a third and
+           fourth kind of rectangle. Rounded box and Stadium in the Shapes
+           popover pick the Box tool and set this row, which is why a reader can
+           reach the shape without knowing the property exists and can still
+           override the radius here afterwards. The first draft argued that two
+           more cells were not worth it; the readers who asked for them were
+           right, and the cost was a preset rather than a new shape kind.
+           Disabled, not hidden, when the current tool has no corners, so the
+           popover does not change height as the tool changes. -->
       <button class="opt" type="button" data-corner="0" aria-pressed="true" aria-label="Square corners" title="Square corners"><svg viewBox="0 0 104 18" aria-hidden="true" focusable="false"><rect x="27" y="2.6" width="50" height="12.8" rx="0" stroke-width="2.4"/></svg></button>
       <button class="opt" type="button" data-corner="12" aria-pressed="false" aria-label="Rounded corners" title="Rounded corners"><svg viewBox="0 0 104 18" aria-hidden="true" focusable="false"><rect x="27" y="2.6" width="50" height="12.8" rx="4" stroke-width="2.4"/></svg></button>
       <button class="opt" type="button" data-corner="9999" aria-pressed="false" aria-label="Pill" title="Pill"><svg viewBox="0 0 104 18" aria-hidden="true" focusable="false"><rect x="27" y="2.6" width="50" height="12.8" rx="6.4" stroke-width="2.4"/></svg></button>
@@ -979,6 +1095,26 @@
   <button class="crop-act ok" type="button" id="crop-apply" aria-label="Crop to this area" title="Crop to this area (Enter)">
     <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="m4.6 10.4 3.8 3.8 7-8.4"/></svg>
   </button>
+</div>
+
+<!-- THE CANVAS MENU
+     The paint order has existed since the first shape was drawn and there has
+     never been a way to change it: a box drawn over a highlighter covered it
+     for good, and the only repair was to delete both and draw them again. This
+     is where it lives, because a right click is where people look for it and
+     because four more toolbar buttons for something used once in twenty
+     captures is the wrong trade.
+
+     Outside #toolbar on purpose. It is positioned at the pointer rather than
+     under a button, so it is not a .pop and must not inherit their positioning
+     or be swept up by closePopovers. -->
+<div class="ctx" id="ctx" role="menu" aria-label="Shape actions" hidden>
+  <button class="ctx-item" type="button" role="menuitem" data-order="front">Bring to front<kbd>Cmd ]</kbd></button>
+  <button class="ctx-item" type="button" role="menuitem" data-order="forward">Bring forward<kbd>]</kbd></button>
+  <button class="ctx-item" type="button" role="menuitem" data-order="backward">Send backward<kbd>[</kbd></button>
+  <button class="ctx-item" type="button" role="menuitem" data-order="back">Send to back<kbd>Cmd [</kbd></button>
+  <hr>
+  <button class="ctx-item" type="button" role="menuitem" data-ctx="delete">Delete<kbd>Backspace</kbd></button>
 </div>
 
 <script src="result.js" type="module"></script>

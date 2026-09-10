@@ -28,6 +28,8 @@ export const TOOLS = [
   'arrow',
   'line',
   'rect',
+  'rounded',
+  'stadium',
   'ellipse',
   'rhombus',
   'hexagon',
@@ -47,14 +49,32 @@ export const TOOLS = [
  * The shapes behind the Shapes chevron, in the order the popover lists them.
  *
  * Derived from one list rather than repeated in the markup and in result.js,
- * because two hand maintained lists of twelve shapes will drift. The groups are
+ * because two hand maintained lists of fourteen shapes will drift. The groups are
  * the headings the popover draws.
  */
 export const SHAPE_GROUPS = [
   ['Lines', ['arrow', 'line']],
-  ['Boxes', ['rect', 'ellipse', 'callout', 'loupe', 'highlight']],
+  ['Boxes', ['rect', 'rounded', 'stadium', 'ellipse', 'callout', 'loupe', 'highlight']],
   ['Flowchart', ['rhombus', 'hexagon', 'parallelogram', 'triangle', 'cylinder']],
 ];
+
+/**
+ * Shape tools that draw a kind that already exists with one property set.
+ *
+ * The corner radius is a property of the Box rather than three separate tools
+ * (D33), and after this it still is: both entries draw a `rect` and set its
+ * corner, so the corner row in the Stroke popover goes on reading and writing
+ * them and no saved shape gained a new kind. What changed is the way to one:
+ * reaching a rounded box meant opening two popovers, and readers asked for the
+ * shape they could see rather than the property they could not.
+ */
+export const TOOL_PRESETS = {
+  rounded: { kind: 'rect', corner: CORNERS.rounded },
+  stadium: { kind: 'rect', corner: CORNERS.pill },
+};
+
+/** What a tool actually draws. The same name, unless it is a preset. */
+export const kindOfTool = (tool) => TOOL_PRESETS[tool]?.kind ?? tool;
 
 export const SHAPE_TOOLS = SHAPE_GROUPS.flatMap(([, kinds]) => kinds);
 
@@ -66,13 +86,14 @@ export const SHAPE_TOOLS = SHAPE_GROUPS.flatMap(([, kinds]) => kinds);
  * would either do nothing or break the thing they exist for.
  */
 export const FILLABLE_TOOLS = [
-  'rect', 'ellipse', 'rhombus', 'hexagon', 'parallelogram', 'triangle', 'cylinder', 'callout',
+  'rect', 'rounded', 'stadium', 'ellipse', 'rhombus', 'hexagon',
+  'parallelogram', 'triangle', 'cylinder', 'callout',
 ];
 
 /** Tools whose shape is defined by a dragged box. */
 export const BOX_TOOLS = [
-  'rect', 'ellipse', 'rhombus', 'hexagon', 'parallelogram', 'triangle',
-  'cylinder', 'callout', 'loupe', 'highlight', 'pixelate',
+  'rect', 'rounded', 'stadium', 'ellipse', 'rhombus', 'hexagon', 'parallelogram',
+  'triangle', 'cylinder', 'callout', 'loupe', 'highlight', 'pixelate',
 ];
 /** Tools whose shape is defined by two endpoints. */
 export const LINE_TOOLS = ['arrow', 'line'];
@@ -800,6 +821,65 @@ export function moveShapes(present, ids, dx, dy) {
     shapes: present.shapes.map((s) => (moving.has(s.id) ? moveShape(s, dx, dy) : s)),
   };
 }
+
+/**
+ * The four ways to move a selection through the paint order.
+ *
+ * Shapes are drawn in array order, so the last one in the list is the one on
+ * top. There has never been a way to change that order, which meant a box drawn
+ * after a highlighter covered it for good and the only repair was to delete
+ * both and draw them again.
+ *
+ * A whole selection moves as a block and keeps its own internal order, which is
+ * the behaviour every drawing tool has: `front` and `back` lift the selection
+ * out and put it back at one end, and `forward` and `backward` walk the list
+ * from the end they are heading towards so a member never leapfrogs another
+ * member of the same selection.
+ *
+ * Returns the present unchanged when nothing can move, so a caller can compare
+ * and skip the undo step rather than asking a second question first.
+ *
+ * @param {object} present
+ * @param {string[]} ids
+ * @param {'front'|'back'|'forward'|'backward'} where
+ */
+export function reorderShapes(present, ids, where) {
+  const moving = new Set(ids);
+  const shapes = present.shapes;
+  // Nothing selected, or everything selected: in both cases the order the
+  // shapes are in relative to each other is the only order there is.
+  if (moving.size === 0 || moving.size >= shapes.length) return present;
+
+  if (where === 'front' || where === 'back') {
+    const picked = shapes.filter((s) => moving.has(s.id));
+    const rest = shapes.filter((s) => !moving.has(s.id));
+    return { ...present, shapes: where === 'front' ? [...rest, ...picked] : [...picked, ...rest] };
+  }
+
+  const next = [...shapes];
+  if (where === 'forward') {
+    // From the top down. Going the other way would move a shape up and then
+    // meet it again on the next step, carrying it to the front in one press.
+    for (let i = next.length - 2; i >= 0; i -= 1) {
+      if (!moving.has(next[i].id) || moving.has(next[i + 1].id)) continue;
+      [next[i], next[i + 1]] = [next[i + 1], next[i]];
+    }
+  } else if (where === 'backward') {
+    for (let i = 1; i < next.length; i += 1) {
+      if (!moving.has(next[i].id) || moving.has(next[i - 1].id)) continue;
+      [next[i], next[i - 1]] = [next[i - 1], next[i]];
+    }
+  } else {
+    return present;
+  }
+  return { ...present, shapes: next };
+}
+
+/** Did a reorder actually change anything? */
+export const wouldReorder = (present, ids, where) => {
+  const next = reorderShapes(present, ids, where);
+  return next.shapes.some((shape, i) => shape !== present.shapes[i]);
+};
 
 /** Counters number themselves in the order they were placed. */
 export function nextCounterNumber(shapes) {

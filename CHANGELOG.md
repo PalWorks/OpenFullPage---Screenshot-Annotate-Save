@@ -13,6 +13,63 @@ a clean checkout with `./tools/pack.sh`, not merely checkable against one downlo
 Everything below is on `main` and not yet packaged. It covers the toolbar rework
 and the capture reliability work of 2026-09-08 and 2026-09-09.
 
+### Added: the paint order, reachable at last
+Shapes are drawn in the order they were made, so the last one drawn is on top, and
+there has never been a way to change that. A box drawn over a highlighter covered it
+for good and the only repair was to delete both and draw them again.
+
+**Right click a shape** for Bring to front, Bring forward, Send backward, Send to
+back and Delete. `[` and `]` move one step, and the platform accelerator with either
+goes all the way; the menu names every key, so they are learned by having used it
+once. A whole selection moves as a block and keeps its own internal order, and the
+lot is one undo step.
+
+Right clicking empty canvas still gets Chrome's own menu. Taking away "Save image
+as" to show a menu with every item greyed out would be a straight loss. Items that
+cannot apply are disabled rather than hidden, so the menu is the same height every
+time it opens. See [docs/DECISIONS.md](docs/DECISIONS.md) D49.
+
+`reorderShapes` is pure and has nine unit tests. Two mutations were used to confirm
+they can fail: walking the list in the wrong direction, which carries a shape to the
+front in one press, and dropping the neighbour check, which lets one member of a
+selection leapfrog another. Both were caught.
+
+### Added: every tool now has a key, and every tooltip names it
+Twelve tools had a shortcut and five shapes had none, because the five would have
+needed arbitrary letters. They have letters now, taken from their own names or from
+the name people actually use: `b` for the callout's bubble, `z` for the loupe's
+zoom, then parallelogra**m**, tr**i**angle, c**y**linder, ro**u**nded and
+**s**tadium. Select, Box and Ellipse keep `v`, `r` and `o`, which are what every
+other editor uses and where muscle memory beats a rule.
+
+### Added: Rounded box and Stadium are shapes you can see
+The corner radius is still a property of the Box and not three separate tools. What
+changed is that reaching a rounded box took two popovers, and the second one is only
+discoverable if you already know the property is there.
+
+Both are now entries in the Shapes popover that pick the Box and set its corner in
+one click. The drawn shape is still a `rect`: nothing in the model gained a kind,
+nothing needs migrating, and the corner row still reads and writes them, so the
+preset is a starting value rather than a cage. Fourteen entries, twelve kinds.
+[docs/DECISIONS.md](docs/DECISIONS.md) D51.
+
+### Changed: the text frame is a control now, not a line of copy
+A caption over a busy screenshot is often unreadable, and a frame around it or a
+plate behind it is the repair. Both were already possible, because on a text shape
+`colour` is the frame and `fill` is the plate, so Border colour and Fill have always
+written them. That shipped as **one line of copy in the text inspector saying so.**
+
+Nobody reads a hint to learn that an unrelated control changes meaning while a
+particular kind of shape is selected. The text inspector now carries a **Frame**
+block: a switch, a colour well, a thickness, and a switch for the plate. It writes
+the same two properties, which is why it and the Border and Fill wells can never
+disagree: all of them read the selected shape.
+
+The frame keeps its own thickness, `textFrameWidth`, apart from the stroke width
+arrows and boxes share, because a 4px rule is a good arrow and a heavy frame around
+24pt type. The padding and corner radius are still derived from the type size and
+are still not controls. [docs/DECISIONS.md](docs/DECISIONS.md) D50.
+
 ### Added: the progress popup opening is now a test, not a promise
 The animated panel under the toolbar button had no check that it ever appears.
 `--progress` opened `progress.html` as an ordinary tab, which proves the panel, its

@@ -130,6 +130,7 @@ test('every key sanitise knows about is one DEFAULTS declares', () => {
     dash: 'dashed', lineEnds: 'none', corner: 12, fill: '#abcdef', fillOpacity: 0.5,
     textSize: 40, textFamily: 'serif', textBold: false, textItalic: true,
     textUnderline: true, textAlign: 'justify', textColour: '#00ff88',
+    textFrameColour: '#00aa11', textFramePlate: '#ffffff', textFrameWidth: 3,
     hiddenButtons: ['crop'], hiddenShapes: ['cylinder'],
   };
   const clean = sanitise(sample);

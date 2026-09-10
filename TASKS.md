@@ -52,9 +52,12 @@ implements them twice. Every one has tests.
 | **T19** | The content security policy names every directive. `connect-src 'none'` never covered a remote subresource, and an absent directive with no `default-src` is unrestricted | `manifest.json`, `test/lib/scan.js`, D15 |
 | **T29** | The progress popup opening is now checked. `--headed --popup` fails if `chrome.action.openPopup()` never produces a panel, or produces one that is never told anything | `test/e2e/run.mjs`, `src/background.js` |
 | | Support and feedback goes to `support@palworks.ai` rather than a personal address | `src/ui/options.js` |
+| **F27** | **Closed.** A right click menu on the canvas carrying the paint order and Delete, with `[` and `]` for a step and the accelerator for all the way, and a key in every tool's tooltip. Empty canvas keeps Chrome's own menu | `src/lib/edit.js`, `src/ui/result.js`, D49 |
+| | The text inspector carries a Frame block: a switch, a colour well, a thickness and a plate switch, writing the same two properties the Border and Fill wells write. The line of copy that stood in for it is gone | `src/ui/result.html`, `src/ui/result.js`, D50 |
+| **F29** | Rounded box and Stadium are entries in the Shapes popover that pick the Box and set its corner in one click. Fourteen tools, twelve kinds, no new shape in the model | `src/lib/edit.js`, D51 |
 
 **Still open from the 1.7.0 list below:** T2, T11, F1, F21, F2, F26.
-**Still open from 1.8.0:** F6, F4, and the two remaining pieces of F27 (the right click z-order menu, and shortcut keys in every tooltip).
+**Still open from 1.8.0:** F6 and F4. F27 is closed.
 
 **Queued by the maintainer on 2026-09-10:** F3, the rating nudge, and F42,
 donations. Both are designed in [docs/ROADMAP.md](docs/ROADMAP.md) under release

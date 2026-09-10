@@ -25,6 +25,7 @@ import { fileURLToPath } from 'node:url';
 
 import { Cdp, evaluate, sleep, until } from './cdp.mjs';
 import { planPdfPages } from '../../src/lib/pdf.js';
+import { SHAPE_TOOLS } from '../../src/lib/edit.js';
 import { decodePng, thumbnail, verifyFixture, verifyIframes } from './verify.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -398,6 +399,39 @@ async function dragOn(cdp, session, from, to, steps = 8, held = []) {
   await cdp.send('Input.dispatchMouseEvent',
     { type: 'mouseReleased', ...to, button: 'left', buttons: 0, clickCount: 1, modifiers }, session);
   await sleep(120);
+}
+
+/**
+ * A real right click, so the canvas menu opens the way it does for a person.
+ *
+ * A synthetic `contextmenu` event would prove the handler runs and nothing
+ * about whether Chrome reaches it: the menu depends on the press landing on the
+ * canvas and on preventDefault stopping the browser's own menu, and neither of
+ * those is exercised by a dispatched event object.
+ */
+async function rightClickOn(cdp, session, at) {
+  await cdp.send('Input.dispatchMouseEvent',
+    { type: 'mousePressed', ...at, button: 'right', buttons: 2, clickCount: 1 }, session);
+  await cdp.send('Input.dispatchMouseEvent',
+    { type: 'mouseReleased', ...at, button: 'right', buttons: 0, clickCount: 1 }, session);
+  await sleep(140);
+}
+
+/**
+ * A real key press, the way the browser delivers one.
+ *
+ * `text` is what makes Chrome treat it as a character key rather than a bare
+ * code, and without the virtual key code the event arrives with an empty `key`,
+ * which is exactly the shape of bug a dispatched KeyboardEvent cannot find.
+ */
+async function pressKey(cdp, session, { key, code, vk, text = key, modifiers = 0 }) {
+  const common = { key, code, windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk, modifiers };
+  // No `text` with a modifier held: Chrome treats a keyDown carrying text as a
+  // character being typed, and an accelerator is not a character.
+  await cdp.send('Input.dispatchKeyEvent',
+    { type: 'keyDown', ...common, ...(modifiers ? {} : { text }) }, session);
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', ...common }, session);
+  await sleep(90);
 }
 
 /** Move the pointer without pressing anything, so hover handlers run. */
@@ -1035,6 +1069,8 @@ async function exerciseEditor(cdp, session, log) {
 
   await exerciseShapes(cdp, session, check, p);
 
+  await exercisePaintOrder(cdp, session, check, p);
+
   await exerciseMultiSelect(cdp, session, check, p);
 
   await exerciseLoupeRedaction(cdp, session, check, p);
@@ -1343,9 +1379,76 @@ async function exerciseTextFrame(cdp, session, check, p) {
     `framing the caption changed its own colour: ${glyphsPlain} pixels of ink became ${glyphsFramed}`,
     `framing the caption left the words the colour they were (${glyphsPlain} to ${glyphsFramed})`);
 
-  await clickButton(cdp, session, '#undo');
-  await clickButton(cdp, session, '#undo');
+  // THE FRAME BLOCK
+  //
+  // The frame and the plate are the text shape's stroke and fill, so the block
+  // in the text inspector and the Border and Fill wells write the same two
+  // properties. That is the whole design, and it is only true if the block
+  // shows what the Border well just did and can undo it.
+  // settle() presses Escape, which drops the selection, and the inspector
+  // shows the pending style the moment nothing is selected. Every switch below
+  // is therefore clicked with the caption picked up again first, which is also
+  // what a person does.
+  const holdCaption = async () => {
+    await clickButton(cdp, session, '[data-tool="select"]');
+    await dragOn(cdp, session, p(0.30, 0.78), p(0.30, 0.78), 1);
+    await sleep(120);
+    await clickButton(cdp, session, '[data-pop="pop-text"]');
+    await sleep(90);
+  };
+
+  await holdCaption();
+  const knows = await evaluate(cdp, session,
+    'document.getElementById("frame-on").getAttribute("aria-checked") === "true"');
+  check(knows,
+    'the Frame switch did not notice the frame the Border well had just drawn',
+    'the Frame switch shows the frame the Border well drew');
+
+  await clickButton(cdp, session, '#frame-on');
   await settle();
+  const blueOff = await countColour(cdp, session, scan, BLUE);
+  check(blueOff < blueAfter - 40,
+    `the Frame switch did not take the frame off (${blueAfter} to ${blueOff} blue pixels)`,
+    `the Frame switch takes the frame off (${blueAfter} to ${blueOff} blue pixels)`);
+
+  await holdCaption();
+  await clickButton(cdp, session, '#frame-on');
+  await settle();
+  const blueBack = await countColour(cdp, session, scan, BLUE);
+  check(blueBack > blueOff + 40,
+    `the Frame switch would not put the frame back (${blueOff} to ${blueBack} blue pixels)`,
+    `the Frame switch puts back the colour it took off (${blueOff} to ${blueBack} blue pixels)`);
+
+  // The plate goes behind the words, so it must not take the words with it.
+  await holdCaption();
+  await clickButton(cdp, session, '#frame-plate');
+  await settle();
+  const glyphsPlated = await countColour(cdp, session, scan, GREEN);
+  const plated = await evaluate(cdp, session,
+    'document.getElementById("frame-plate").getAttribute("aria-checked") === "true"');
+  check(plated, 'the Plate switch did not stay on', 'the Plate switch stays on once it is set');
+  check(glyphsPlated > glyphsPlain * 0.85,
+    `the plate covered the words it sits behind: ${glyphsPlain} pixels of ink became ${glyphsPlated}`,
+    `the plate goes behind the words rather than over them (${glyphsPlated} pixels of ink)`);
+  await holdCaption();
+  await clickButton(cdp, session, '#frame-plate');
+  await settle();
+
+  // Undo until the caption itself is gone, not a fixed number of times. This
+  // block adds an undo step every time a switch is thrown, so a count typed
+  // here goes stale the moment a check is added, and one undo too many takes a
+  // shape belonging to an earlier check with it. The loupe check is what
+  // noticed: with one shape missing from the page the redaction had less to
+  // change, and a check three hundred lines away started reporting a leak.
+  let ink = await countColour(cdp, session, scan, GREEN);
+  for (let i = 0; i < 10 && ink > 30; i += 1) {
+    await clickButton(cdp, session, '#undo');
+    await settle();
+    ink = await countColour(cdp, session, scan, GREEN);
+  }
+  check(ink <= 30,
+    `the caption survived every undo this check had (${ink} pixels of ink left behind)`,
+    'the frame block leaves the canvas the way it found it');
 }
 
 /**
@@ -1634,11 +1737,190 @@ async function exerciseMultiSelect(cdp, session, check, p) {
  * question is the one that justifies the whole table, and only the shapes with
  * an empty bounding box corner can answer it.
  */
+/**
+ * The paint order, and the menu that is the only way to reach it.
+ *
+ * Two opaque boxes overlapping, and the question every check below asks is the
+ * one a reader asks: which one is on top. Counting each colour over the whole
+ * canvas answers it without knowing where the boxes ended up, and a box moving
+ * behind another has to give pixels back to the one it was covering.
+ *
+ * The menu is opened with a real right click rather than a dispatched event,
+ * because the interesting failures are Chrome not reaching the handler and the
+ * browser's own menu opening over the top of ours.
+ */
+async function exercisePaintOrder(cdp, session, check, p) {
+  const GREEN = [34, 197, 94];
+  const BLUE = [59, 130, 246];
+  const NW = [0.56, 0.74];
+  const SE = [0.92, 0.95];
+  const mid = (a, b, f) => a + (b - a) * f;
+  const at = (fx, fy) => p(mid(NW[0], SE[0], fx), mid(NW[1], SE[1], fy));
+
+  const state = await canvasState(cdp, session);
+  const scan = { x: 0, y: 0, w: state.width, h: state.height };
+  const counts = async () => ({
+    green: await countColour(cdp, session, scan, GREEN),
+    blue: await countColour(cdp, session, scan, BLUE),
+  });
+  const deselect = async () => {
+    // Escape, not body.click(): a click on the body closes the popovers and
+    // leaves the editor's selection exactly where it was, so the next colour
+    // chosen restyles the shape just drawn instead of setting the pending
+    // style. That is what turned the green box blue the first time this ran.
+    await evaluate(cdp, session,
+      `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+    await evaluate(cdp, session, 'document.body.click()');
+    await sleep(70);
+  };
+  const menuOpen = () => evaluate(cdp, session,
+    'document.getElementById("ctx").hidden === false');
+  const paint = async (colour) => {
+    for (const kind of ['border', 'fill']) {
+      await clickButton(cdp, session, `[data-pop="pop-${kind}"]`);
+      await clickButton(cdp, session, `[data-paint="${kind}"][data-colour="${colour}"]`);
+      await deselect();
+    }
+  };
+
+  // The area is clear. Without this the counts below are somebody else's shapes.
+  await clickButton(cdp, session, '[data-tool="select"]');
+  await deselect();
+  await dragOn(cdp, session, at(0.5, 0.5), at(0.5, 0.5), 1);
+  await sleep(60);
+  const clear = await evaluate(cdp, session,
+    'document.getElementById("delete").disabled === true');
+  check(clear,
+    'the corner the paint order check draws in already had a shape in it',
+    'the paint order test area is empty before the boxes are drawn');
+  if (!clear) return;
+  await deselect();
+
+  // Empty canvas keeps Chrome's own menu. Ours must not appear there. Asked now,
+  // while the area is known to be empty, rather than after two boxes fill it.
+  await rightClickOn(cdp, session, at(0.5, 0.5));
+  check(!(await menuOpen()),
+    'the canvas menu opened over empty canvas, taking away Chrome\'s own menu for nothing',
+    'right clicking empty canvas leaves Chrome\'s own menu alone');
+
+  // Opaque, because two boxes at a third alpha blend into a third colour and
+  // "which one is on top" stops having a pixel answer.
+  await clickButton(cdp, session, '[data-pop="pop-fill"]');
+  await evaluate(cdp, session, `(() => {
+    const slider = document.getElementById('fill-opacity');
+    slider.value = '100';
+    slider.dispatchEvent(new Event('input', { bubbles: true }));
+  })()`);
+  await deselect();
+
+  const box = async (colour, from, to) => {
+    await paint(colour);
+    await clickButton(cdp, session, '[data-pop="pop-shapes"]');
+    await clickButton(cdp, session, '#pop-shapes [data-shape="rect"]');
+    await deselect();
+    await dragOn(cdp, session, from, to);
+    await deselect();
+  };
+
+  await box('#22c55e', at(0.04, 0.08), at(0.58, 0.92));
+  await box('#3b82f6', at(0.42, 0.08), at(0.96, 0.92));
+
+  const drawn = await counts();
+  check(drawn.green > 200 && drawn.blue > 200,
+    `the two boxes did not both draw (${drawn.green} green, ${drawn.blue} blue)`,
+    `two overlapping boxes drawn (${drawn.green} green, ${drawn.blue} blue)`);
+  if (!(drawn.green > 200 && drawn.blue > 200)) return;
+
+  await rightClickOn(cdp, session, at(0.5, 0.5));
+  const opened = await menuOpen();
+  check(opened, 'right clicking a shape opened no menu', 'right clicking a shape opens the menu');
+  if (!opened) return;
+
+  // The blue box is on top, so it cannot go further forward and the menu has to
+  // say so rather than offering a step that writes an undo entry doing nothing.
+  const frontDisabled = await evaluate(cdp, session,
+    'document.querySelector(\'#ctx [data-order="front"]\').disabled === true');
+  check(frontDisabled,
+    'the menu offered to bring the topmost shape further forward',
+    'the menu greys out what the topmost shape cannot do');
+
+  // One step back, not all the way. The two boxes are the last two shapes on a
+  // canvas that several checks above have drawn on, so "send to back" puts the
+  // blue box below everything and one step forward from there does not bring it
+  // anywhere near the green box: the pixels would not move and the check would
+  // report a bug that is not there. It is a step, so a step is what it asks for.
+  await clickButton(cdp, session, '#ctx [data-order="backward"]');
+  await sleep(140);
+  const sent = await counts();
+  check(sent.green > drawn.green && sent.blue < drawn.blue,
+    `sending the blue box back a step changed nothing (${sent.green} green, ${sent.blue} blue)`,
+    `sending a shape back a step puts back the shape it was covering (${drawn.green} to ${sent.green} green)`);
+
+  check(await evaluate(cdp, session, 'document.getElementById("ctx").hidden === true'),
+    'the menu stayed open after an item was chosen', 'choosing an item closes the menu');
+
+  // The menu acted on the selection and has to leave it there: the keys below
+  // are the same operation reached another way, and they are worth nothing if
+  // choosing from the menu quietly puts the shape down.
+  const stillHeld = await evaluate(cdp, session,
+    'document.getElementById("delete").disabled === false');
+  check(stillHeld,
+    'choosing from the menu dropped the selection, so the keyboard has nothing to act on',
+    'choosing from the menu leaves the shape selected');
+
+  // One step forward on the keyboard, which with two shapes is all the way.
+  // A real key event, not a dispatched one: a bracket needs a keyboard layout
+  // to arrive as `]`, and this check exists to prove a person can press it.
+  await pressKey(cdp, session, { key: ']', code: 'BracketRight', vk: 221 });
+  await sleep(140);
+  const stepped = await counts();
+  check(stepped.blue > sent.blue && stepped.green < sent.green,
+    `the ] key did not bring the selection forward (${stepped.green} green, ${stepped.blue} blue)`,
+    'the ] key brings the selection one step forward');
+
+  // And the accelerated pair, which goes all the way. From the very back the
+  // green box is over it again, which is the same picture a step back gives and
+  // is why the step above is the one that proves a step is a step.
+  await pressKey(cdp, session,
+    { key: '[', code: 'BracketLeft', vk: 219, modifiers: MODIFIERS.meta });
+  await sleep(140);
+  const dropped = await counts();
+  check(dropped.green > stepped.green,
+    `the accelerator with [ did not send the selection to the back (${dropped.green} green)`,
+    `Cmd or Ctrl with [ sends the selection all the way back (${stepped.green} to ${dropped.green} green)`);
+
+  // Undo has to put the order back, not only the shapes: the reorder is one
+  // step, so three of them clear the two boxes and both order changes.
+  let gone = await counts();
+  for (let i = 0; i < 10 && (gone.green > 200 || gone.blue > 200); i += 1) {
+    await clickButton(cdp, session, '#undo');
+    await sleep(90);
+    gone = await counts();
+  }
+  check(gone.green < 200 && gone.blue < 200,
+    `undo left the paint order boxes on the canvas (${gone.green} green, ${gone.blue} blue)`,
+    'undo removes the boxes and the reorders with them');
+
+  // Put the fill back the way the rest of the run expects to find it.
+  await clickButton(cdp, session, '[data-pop="pop-fill"]');
+  await evaluate(cdp, session, `(() => {
+    const slider = document.getElementById('fill-opacity');
+    slider.value = '35';
+    slider.dispatchEvent(new Event('input', { bubbles: true }));
+    document.querySelector('[data-fill="none"]').click();
+    const hex = document.getElementById('border-hex');
+    hex.value = '#ef4444';
+    hex.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await deselect();
+}
+
 async function exerciseShapes(cdp, session, check, p) {
-  const SHAPES = [
-    'arrow', 'line', 'rect', 'ellipse', 'callout', 'loupe', 'highlight',
-    'rhombus', 'hexagon', 'parallelogram', 'triangle', 'cylinder',
-  ];
+  // Imported, not typed out again. This was a hand written list of twelve and
+  // it was wrong within a release: two shapes were added to the popover and
+  // this file went on testing the old twelve without a word. Every shape the
+  // model offers is drawn here or the model has a shape nobody ever drew.
+  const SHAPES = SHAPE_TOOLS;
 
   // A corner of the capture nothing else in this run has drawn in. Every check
   // below asserts the area is empty BEFORE it draws, because an earlier version
@@ -1727,9 +2009,9 @@ async function exerciseShapes(cdp, session, check, p) {
 
   const offered = Number(await evaluate(cdp, session,
     'document.querySelectorAll("#pop-shapes [data-shape]").length'));
-  check(offered === 12,
-    `the shapes popover offered ${offered} shapes, expected 12`,
-    'the shapes popover offers all twelve shapes');
+  check(offered === SHAPES.length,
+    `the shapes popover offered ${offered} shapes, expected ${SHAPES.length}`,
+    `the shapes popover offers all ${SHAPES.length} shapes`);
 
   // Pruning, from the options page's side of the wire. Hiding every shape in a
   // group has to take the group's heading with it, or a label sits above an
@@ -1743,17 +2025,18 @@ async function exerciseShapes(cdp, session, check, p) {
     flowchartShown: !document.querySelector('#pop-shapes .grp-block[data-group="flowchart"]').hidden,
     boxesShown: !document.querySelector('#pop-shapes .grp-block[data-group="boxes"]').hidden,
   })`));
-  check(pruned.visible === 7 && !pruned.flowchartShown && pruned.boxesShown,
-    `hiding the flowchart shapes left ${pruned.visible} visible, flowchart heading shown ${pruned.flowchartShown}`,
+  const kept = SHAPES.length - 5;
+  check(pruned.visible === kept && !pruned.flowchartShown && pruned.boxesShown,
+    `hiding the flowchart shapes left ${pruned.visible} visible of ${kept}, flowchart heading shown ${pruned.flowchartShown}`,
     'hiding every shape in a group removes the group and its heading, and leaves the others alone');
 
   await evaluate(cdp, session, 'chrome.storage.local.set({ hiddenShapes: [] })');
   await sleep(260);
   const restored = Number(await evaluate(cdp, session,
     '[...document.querySelectorAll("#pop-shapes [data-shape]")].filter((b) => !b.hidden).length'));
-  check(restored === 12,
-    `turning the shapes back on left ${restored} of 12 visible`,
-    'turning them back on restores all twelve');
+  check(restored === SHAPES.length,
+    `turning the shapes back on left ${restored} of ${SHAPES.length} visible`,
+    'turning them back on restores every shape');
 }
 
 /**
@@ -2703,13 +2986,17 @@ async function main() {
           if (!wired.hasTheme) optionProblems.push('the theme control is missing from the options page');
           // The README promises every control can be switched off individually.
           // At five shapes behind one switch that was close enough to true; at
-          // twelve it would have been false for the densest surface here.
-          if (wired.shapeBoxes !== 12) {
-            optionProblems.push(`the shapes list shows ${wired.shapeBoxes} switches, expected 12`);
+          // fourteen it would have been false for the densest surface here.
+          // Counted against the model, not against a number typed here, because
+          // a number typed here is a number that goes stale the next time a
+          // shape is added.
+          if (wired.shapeBoxes !== SHAPE_TOOLS.length) {
+            optionProblems.push(
+              `the shapes list shows ${wired.shapeBoxes} switches, expected ${SHAPE_TOOLS.length}`);
           } else if (!wired.shapesAllOn) {
-            optionProblems.push('a shape starts switched off, and all twelve ship on');
+            optionProblems.push('a shape starts switched off, and every one of them ships on');
           } else {
-            console.log('  ok   the options page lists all 12 shapes, every one switched on');
+            console.log(`  ok   the options page lists all ${SHAPE_TOOLS.length} shapes, every one switched on`);
           }
           // The index is built from the sections, so a mismatch means a section
           // was added without one, which is the failure the building loop exists

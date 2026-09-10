@@ -125,13 +125,35 @@ it and asserts the pixels underneath come back exactly, draws a box, redacts ove
 detailed pixels and asserts they changed, crops, undoes the crop, then downloads and
 asserts the saved file matches the edited canvas.
 
-Two failures worth remembering, both found this way:
+It also drives the paint order menu with a **real right click**
+(`Input.dispatchMouseEvent` with `button: 'right'`) and the paint order keys with
+**real key events** (`Input.dispatchKeyEvent`), rather than dispatching event
+objects. A dispatched `contextmenu` would prove the handler runs and nothing about
+whether Chrome reaches it, and a dispatched `KeyboardEvent` cannot show that a
+bracket arrives as `]`.
+
+The shape sweep and the two shape counts are driven by `SHAPE_TOOLS` imported from
+the model rather than by lists typed into this file. That list used to be twelve
+names written out by hand, and it was wrong within one release: two shapes were
+added to the popover and the sweep went on testing the old twelve without a word.
+
+Four failures worth remembering, all found this way:
 
 - A `setIcon` call per screenful made Chrome's icon reads overlap and cancel. Only
   actual frame changes are sent now.
 - The redaction check first sampled the fixture's solid-colour header, where
   pixelation is a no-op by definition. Sample where there is detail, or the test
   passes on a broken build.
+- The frame block checks first read the inspector after `settle()`, which presses
+  Escape and therefore drops the selection. The inspector shows the *pending* style
+  the moment nothing is selected, so every check was reading defaults and reporting
+  that a working control did nothing. Pick the shape up again before each switch.
+- **A check that cleans up with a fixed number of undos is a check that reaches into
+  its neighbours.** The frame block added an undo step per switch, the count typed
+  after it went stale, and one undo too many removed a shape belonging to an earlier
+  check. The failure surfaced three hundred lines away, in the loupe redaction test,
+  as a redaction that suddenly had less to change. Undo until the canvas is clean
+  and assert that it is, rather than counting.
 
 ### What the harness widens, and why
 

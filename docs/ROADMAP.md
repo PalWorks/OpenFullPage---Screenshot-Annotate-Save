@@ -10,6 +10,70 @@ reading their code. One of the four is GPL-3.0, which is the only one whose code
 could be adapted at all, and none of it has been.
 
 
+## Everything, on one page
+
+**Read this table first.** One row per item, in the order the phases run. Every row
+links to nothing: the detail is in the section of this file that carries the same
+number, and the acceptance criteria are in [../TASKS.md](../TASKS.md).
+
+Status is one of **shipped** with the date it landed, **next** for the work that is
+already scoped and ready to start, or **planned** with the effort in the form
+*human team / Claude Code with gstack*.
+
+| Bucket | # | Work | Status | Notes |
+|---|---|---|---|---|
+| Core capture | | Full page, sticky and fixed headers, lazy loading, retina and zoom | shipped 1.0.0 to 1.3.1 | The thing the product is for. Verified against a fixture on every run |
+| Core capture | | Visible area and pick-an-element modes, capture delay, frames | shipped 1.2.0 to 1.3.0 | Cross-origin frames sit behind an optional permission never granted at install |
+| Core editing | | Live-object editor: select, move, resize, restyle, delete, undo | shipped 1.3.0 | Shapes are objects, not committed strokes, which is what makes undo exact |
+| Core output | | PNG, JPEG, copy to clipboard, URL-based filenames | shipped 1.3.0 to 1.6.1 | Copy needs no permission |
+| 1.7.0 repairs | T19 | Harden the content security policy | shipped | D15. `connect-src 'none'` plus a closed `img-src` |
+| 1.7.0 repairs | T3 | Round-trip test for every settings key | shipped | A key in `DEFAULTS` but not in `sanitise()` now fails the build |
+| 1.7.0 repairs | T10 | Warn before losing unsaved edits | shipped | D14. All of what survived the apply/discard request |
+| 1.7.0 repairs | T20 | Selection handles hold their size on screen | shipped | D19. A defect: nine canvas pixels is one screen pixel on a 14,000px capture |
+| 1.7.0 repairs | T1 | Fix the false storage claim in the README | shipped 2026-09-08 | |
+| 1.7.0 repairs | T2 | `encodeOrThrow`, so a null blob cannot fail silently | **next**, 2h / 15m | Blocks F1 |
+| 1.7.0 repairs | T11 | Version the port protocol | planned, 1h / 10m | Blocks F10 |
+| 1.7.0 wins | F1 | WebP export | planned, 0.5d / 10m | Waiting on T2 |
+| 1.7.0 wins | F21 | Export quality control | planned, 0.5d / 10m | 0.92 is hardcoded today, a guess made once on the user's behalf |
+| 1.7.0 wins | F2 | Pause playing media during the capture | planned, 0.5d / 15m | |
+| 1.7.0 wins | F26 | Unmissable confirmation on copy and save | planned, 0.5d / 15m | Without reaching for the `notifications` permission |
+| 1.8.0 toolbar | F24 | Toolbar regrouped, and configurable | shipped | D17, D18, D20, D21. 26 flat controls became grouped buttons carrying 68 |
+| 1.8.0 toolbar | F25 | Upload, as a hand-off | shipped | D16. The extension never uploads. It copies and opens the host |
+| 1.8.0 toolbar | F35 | PDF export, ahead of its release | shipped 2026-09-09 | D31. Hand written, around 200 lines, no library |
+| 1.8.0 toolbar | F29 | More shapes behind the Shapes chevron | shipped 2026-09-10 | D43, D47, D51. Twelve shapes, then Rounded box and Stadium as presets |
+| 1.8.0 toolbar | F41 | Hover cursors, hover outline, Escape cancels a drag | shipped | D42 |
+| 1.8.0 toolbar | F27 | The editor says what is under the pointer | shipped 2026-09-10 | D42, D44, D49. Finished by the paint order menu and a key in every tooltip |
+| 1.8.0 toolbar | F40 | Text is a shape, with a frame and a plate | shipped 2026-09-10 | D46, D50. The Frame block replaced the hint that stood in for it |
+| 1.8.0 toolbar | F6 | Navigate a large capture: zoom and an overview pane | planned, 2d / 1.5h | What makes a 16,000 pixel capture workable. Watch L17 |
+| 1.8.0 toolbar | F4 | Freehand pen and object eraser | planned, 2d / 45m | No pixel eraser: it would bake pixels into the immutable base |
+| 1.9.0 long pages | F10 | Multi-part export for very long pages | planned, 5d / 2h | **The known defect.** Must stream part by part or Chrome kills the worker |
+| 1.9.0 long pages | F13 | Runtime seam verification | planned, 5d / 2h | We verify seams in tests. This verifies them in the field |
+| 1.9.5 region | F28 | Select a region of the canvas | planned, 2d / 45m | A marquee other operations take as an argument. Rectangle only |
+| 1.10.0 capture | F15 | Remove an element before capturing | planned, 2d / 45m | Cookie banners and chat widgets. No new permission |
+| 1.11.0 output | F5 | Presentation frame | planned, 3d / 1h | Padding, a background, an optional window frame. Pure canvas |
+| 1.12.0 thanks | F3 | Rating nudge | planned, 1d / 30m | **Deliberately last in Phase 1.** No review gating, both answers go to the store |
+| 1.12.0 thanks | F42 | Donations | planned, 0.5d / 15m | D48. **Blocked on a GOVERNANCE.md amendment** |
+| Phase 2 in | F8 | Snip a region on the live page | planned, 3d / 1h | The editor stays in the result tab, where it can never be photographed |
+| Phase 2 in | F17 | Repeat the last capture | planned, 1d / 25m | Turns a five step loop into one keystroke |
+| Phase 2 out | F16 | Before and after | planned, 0.5d / 15m | Nearly free: the pristine capture is already on its own canvas |
+| Phase 2 out | F23 | Text watermark | planned, 1d / 20m | Typed text only, never an image loaded from a URL |
+| Phase 3 | F20 | Presentation finish and image adjustments | planned, 4d / 1.5h | All `ctx.filter` and compositing, no library |
+| Phase 3 | F30 | Adjust size on export | planned, 1.5d / 30m | The "resulting size" readout is the part that earns it |
+| Phase 4 | F11 | Capture library | planned, 8d / 3h | **The only feature that changes the trust posture.** Off by default, IndexedDB |
+| Phase 4 | F18 | Command palette | planned, 2d / 40m | The cheapest real progress on L14, the editor without a pointer |
+| Phase 4 | F22 | Remappable editor shortcuts | planned, 2d / 40m | In-editor keys only |
+| Phase 4 | F19 | Style presets | planned, 1d / 20m | |
+| Phase 5 | F14 | Locales | planned, 10d / 4h | Verify `getManifest()` returns a localised `short_name` first: it feeds every filename |
+| Debt | T14 | Split `src/ui/result.js` into stitch, export and wiring | planned, P1 | Before F5. F6 and F27 both added to this file again |
+| Debt | T8 | Extract the duplicated `:root` token blocks | planned, P2 | Before F11 adds a third page |
+| Debt | T5 | Test that the GOVERNANCE.md canary is not stale | planned, P2 | It has already drifted, L19 |
+| Debt | T13 | Use the exported `HISTORY_LIMIT` instead of a second hardcoded 60 | planned, P3 | |
+
+**What to pick up next, in order:** T2 then F1 and F21, which close release 1.7.0
+and remove the last silent failure. Then F10, which is the only item on this page
+that fixes something a user has actually hit.
+
+
 ## The rule every item is measured against
 
 **`test/invariants.test.js` must still pass when the feature ships.** No network,
@@ -120,8 +184,8 @@ appear**. See [DECISIONS.md](DECISIONS.md) D17.
 | F24 | **Toolbar regrouped, and configurable** | **shipped**, D17, D18, D20, D21 | Two halves. **Grouping, following macOS Preview** ([DECISIONS.md](DECISIONS.md) D18): each button carries a chevron that opens the related set, and the button's glyph shows the current value. Shapes collapse behind one button; five weights, two dash patterns and four arrow endings behind Stroke style; and colour splits into **Border** and **Fill**, Preview's own two glyphs, each ending in a custom spectrum with a hex field. Text opens an inspector: family, size, bold, italic and underline. Colour is taken from Border colour rather than duplicated, and alignment was held back until text entry is multi-line, both recorded as D21. Nineteen buttons then carry sixty eight controls against today's twenty six. This is a capability change as much as a layout one: **there is no fill and no arbitrary colour in the product today**. **Configuration** ([DECISIONS.md](DECISIONS.md) D17): every button has an on/off switch on the options page, a curated default set on, "Show everything" and "Reset to defaults" present. Keyboard shortcuts stay bound to individual tools, so grouping costs a click and never a keystroke. **Must land before F4 and F6 add controls**
 | F6 | **Navigate a large capture** | 2d / 1.5h | Zoom is **one magnifier button**; clicking it opens a slider plus Fit width, Fit height and 100%. Alongside it, an **overview pane in the top right** showing the whole capture with the current viewport marked, the way Sublime Text's minimap works. This is what makes a 16,000 pixel capture workable. Watch [LIMITATIONS.md](LIMITATIONS.md) L17: inline text entry must be repositioned when the canvas moves inside a scroll container |
 | F4 | **Freehand pen and object eraser** | 2d / 45m | Pen is a polyline shape, hit-tested with the existing `distanceToSegment`. The eraser deletes the shape under the cursor. **No pixel eraser**: it would bake pixels into the immutable base |
-| F29 | **More shapes behind the Shapes chevron** | **shipped**, D43 | The chevron F24 built is where extra shapes go for free. Worth taking: **rounded rectangle** (everything it is drawn around is rounded), **speech bubble** (explaining a screenshot is the job, and a callout with a tail is how it is done), and the **loupe**, a circle that redraws what is under it magnified, which nobody else in this category has and which is how you show a detail on a 14,000 pixel capture. Refused: star and polygon, which are drawing-app furniture that no bug report needs. **Shipped as twelve shapes**, the three above plus a flowchart set the maintainer asked for, with the rounded rectangle delivered as a corner radius property of the Box rather than as its own tool. The loupe samples a redacted base so it cannot un-redact a redaction, D47 |
-| F27 | **The editor says what is under the pointer** | **shipped except the z-order menu**, D42, D44 | The cursor never changes except when the tool changes, and `pointermove` returns immediately unless a drag is running, so the canvas gives no feedback until you commit to a click. Adds hover cursors, a hover outline, arrow key nudging, Shift constrain while resizing, Alt drag to duplicate, `Escape` to cancel a drag, a right click menu carrying the z order that is unreachable today, and shortcut keys in every tooltip. All of it inside handlers that already exist. **Shipped:** hover cursors and outline and Escape (F41, D42), then Shift constrain, arrow key nudging and Alt drag. **Still open:** the right click z-order menu, which is a new UI surface and deserves its own pass, and shortcut keys in every tooltip |
+| F29 | **More shapes behind the Shapes chevron** | **shipped**, D43 | The chevron F24 built is where extra shapes go for free. Worth taking: **rounded rectangle** (everything it is drawn around is rounded), **speech bubble** (explaining a screenshot is the job, and a callout with a tail is how it is done), and the **loupe**, a circle that redraws what is under it magnified, which nobody else in this category has and which is how you show a detail on a 14,000 pixel capture. Refused: star and polygon, which are drawing-app furniture that no bug report needs. **Shipped as twelve shapes**, the three above plus a flowchart set the maintainer asked for, with the rounded rectangle delivered as a corner radius property of the Box rather than as its own tool. The loupe samples a redacted base so it cannot un-redact a redaction, D47. **Reopened and closed again on 2026-09-10 after user feedback**: the corner radius stays a property, and **Rounded box** and **Stadium** are now also entries in the Shapes popover that pick the Box and set that property in one click. Fourteen entries, twelve kinds, no new shape in the model, D51 |
+| F27 | **The editor says what is under the pointer** | **shipped except the z-order menu**, D42, D44 | The cursor never changes except when the tool changes, and `pointermove` returns immediately unless a drag is running, so the canvas gives no feedback until you commit to a click. Adds hover cursors, a hover outline, arrow key nudging, Shift constrain while resizing, Alt drag to duplicate, `Escape` to cancel a drag, a right click menu carrying the z order that is unreachable today, and shortcut keys in every tooltip. All of it inside handlers that already exist. **Shipped in full on 2026-09-10.** Hover cursors and outline and Escape came first (F41, D42), then Shift constrain, arrow key nudging and Alt drag. The last two landed together: a **right click menu on the canvas** carrying Bring to front, Bring forward, Send backward, Send to back and Delete, with `[` and `]` for a step and the platform accelerator for all the way (D49); and **a key in every tool's tooltip**, which meant giving the five shapes that had none a letter from their own name. Empty canvas keeps Chrome's own menu, because taking away "Save image as" to show a menu of greyed-out items is a straight loss |
 
 ## Release 1.9.0: long pages, properly
 
