@@ -2420,7 +2420,18 @@ async function exerciseFileSizes(cdp, session, check) {
       return Object.values(shown).every((v) => v !== '…') ? shown : null;
     }, { timeoutMs: 90000, everyMs: 250 });
 
-  await clickButton(cdp, session, '#download');
+  // Opened, not toggled. Clicking #download flips the menu, so a block that ran
+  // earlier and left it up closes it here instead, and everything below then
+  // measures a menu that is not on screen: the sizes read as the ones the other
+  // block's click produced, the slider check fails, and the wait for a lower
+  // quality never ends because a hidden menu does not re-measure. Named rather
+  // than quietly repaired, because the leak is the defect.
+  const alreadyOpen = await evaluate(cdp, session,
+    'document.getElementById("formats").hidden === false');
+  check(!alreadyOpen,
+    'the download menu was already open before the file size checks ran: something earlier left it up',
+    'the download menu starts closed, so opening it is this block\'s own doing');
+  if (!alreadyOpen) await clickButton(cdp, session, '#download');
   const full = await settled('every format to report a file size');
   const bytes = Object.fromEntries(Object.entries(full).map(([k, v]) => [k, bytesOf(v)]));
   const missing = Object.entries(bytes).filter(([, v]) => !v).map(([k]) => k);
@@ -3984,6 +3995,11 @@ async function main() {
           const menuName = join(shotDir, `menu-${results.length}.png`);
           writeFileSync(menuName, Buffer.from(open.data, 'base64'));
           console.log(`  shot ${menuName}`);
+
+          // And shut again. #download is a toggle, so a menu left open here is
+          // closed by the block below that means to open it, and every file
+          // size check after that would be driving a menu nobody can see.
+          await evaluate(cdp, result, `document.getElementById('download').click()`);
         }
 
         // The filename box is the one place a person can put arbitrary text into
