@@ -1548,6 +1548,60 @@ for the port protocol. An unrepaired build fails the fixture check with the
 sticky header and the fixed bar each appearing twice, which is exactly what the
 real page did.
 
+## D58: Zoom is a width, not a scroll container, and the pane is a schematic
+
+Two halves of F6, and the interesting decision is in each.
+
+**Zoom sets the canvas's CSS width and nothing else.** The page keeps doing the
+scrolling. The obvious way to build a zoom is to put the canvas in its own
+scrolling box, and it breaks two things at once: `toImage()` converts every
+pointer position through `canvas.getBoundingClientRect()`, and `startTextEntry`
+places the inline text box from that same box plus `window.scrollX/Y`. That is
+[LIMITATIONS.md](LIMITATIONS.md) L17, written down as blocking for this feature
+long before it was built. Setting a width means both of those go on being true
+without a line changing, and the handles stay the right size on screen because
+`screenScale()` was already the ratio between the image and the box it is drawn
+in.
+
+**100% means one pixel of the capture to one pixel of the screen**, which is what
+it means in an image viewer and is the size at which a redaction can be judged.
+It is not the size the page was: a retina capture holds two device pixels per CSS
+pixel, so the page at its own size is 50% here.
+
+**A fit is a rule, not a number.** "Fit width" stays fitted when the window is
+resized, which a percentage worked out once would not.
+
+**`applyZoom` only redraws when the width it wants is not the width already set.**
+`render()` ends by calling `notify()`, so a redraw from inside a change handler
+calls the zoom again. Without the guard the loop stops only because the numbers
+stop changing, which is not a thing to rely on. Same trap as D54.
+
+**The pane is a schematic, not a thumbnail.** The first design was a downscaled
+picture of the capture with a viewport rectangle on it, and the maintainer turned
+it down as too much: what they asked for instead was the page the progress popup
+already draws while it is capturing, with a marker on it. That is the better idea
+for three reasons. A reader who has seen the capture running recognises it. It
+answers the only question it is being asked, which is where in the page am I, and
+a thumbnail of a 12,000 pixel capture answers that no better at 52 pixels wide.
+And it costs no drawing at all: nothing is rendered, resampled or cached, on a
+panel that has to keep up with scrolling.
+
+**It hides when the whole capture is on screen**, because then the marker covers
+the sheet and says nothing.
+
+**It is a control, so it can be switched off.** That meant widening
+`applyHiddenButtons` from the toolbar to the document, since the pane is fixed to
+the window rather than sitting in the toolbar, and a query scoped to the toolbar
+would have quietly exempted the one control that is not in it. The pane owns its
+own `hidden` attribute, because it also takes itself away when there is nothing
+to navigate, so the switch is recorded in a data attribute instead and the two
+cannot fight.
+
+**Zoom is not remembered between captures.** Every capture is a different size,
+so a percentage carried over from the last one is meaningless, and a fit is what
+the old `max-width: 100%` rule already did. A capture opens exactly where it
+always has.
+
 ## D57: One description of the colour popovers, and opacity in all of them
 
 Three requests from the maintainer, on the same day, that turned out to be one

@@ -13,6 +13,23 @@ a clean checkout with `./tools/pack.sh`, not merely checkable against one downlo
 Everything below is on `main` and not yet packaged. It covers the toolbar rework
 and the capture reliability work of 2026-09-08 and 2026-09-09.
 
+### Added: zoom, and a pane that says where in a long capture you are
+A 12,000 pixel capture opened at about 12% and there was no way to look at any of it
+closely, and no way to tell which part of it you were looking at. A magnifier button
+joins Theme and Settings, with a slider and Fit width, Fit height and 100% behind it.
+100% means one pixel of the capture to one pixel of your screen, which is the size at
+which a redaction can be judged.
+
+Beside it, an overview pane in the top right. It is deliberately a drawing of a page
+rather than a picture of your capture: the same sheet the progress popup draws while
+it is capturing, with a marker showing the part you are reading. Click it to jump,
+drag it to scroll. It takes itself away when the whole capture already fits on screen,
+and it can be switched off on the options page like every other control.
+
+Zoom sets the width of the picture and leaves the page doing the scrolling, which is
+why the inline text box goes on working while zoomed. Nothing about how a capture
+opens has changed: it still fits the window, which is what it always did.
+
 ### Added: opacity in every colour control, and two switches removed
 A translucent border or arrow over a screenshot was not possible: opacity existed
 only for a fill. Every colour popover now carries an Opacity slider, so a stroke, a

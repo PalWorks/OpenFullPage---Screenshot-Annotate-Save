@@ -82,6 +82,8 @@ export const TOOLBAR_GROUPS = [
     upload: 'Upload',
   }],
   ['View', {
+    zoom: 'Zoom',
+    overview: 'Overview pane',
     theme: 'Theme',
   }],
 ];

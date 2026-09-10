@@ -27,6 +27,7 @@ import { Cdp, evaluate, sleep, until } from './cdp.mjs';
 import { planPdfPages } from '../../src/lib/pdf.js';
 import { SHAPE_TOOLS } from '../../src/lib/edit.js';
 import { DOWNLOAD_FORMATS, extensionOf } from '../../src/lib/encode.js';
+import { TOOLBAR_BUTTONS } from '../../src/lib/settings.js';
 import { decodePng, thumbnail, verifyFixture, verifyIframes } from './verify.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -1158,6 +1159,9 @@ async function exerciseEditor(cdp, session, log) {
   // 8. The grouped style controls.
   await exerciseStyleToolbar(cdp, session, check, p);
 
+  // 8a2. Zoom, and the overview pane that says where you are in a long capture.
+  await exerciseZoom(cdp, session, check);
+
   // 8b. The theme button, round robin through three states.
   await exerciseTheme(cdp, session, check);
 
@@ -1282,6 +1286,100 @@ async function setTheme(cdp, session, theme) {
  * with it, and passed for as long as the button was visibly stuck on one icon.
  * Ask the browser what it painted. D23.
  */
+/**
+ * Zoom, and the pane that says where in a long capture you are.
+ *
+ * The thing worth checking is not that a slider moves. It is that the picture on
+ * screen changed size, that the marker in the pane agrees with where the window
+ * actually is, and that clicking the pane moves the window. Each of those can be
+ * wrong on its own while the other two look right.
+ */
+async function exerciseZoom(cdp, session, check) {
+  console.log('\nzoom, and knowing where you are:');
+
+  const shown = () => evaluate(cdp, session,
+    'Math.round(document.getElementById("canvas").getBoundingClientRect().width)');
+  const paneShown = () => evaluate(cdp, session,
+    'document.getElementById("overview").hidden === false');
+
+  await evaluate(cdp, session, 'window.scrollTo(0, 0)');
+  await sleep(120);
+
+  const fitted = await shown();
+  const room = await evaluate(cdp, session, 'document.documentElement.clientWidth');
+  check(fitted > 0 && fitted <= room,
+    `the capture opens ${fitted}px wide in a ${room}px window, so it does not fit`,
+    `the capture opens fitted to the window (${fitted}px in ${room}px)`);
+
+  // The fixture is far taller than the window, so the pane has something to say.
+  check(await paneShown(),
+    'the overview pane stayed hidden on a capture ten screens tall',
+    'the overview pane appears on a capture taller than the window');
+
+  await clickButton(cdp, session, '[data-pop="pop-zoom"]');
+  await sleep(120);
+  await clickButton(cdp, session, '[data-fit="100"]');
+  await sleep(160);
+  const full = await shown();
+  const natural = await evaluate(cdp, session, 'document.getElementById("canvas").width');
+  check(Math.abs(full - natural) <= 2,
+    `100% drew the capture ${full}px wide when the image is ${natural}px`,
+    `100% shows one pixel of the capture to one of the screen (${full}px of ${natural}px)`);
+
+  await setRange(cdp, session, 'zoom-level', 40);
+  await sleep(160);
+  const smaller = await shown();
+  check(smaller < full - 10,
+    `dragging the zoom slider left did not shrink the picture (${full}px to ${smaller}px)`,
+    `dragging the zoom slider shrinks the picture (${full}px to ${smaller}px)`);
+  const says = await evaluate(cdp, session, 'document.getElementById("zoom-out").textContent');
+  check(says === '40%',
+    `the zoom readout says ${says} after the slider was dragged to 40`,
+    'the zoom readout says what the slider was dragged to');
+
+  await clickButton(cdp, session, '[data-fit="width"]');
+  await sleep(160);
+  const back = await shown();
+  check(back <= room && Math.abs(back - fitted) <= 4,
+    `Fit width did not put the capture back inside the window (${back}px in ${room}px)`,
+    `Fit width puts the capture back inside the window (${back}px)`);
+  await evaluate(cdp, session, 'document.body.click()');
+
+  // THE MARKER
+  //
+  // Its top is where the window is, as a fraction of the whole picture. Scroll
+  // the page and it has to move by the same fraction, or it is decoration.
+  const markerTop = () => evaluate(cdp, session,
+    'parseFloat(document.getElementById("overview-port").style.top) || 0');
+  const atTop = await markerTop();
+  await evaluate(cdp, session, 'window.scrollTo(0, Math.round(document.body.scrollHeight * 0.5))');
+  await sleep(200);
+  const atMiddle = await markerTop();
+  check(atMiddle > atTop + 10,
+    `scrolling half way down moved the marker from ${atTop}% to ${atMiddle}%`,
+    `the marker follows the window down the page (${Math.round(atTop)}% to ${Math.round(atMiddle)}%)`);
+
+  // And the other way: clicking the pane moves the window.
+  await evaluate(cdp, session, 'window.scrollTo(0, 0)');
+  await sleep(140);
+  const jumped = await evaluate(cdp, session, `(() => {
+    const sheet = document.getElementById('overview-sheet');
+    const box = sheet.getBoundingClientRect();
+    const before = window.scrollY;
+    sheet.dispatchEvent(new PointerEvent('pointerdown', {
+      bubbles: true, clientX: box.left + box.width / 2,
+      clientY: box.top + box.height * 0.8, pointerId: 1,
+    }));
+    return { before, after: window.scrollY };
+  })()`);
+  check(jumped.after > jumped.before + 200,
+    `clicking near the foot of the pane moved the page from ${jumped.before} to ${jumped.after}`,
+    `clicking the pane jumps the page to that part of the capture (${jumped.before} to ${jumped.after})`);
+
+  await evaluate(cdp, session, 'window.scrollTo(0, 0)');
+  await sleep(120);
+}
+
 async function exerciseTheme(cdp, session, check) {
   const read = async () =>
     JSON.parse(await evaluate(cdp, session, `JSON.stringify({
@@ -3325,7 +3423,13 @@ async function main() {
             shapeBoxes: document.querySelectorAll('#shapeButtons input').length,
             shapesAllOn: [...document.querySelectorAll('#shapeButtons input')].every((b) => b.checked),
           })`));
-          if (wired.toolbarBoxes !== 17) optionProblems.push(`the toolbar list shows ${wired.toolbarBoxes} controls, expected 17`);
+          // Derived, never typed. A count written here goes stale the moment a
+          // control is added, and it goes stale silently in the direction that
+          // matters: the new control is the one with no switch.
+          if (wired.toolbarBoxes !== TOOLBAR_BUTTONS.length) {
+            optionProblems.push(
+              `the toolbar list shows ${wired.toolbarBoxes} controls, expected ${TOOLBAR_BUTTONS.length}`);
+          }
           if (!wired.allChecked) optionProblems.push('a toolbar control starts switched off');
           if (!wired.hasExport || !wired.hasImport || !wired.hasCompose) optionProblems.push('a settings or feedback control is missing');
           if (!wired.hasTheme) optionProblems.push('the theme control is missing from the options page');

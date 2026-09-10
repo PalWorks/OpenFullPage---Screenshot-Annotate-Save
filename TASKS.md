@@ -61,6 +61,7 @@ implements them twice. Every one has tests.
 | **F2** | Anything playing is paused for the capture and started again afterwards. Only what was playing, so a video already stopped stays stopped | `src/content/prepare.js`, L27, L28 |
 | **F21** | Export quality, and what each format would actually cost. The sizes are the capture really encoded, measured while the menu is open, cheapest format first | `src/ui/result.js`, D54 |
 | **F26** | The button that was pressed answers, with a tick, a green ground and an accessible name that says what happened. It does not change width to do it | `src/ui/result.*`, D55 |
+| **F6** | Zoom, as a slider plus Fit width, Fit height and 100%, and an overview pane that says where in a long capture you are. The pane is a schematic of a page, not a picture of the capture | `src/ui/result.*`, D58, L17 |
 | **F44** | Every colour popover carries an opacity slider, and the five of them are built from one description rather than written out five times. The Frame block's two switches are gone: a frame is off when it has no colour, a plate is off at nought per cent | `src/lib/edit.js`, `src/ui/result.*`, D57 |
 | **T30** | A screenful that repeats the one before it is photographed again. `captureVisibleTab` hands back the last frame the compositor presented, and a prepared page produces frames only when it scrolls | `src/content/prepare.js`, `src/background.js`, `--frozen`, D56, L39 |
 

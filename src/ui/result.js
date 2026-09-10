@@ -58,6 +58,11 @@ const ui = {
   textBold: el('text-bold'),
   textItalic: el('text-italic'),
   textUnderline: el('text-underline'),
+  zoomLevel: el('zoom-level'),
+  zoomOut: el('zoom-out'),
+  overview: el('overview'),
+  overviewSheet: el('overview-sheet'),
+  overviewPort: el('overview-port'),
   frameWell: el('frame-well'),
   frameWidth: el('frame-width'),
   plateWell: el('plate-well'),
@@ -333,6 +338,11 @@ async function finish() {
       markPressed('[data-tool]', (b) => b.dataset.tool === state.tool);
       showStyle(state.style, state.tool);
       showCropBar(state.pendingCrop);
+      // A crop changes how big the picture is, so a fit has to be worked out
+      // again. Safe to call from here because applyZoom only redraws when the
+      // width it wants is not the width already set, so this settles in one
+      // pass rather than notifying its way round in a circle. D58.
+      applyZoom();
     },
   });
 
@@ -341,6 +351,9 @@ async function finish() {
   applyHiddenShapes(settings.hiddenShapes ?? []);
 
   ui.canvas.hidden = false;
+  // Fit the width, which is what the old max-width rule did on its own, so a
+  // capture opens exactly where it always has.
+  applyZoom();
   // The bar has served its purpose; leaving it full reads as unfinished work.
   ui.track.hidden = true;
   ui.download.disabled = false;
@@ -1309,13 +1322,203 @@ for (const button of ui.toolbar.querySelectorAll('[data-frame-step]')) {
   });
 }
 
+// ZOOM, AND THE OVERVIEW PANE
+//
+// Zoom is a CSS width on the canvas and nothing else. The page keeps doing the
+// scrolling, which is the decision the rest of this depends on: the editor
+// converts every pointer position through `canvas.getBoundingClientRect()`, and
+// the inline text box is positioned from the same box plus the window's scroll
+// offset. Put the canvas in its own scrolling container instead, which is the
+// obvious way to build a zoom, and both of those break at once. That is
+// LIMITATIONS L17, and this is why it never fires.
+
+const ZOOM_MIN = 10;
+const ZOOM_MAX = 400;
+
+// 'width', 'height' or a number of per cent. A fit is a rule rather than a
+// value, so the picture goes on fitting when the window is resized.
+let zoomFit = 'width';
+
+const clampZoom = (percent) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(percent)));
+
+/**
+ * The per cent the current rule works out to, for this window and this image.
+ *
+ * The image is read off the canvas element rather than out of the editor's
+ * state, because `editor.state` carries the style and not the crop: the crop is
+ * on the object handed to `onChange`, which is a different shape. Reading the
+ * canvas is also simply true by construction, since the canvas is resized to the
+ * crop and there is no second copy of the number to fall out of step.
+ */
+function zoomPercent() {
+  const crop = { w: ui.canvas.width, h: ui.canvas.height };
+  if (!crop.w || !crop.h) return 100;
+  // 100% means one pixel of the capture to one pixel of this screen, which is
+  // what it means in an image viewer and is the size at which a redaction can be
+  // judged. It is not the size the page was: a retina capture holds two device
+  // pixels per CSS pixel, so the page at its own size is 50% here.
+  const room = document.documentElement.clientWidth - 48;
+  const tall = window.innerHeight - ui.toolbar.offsetHeight - 48;
+  if (zoomFit === 'width') return clampZoom((room / crop.w) * 100);
+  if (zoomFit === 'height') return clampZoom((tall / crop.h) * 100);
+  return clampZoom(zoomFit);
+}
+
+function applyZoom() {
+  if (!editor || ui.canvas.hidden || !ui.canvas.width) return;
+  const crop = { w: ui.canvas.width };
+  const percent = zoomPercent();
+  const wanted = `${Math.round((crop.w * percent) / 100)}px`;
+  // Whether anything actually moved. render() ends by calling notify(), so a
+  // redraw from inside a change handler would call this again: without this the
+  // loop only stops because the numbers stop changing, and that is not a thing
+  // to rely on. D58.
+  const moved = ui.canvas.style.width !== wanted;
+  ui.canvas.style.width = wanted;
+  // A fit means the picture never overflows, so the old max-width rule still
+  // holds it. Above 100% it has to be allowed to be wider than the window, or
+  // zooming in would do nothing at all.
+  ui.canvas.style.maxWidth = zoomFit === 'width' ? '100%' : 'none';
+
+  ui.zoomLevel.value = String(percent);
+  ui.zoomOut.textContent = `${percent}%`;
+  for (const button of ui.toolbar.querySelectorAll('[data-fit]')) {
+    const mine = button.dataset.fit === 'width' || button.dataset.fit === 'height'
+      ? button.dataset.fit === zoomFit
+      : zoomFit === 100;
+    button.setAttribute('aria-pressed', String(mine));
+  }
+
+  // Handles and the hover outline are drawn at a fixed size on screen, worked
+  // out from the ratio between the image and the box it is shown in, so a zoom
+  // that did not redraw would leave them the size they were at the old one.
+  if (moved) editor.render();
+  showOverview();
+}
+
+/**
+ * The pane, and where the marker sits in it.
+ *
+ * A schematic of a page rather than a picture of the capture: the same sheet the
+ * progress popup draws while it is capturing, so a reader who has seen one
+ * recognises the other. It also means there is nothing to redraw, which matters
+ * on a capture that is twelve thousand pixels tall and being scrolled.
+ */
+function showOverview() {
+  const pane = ui.overview;
+  if (!editor || ui.canvas.hidden || pane.dataset.off === 'yes') {
+    pane.hidden = true;
+    return;
+  }
+  const box = ui.canvas.getBoundingClientRect();
+  if (!box.width || !box.height) {
+    pane.hidden = true;
+    return;
+  }
+
+  // Nothing to navigate: the marker would cover the sheet and say nothing.
+  const spare = 4;
+  const taller = box.height > window.innerHeight - ui.toolbar.offsetHeight + spare;
+  const wider = box.width > document.documentElement.clientWidth + spare;
+  if (!taller && !wider) {
+    pane.hidden = true;
+    return;
+  }
+  pane.hidden = false;
+
+  // The sheet keeps the capture's proportions inside a fixed box, so a long page
+  // is a long sheet and a wide one is a wide sheet, and neither can grow off the
+  // side of the window.
+  const fit = Math.min(70 / box.width, 210 / box.height);
+  ui.overviewSheet.style.width = `${Math.round(box.width * fit)}px`;
+  ui.overviewSheet.style.height = `${Math.round(box.height * fit)}px`;
+
+  // Where the window sits over the picture, in the picture's own terms. The
+  // canvas is in the document, so its top in document coordinates is its box
+  // top plus however far the page has been scrolled.
+  const top = window.scrollY - (box.top + window.scrollY);
+  const left = window.scrollX - (box.left + window.scrollX);
+  const seenH = Math.min(box.height, window.innerHeight - ui.toolbar.offsetHeight);
+  const seenW = Math.min(box.width, document.documentElement.clientWidth);
+
+  const port = ui.overviewPort;
+  port.style.top = `${Math.max(0, Math.min(100, (top / box.height) * 100))}%`;
+  port.style.height = `${Math.max(3, Math.min(100, (seenH / box.height) * 100))}%`;
+  port.style.left = `${Math.max(0, Math.min(100, (left / box.width) * 100))}%`;
+  port.style.width = `${Math.max(3, Math.min(100, (seenW / box.width) * 100))}%`;
+}
+
+/** Scroll so that a point on the sheet is the middle of what is on screen. */
+function jumpTo(event) {
+  const box = ui.canvas.getBoundingClientRect();
+  const sheet = ui.overviewSheet.getBoundingClientRect();
+  if (!sheet.height || !box.height) return;
+  const downSheet = (event.clientY - sheet.top) / sheet.height;
+  const acrossSheet = (event.clientX - sheet.left) / sheet.width;
+  const seenH = window.innerHeight - ui.toolbar.offsetHeight;
+  const seenW = document.documentElement.clientWidth;
+  window.scrollTo({
+    top: (box.top + window.scrollY) + downSheet * box.height - seenH / 2,
+    left: (box.left + window.scrollX) + acrossSheet * box.width - seenW / 2,
+    behavior: 'auto',
+  });
+}
+
+ui.overviewSheet.addEventListener('pointerdown', (event) => {
+  event.preventDefault();
+  ui.overviewPort.classList.add('held');
+  ui.overviewSheet.setPointerCapture(event.pointerId);
+  jumpTo(event);
+});
+ui.overviewSheet.addEventListener('pointermove', (event) => {
+  if (!ui.overviewSheet.hasPointerCapture?.(event.pointerId)) return;
+  jumpTo(event);
+});
+ui.overviewSheet.addEventListener('pointerup', (event) => {
+  ui.overviewPort.classList.remove('held');
+  if (ui.overviewSheet.hasPointerCapture?.(event.pointerId)) {
+    ui.overviewSheet.releasePointerCapture(event.pointerId);
+  }
+});
+
+ui.zoomLevel.addEventListener('input', () => {
+  zoomFit = clampZoom(Number(ui.zoomLevel.value));
+  applyZoom();
+});
+
+for (const button of ui.toolbar.querySelectorAll('[data-fit]')) {
+  button.addEventListener('click', () => {
+    zoomFit = button.dataset.fit === '100' ? 100 : button.dataset.fit;
+    applyZoom();
+  });
+}
+
+// The marker follows the window, and a fit follows the window's size.
+window.addEventListener('scroll', showOverview, { passive: true });
+window.addEventListener('resize', () => applyZoom());
+
 // WHAT THE USER CHOSE TO SEE
 
 /** Controls switched off on the options page. Never the settings button. */
 function applyHiddenButtons(hidden) {
-  for (const holder of ui.toolbar.querySelectorAll('[data-button]')) {
+  // The whole document, not just the toolbar. The overview pane is a control
+  // like any other and the README promises every one of them can be switched
+  // off, but it is fixed to the window rather than sitting in the toolbar, so a
+  // query scoped to the toolbar would have quietly exempted it.
+  for (const holder of document.querySelectorAll('[data-button]')) {
+    if (holder === ui.overview) {
+      // The pane owns its own `hidden`, because it also takes itself away when
+      // the whole capture is already on screen. The switch is recorded here and
+      // read there, so the two cannot fight over the same attribute.
+      holder.dataset.off = hidden.includes('overview') ? 'yes' : 'no';
+      continue;
+    }
     holder.hidden = hidden.includes(holder.dataset.button);
   }
+  // Hidden is not the same as having nothing to show. The pane decides for
+  // itself whether the capture needs it, and that decision has to be re-made
+  // whenever the switch changes.
+  showOverview();
 }
 
 /**
