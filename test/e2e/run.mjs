@@ -375,6 +375,36 @@ function stageExtension(deepFrames) {
     );
   }
 
+  // --frozen simulates the one failure captureVisibleTab has that nothing in
+  // the pipeline can see: it hands back the last frame the compositor
+  // presented, so a screenful can arrive that is the previous one, placed at
+  // the new scroll position because the page really did move. It cannot be
+  // provoked from outside, because it is a race inside Chrome's compositor,
+  // so the worker's own capture step is made to serve the previous frame once.
+  // An unrepaired build then stitches one screenful twice and drops the one
+  // that should have been there, which verifyFixture reports as a duplicated
+  // and a missing band.
+  if (process.argv.includes('--frozen')) {
+    const worker = join(dir, 'src', 'background.js');
+    const shim = `globalThis.__fpcFrozen = { calls: 0, served: 0, last: null };
+async function captureViewport(windowId, delay) {
+  globalThis.__fpcFrozen.calls += 1;
+  if (globalThis.__fpcFrozen.calls === 2 && globalThis.__fpcFrozen.last) {
+    globalThis.__fpcFrozen.served += 1;
+    return { dataUrl: globalThis.__fpcFrozen.last, delay };
+  }
+  const taken = await captureViewportForReal(windowId, delay);
+  globalThis.__fpcFrozen.last = taken.dataUrl;
+  return taken;
+}
+async function captureViewportForReal(windowId, delay) {
+  let current = delay;`;
+    const source = readFileSync(worker, 'utf8');
+    const target = 'async function captureViewport(windowId, delay) {\n  let current = delay;';
+    if (!source.includes(target)) throw new Error('--frozen cannot find the capture step to freeze');
+    writeFileSync(worker, source.replace(target, shim));
+  }
+
   return dir;
 }
 
@@ -3466,6 +3496,22 @@ async function main() {
       process.exitCode = 1;
     } else {
       const path = join(downloadDir, fixturePng);
+
+      // --frozen only proves anything if Chrome was actually made to repeat a
+      // frame. Without this the flag could stop working and the run would go on
+      // reporting every band present, which is the shape of a check that has
+      // quietly stopped checking.
+      if (process.argv.includes('--frozen')) {
+        console.log('\na screenful Chrome had already handed over:');
+        const frozen = await evaluate(cdp, swSession, 'globalThis.__fpcFrozen');
+        if (frozen?.served === 1) {
+          console.log(`  ok   the capture step served the previous frame once (${frozen.calls} photographs taken)`);
+        } else {
+          console.log(`  FAIL nothing was frozen, so the run proves nothing: ${JSON.stringify(frozen)}`);
+          process.exitCode = 1;
+        }
+      }
+
       console.log('\nverifying the fixture capture:');
       const { problems, notes } = verifyFixture(path);
       for (const note of notes) console.log(`  ok   ${note}`);

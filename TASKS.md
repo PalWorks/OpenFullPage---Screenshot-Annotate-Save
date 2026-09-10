@@ -61,9 +61,16 @@ implements them twice. Every one has tests.
 | **F2** | Anything playing is paused for the capture and started again afterwards. Only what was playing, so a video already stopped stays stopped | `src/content/prepare.js`, L27, L28 |
 | **F21** | Export quality, and what each format would actually cost. The sizes are the capture really encoded, measured while the menu is open, cheapest format first | `src/ui/result.js`, D54 |
 | **F26** | The button that was pressed answers, with a tick, a green ground and an accessible name that says what happened. It does not change width to do it | `src/ui/result.*`, D55 |
+| **T30** | A screenful that repeats the one before it is photographed again. `captureVisibleTab` hands back the last frame the compositor presented, and a prepared page produces frames only when it scrolls | `src/content/prepare.js`, `src/background.js`, `--frozen`, D56, L39 |
 
-**Release 1.7.0 is complete.** T1, T2, T3, T10, T11, T19, T20, F1, F2, F21 and F26 have all shipped.
-**Still open from 1.8.0:** F6 and F4. F27 is closed.
+**Release 1.7.0 is complete.** T1, T2, T3, T10, T11, T19, T20, F1, F2, F21, F26 and
+T30 have all shipped.
+**Still open from 1.8.0:** F6, F4 and F43. F27 is closed.
+
+**T30 was found in the field, not by the suite**, which is the only entry here
+that can say that. It is the reason `--frozen` exists: the failure lives inside
+Chrome's compositor and cannot be provoked from outside, so the check stages a
+worker whose capture step serves the previous frame once.
 
 **Queued by the maintainer on 2026-09-10:** F3, the rating nudge, and F42,
 donations. Both are designed in [docs/ROADMAP.md](docs/ROADMAP.md) under release
@@ -350,6 +357,31 @@ document. Putting the canvas in its own scrolling container breaks it.
 - `toImage()` and `pickTolerance()` already derive scale from the rendered box, so
   the drawing maths should need no change. Prove it with a test that draws at 400%
   and asserts the shape lands at the same image coordinates as at 100%.
+
+### F43 (P1) A caption wraps inside a width you set
+
+**Goal.** A text shape has no width, so editing a caption widens its box instead
+of wrapping into it, and the corner handles scale the point size because that is
+all a box with no width can do. Preview gives a text box two side handles, sets
+the width from those, and lets the height follow the words. [LIMITATIONS.md](docs/LIMITATIONS.md) L41.
+
+**Acceptance.**
+
+- A text shape carries an optional `wrap` in image pixels. A shape without one
+  measures exactly as it does today, so nothing saved before this lands moves.
+- Dragging either side handle sets `wrap` and re-wraps on the drag, and sets it
+  for the first time on a shape that never had one.
+- The height is never dragged. It is the line count times the line height, and
+  the frame, the plate and the hit box all follow from `measureText` without
+  learning anything new.
+- Breaking is on word boundaries. A single word wider than the wrap overflows
+  rather than looping, and a word that exactly fills the width stays on its line.
+- The entry box wraps at the same width while it is being typed into, so what is
+  typed still looks like what will be drawn.
+- Unit tests for the breaking against a fake measurer, covering the exact-fit and
+  unbreakable-word cases. Mutation confirms each can fail.
+
+**Design.** [docs/ROADMAP.md](docs/ROADMAP.md), "F43, a caption that wraps, in detail".
 
 ### F4 (P1) Freehand pen and object eraser
 

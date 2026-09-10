@@ -30,6 +30,7 @@ import {
   markSpecialElements,
   pauseMedia,
   resumeMedia,
+  repaintAt,
   reportFrameHeights,
   restorePage,
   scrollAndSettle,
@@ -48,6 +49,12 @@ import { pickElement } from './content/pick.js';
 const CAPTURE_DELAY_MIN_MS = 180;
 const CAPTURE_DELAY_MAX_MS = 1200;
 const CAPTURE_RETRIES = 6;
+
+// How many times a screenful that arrived identical to the one before it is
+// photographed again. Three, because the repair is cheap and the alternative is
+// losing a screenful of the page silently, and because a page that has produced
+// no frame after three forced repaints is not going to produce one.
+const STALE_RETAKES = 3;
 
 // Spent per tile, and only while something in shot is still loading. Pages
 // with no lazy content never wait at all.
@@ -262,6 +269,39 @@ async function captureViewport(windowId, delay) {
   throw new Error('Capture was rate limited repeatedly.');
 }
 
+/**
+ * Photograph the tile again when Chrome handed back the frame it already had.
+ *
+ * captureVisibleTab does not photograph the page. It hands back the last frame
+ * the compositor presented, and a capture stops every animation and transition
+ * before it starts walking, so on most pages the scroll is the only thing
+ * producing frames at all. Lose the race with one and the screenful that
+ * arrives is the previous one, placed at the new scroll position, because the
+ * page really did move. The output then repeats one screenful and drops the one
+ * that should have been there, and nothing in the pipeline notices: the tile
+ * is the right size, lands at the right offset, and is a photograph of the
+ * right page.
+ *
+ * Two screenfuls can be identical honestly, on a long blank stretch, which is
+ * why this repairs rather than fails: a forced repaint and another photograph
+ * costs one capture, and a stretch that really is identical simply arrives
+ * identical again and is kept.
+ */
+async function retakeIfStale(tabId, windowId, previous, at, shot) {
+  // Nothing to compare against, or the page did not move, in which case an
+  // identical screenful is the only correct answer.
+  if (!previous || (previous.x === at.x && previous.y === at.y)) return shot;
+
+  let taken = shot;
+  for (let attempt = 0; attempt < STALE_RETAKES; attempt += 1) {
+    if (taken.dataUrl !== previous.dataUrl) break;
+    await inPage(tabId, repaintAt, [at.x, at.y]);
+    await wait(taken.delay);
+    taken = await captureViewport(windowId, taken.delay);
+  }
+  return taken;
+}
+
 /** Turn the failure into something a person can act on. */
 export function explain(error) {
   const message = String(error?.message ?? error);
@@ -408,6 +448,7 @@ async function runCapture(tab, mode, settings) {
       try {
         at = await inPage(tabId, scrollAndSettle, [target.x, target.y, SETTLE_BUDGET_MS]);
         shot = await captureViewport(tab.windowId, delay);
+        shot = await retakeIfStale(tabId, tab.windowId, shots[shots.length - 1], at, shot);
       } catch (error) {
         // With nothing in hand there is no capture to salvage, so this is a
         // genuine failure. With screenfuls already taken, a page that has stopped

@@ -159,7 +159,16 @@ export async function scrollAndSettle(x, y, budgetMs) {
     await pause(40);
   }
 
-  // One more frame so a just-decoded image is painted before it is photographed.
+  // Two more frames, not one. A requestAnimationFrame callback runs before the
+  // frame it belongs to is drawn, so a single one proves the page is animating
+  // and nothing else. The second callback cannot run until the first frame has
+  // actually been produced, which is the guarantee this step needs:
+  // captureVisibleTab does not photograph the page, it hands back the last
+  // frame the compositor presented, and PREPARE_CSS has already stopped every
+  // animation and transition, so on most pages the scroll is the only thing
+  // producing frames at all. One frame short and Chrome returns the view from
+  // before the scroll.
+  await nextFrame();
   await nextFrame();
 
   return {
@@ -171,6 +180,51 @@ export async function scrollAndSettle(x, y, budgetMs) {
       document.body ? document.body.scrollHeight : 0,
     ),
   };
+}
+
+/**
+ * Make the compositor produce a fresh frame at a position it is already at.
+ *
+ * The repair for the one failure mode captureVisibleTab has that nothing else
+ * can see: it hands back the last frame the compositor presented, so when no
+ * frame was produced for this scroll position, the screenful that arrives is
+ * the previous one. The page has genuinely moved, so the tile is placed at the
+ * new position, and the result is one screenful photographed twice and one
+ * screenful of the page lost with nothing said.
+ *
+ * A pixel away and back is the smallest change that cannot be folded away: the
+ * scroll offset really does change twice, so two frames really do have to be
+ * produced, and the page ends exactly where it started. The alternative,
+ * waiting longer, is a guess about a page that by then is producing no frames
+ * at all.
+ *
+ * Self-contained, like everything else here: it is injected as source, so it
+ * cannot reach the copy of this helper inside scrollAndSettle.
+ */
+export async function repaintAt(x, y) {
+  const nextFrame = () =>
+    new Promise((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      requestAnimationFrame(finish);
+      setTimeout(finish, 60);
+    });
+
+  // Away from the target, not past it: a page already at its last scroll
+  // position cannot move further down, and asking it to would land back where
+  // it started and produce nothing.
+  window.scrollTo(x, y > 0 ? y - 1 : y + 1);
+  await nextFrame();
+  await nextFrame();
+  window.scrollTo(x, y);
+  await nextFrame();
+  await nextFrame();
+
+  return { x: window.scrollX, y: window.scrollY };
 }
 
 /**

@@ -33,6 +33,7 @@ already scoped and ready to start, or **planned** with the effort in the form
 | 1.7.0 repairs | T1 | Fix the false storage claim in the README | shipped 2026-09-08 | |
 | 1.7.0 repairs | T2 | `encodeOrThrow`, so a null blob cannot fail silently | shipped 2026-09-10 | D52. A null blob was a download of nothing with no error anywhere |
 | 1.7.0 repairs | T11 | Version the port protocol | shipped 2026-09-10 | D53. Unblocks F10. Exercised by `--stale` |
+| 1.7.0 repairs | T30 | A screenful Chrome had already presented is photographed again | shipped 2026-09-10 | D56, L39. **Found in the field**, not by a test. A repeated screenful, and a lost one. Exercised by `--frozen` |
 | 1.7.0 wins | F1 | WebP export | shipped 2026-09-10 | D52. Output formats are described once now, not in three lists |
 | 1.7.0 wins | F21 | Export quality, and what each format costs | shipped 2026-09-10 | D54. The size readout is the feature; the slider is how you move it |
 | 1.7.0 wins | F2 | Pause playing media during the capture | shipped 2026-09-10 | L27, L28. Only what was playing, resumed first in the tidy-up |
@@ -46,6 +47,7 @@ already scoped and ready to start, or **planned** with the effort in the form
 | 1.8.0 toolbar | F40 | Text is a shape, with a frame and a plate | shipped 2026-09-10 | D46, D50. The Frame block replaced the hint that stood in for it |
 | 1.8.0 toolbar | F6 | Navigate a large capture: zoom and an overview pane | planned, 2d / 1.5h | What makes a 16,000 pixel capture workable. Watch L17 |
 | 1.8.0 toolbar | F4 | Freehand pen and object eraser | planned, 2d / 45m | No pixel eraser: it would bake pixels into the immutable base |
+| 1.8.0 toolbar | F43 | A caption wraps inside a width you set | planned, 2d / 45m | L41. Two side handles set the width, the height follows the words, the way Preview does it |
 | 1.9.0 long pages | F10 | Multi-part export for very long pages | planned, 5d / 2h | **The known defect.** Must stream part by part or Chrome kills the worker |
 | 1.9.0 long pages | F13 | Runtime seam verification | planned, 5d / 2h | We verify seams in tests. This verifies them in the field |
 | 1.9.5 region | F28 | Select a region of the canvas | planned, 2d / 45m | A marquee other operations take as an argument. Rectangle only |
@@ -186,6 +188,7 @@ appear**. See [DECISIONS.md](DECISIONS.md) D17.
 |---|---|---|---|
 | F24 | **Toolbar regrouped, and configurable** | **shipped**, D17, D18, D20, D21 | Two halves. **Grouping, following macOS Preview** ([DECISIONS.md](DECISIONS.md) D18): each button carries a chevron that opens the related set, and the button's glyph shows the current value. Shapes collapse behind one button; five weights, two dash patterns and four arrow endings behind Stroke style; and colour splits into **Border** and **Fill**, Preview's own two glyphs, each ending in a custom spectrum with a hex field. Text opens an inspector: family, size, bold, italic and underline. Colour is taken from Border colour rather than duplicated, and alignment was held back until text entry is multi-line, both recorded as D21. Nineteen buttons then carry sixty eight controls against today's twenty six. This is a capability change as much as a layout one: **there is no fill and no arbitrary colour in the product today**. **Configuration** ([DECISIONS.md](DECISIONS.md) D17): every button has an on/off switch on the options page, a curated default set on, "Show everything" and "Reset to defaults" present. Keyboard shortcuts stay bound to individual tools, so grouping costs a click and never a keystroke. **Must land before F4 and F6 add controls**
 | F6 | **Navigate a large capture** | 2d / 1.5h | Zoom is **one magnifier button**; clicking it opens a slider plus Fit width, Fit height and 100%. Alongside it, an **overview pane in the top right** showing the whole capture with the current viewport marked, the way Sublime Text's minimap works. This is what makes a 16,000 pixel capture workable. Watch [LIMITATIONS.md](LIMITATIONS.md) L17: inline text entry must be repositioned when the canvas moves inside a scroll container |
+| F43 | **A caption wraps inside a width you set** | 2d / 45m | Full design below |
 | F4 | **Freehand pen and object eraser** | 2d / 45m | Pen is a polyline shape, hit-tested with the existing `distanceToSegment`. The eraser deletes the shape under the cursor. **No pixel eraser**: it would bake pixels into the immutable base |
 | F29 | **More shapes behind the Shapes chevron** | **shipped**, D43 | The chevron F24 built is where extra shapes go for free. Worth taking: **rounded rectangle** (everything it is drawn around is rounded), **speech bubble** (explaining a screenshot is the job, and a callout with a tail is how it is done), and the **loupe**, a circle that redraws what is under it magnified, which nobody else in this category has and which is how you show a detail on a 14,000 pixel capture. Refused: star and polygon, which are drawing-app furniture that no bug report needs. **Shipped as twelve shapes**, the three above plus a flowchart set the maintainer asked for, with the rounded rectangle delivered as a corner radius property of the Box rather than as its own tool. The loupe samples a redacted base so it cannot un-redact a redaction, D47. **Reopened and closed again on 2026-09-10 after user feedback**: the corner radius stays a property, and **Rounded box** and **Stadium** are now also entries in the Shapes popover that pick the Box and set that property in one click. Fourteen entries, twelve kinds, no new shape in the model, D51 |
 | F27 | **The editor says what is under the pointer** | **shipped except the z-order menu**, D42, D44 | The cursor never changes except when the tool changes, and `pointermove` returns immediately unless a drag is running, so the canvas gives no feedback until you commit to a click. Adds hover cursors, a hover outline, arrow key nudging, Shift constrain while resizing, Alt drag to duplicate, `Escape` to cancel a drag, a right click menu carrying the z order that is unreachable today, and shortcut keys in every tooltip. All of it inside handlers that already exist. **Shipped in full on 2026-09-10.** Hover cursors and outline and Escape came first (F41, D42), then Shift constrain, arrow key nudging and Alt drag. The last two landed together: a **right click menu on the canvas** carrying Bring to front, Bring forward, Send backward, Send to back and Delete, with `[` and `]` for a step and the platform accelerator for all the way (D49); and **a key in every tool's tooltip**, which meant giving the five shapes that had none a letter from their own name. Empty canvas keeps Chrome's own menu, because taking away "Save image as" to show a menu of greyed-out items is a straight loss |
@@ -400,3 +403,48 @@ it is the store listing's strongest argument.
 | Dependencies | **zero** | jsPDF | jQuery, anime.js, jsPDF, Tesseract WASM | jQuery, colpick |
 | Install size | **~100KB** | ~1MB | 6.4MB | 1.6MB |
 | Shipped build matches the source | **byte for byte** | no | no | no |
+
+### F43, a caption that wraps, in detail
+
+**What is wrong today.** A text shape has no width. Its box is measured from the
+longest line it happens to contain, so adding a word to a caption makes the box
+wider rather than pushing the word onto the next line, and a long sentence runs
+off across the picture instead of forming a paragraph. The corner handles scale
+the point size, because scaling is the only thing a box with no width of its own
+can do. This is [LIMITATIONS.md](LIMITATIONS.md) L41.
+
+**What it should do**, which is what Preview does. A text box carries a width.
+Two handles, at the midpoints of the left and right edges, are the only handles
+that change it. Dragging one re-wraps the words inside the new width and the
+height follows from how many lines that takes. The top and bottom edges are not
+draggable at all, because the height is not a thing anyone sets: it is a
+consequence of the words and the width.
+
+**What has to change.**
+
+- **The model.** A text shape gains an optional `wrap`, in image pixels. Optional
+  is the migration: a shape saved without one is a shape that has never been
+  given a width, and it measures the way it does today. Nothing has to be
+  converted, and a capture annotated before this lands keeps its layout.
+- **`measureText`.** Given a `wrap`, it breaks each line on word boundaries at
+  the measured width and returns the resulting line count, so the frame, the
+  plate and the hit box all follow without knowing anything new.
+- **`drawText`.** Draws the broken lines rather than the stored ones. The stored
+  text keeps its own newlines: a wrap is a display width, never an edit to what
+  was typed.
+- **The handles.** `handlesFor` returns the two edge midpoints for a text shape
+  with a `wrap`, and the corner handles keep scaling the point size for one
+  without. A drag on a side handle sets `wrap`, and sets it for the first time on
+  a shape that had none.
+- **The entry box.** `startTextEntry` uses `white-space: pre` and grows from
+  `scrollHeight`. With a wrap it becomes `pre-wrap` at the same width, so what is
+  typed still looks like what will be drawn, which is the property that whole
+  function exists to hold.
+
+**The one real decision inside it.** Word breaking has to be done with
+`ctx.measureText`, in the editor, and `measureText` in `src/lib/edit.js` is pure
+and takes a measuring function precisely so that it can. That seam already
+exists, so the breaking algorithm is unit testable against a fake measurer, which
+is where the off-by-one lives: a word that exactly fills the width, and a single
+word longer than the width, which cannot be broken and must be allowed to
+overflow rather than loop forever.

@@ -13,6 +13,35 @@ a clean checkout with `./tools/pack.sh`, not merely checkable against one downlo
 Everything below is on `main` and not yet packaged. It covers the toolbar rework
 and the capture reliability work of 2026-09-08 and 2026-09-09.
 
+### Fixed: a screenful the browser had already handed over is photographed again
+Reported from a real capture of a news page: the top of the article appeared twice.
+The two copies were the same photograph, and the giveaway was that both carried the
+site's fixed sign-in banner, which the extension hides the moment the first screenful
+has landed. The second copy was taken before that CSS existed, which is to say it was
+not taken at all.
+
+`chrome.tabs.captureVisibleTab` does not photograph the page. It hands back the last
+frame the browser's compositor presented, and a capture spends its first step making
+sure the page is not moving: every animation and transition is paused, and anything
+playing is stopped. On a prepared page the scroll is the only thing left that produces
+a frame. Lose that race and the screenful that arrives is the previous one, placed at
+the new position because the page really did scroll. One screenful is repeated and one
+screenful of the page is lost, with nothing said anywhere.
+
+Two changes. The step that scrolls now waits for two animation frames rather than one,
+because the first callback runs before the frame it belongs to is drawn and proves
+only that the page is animating. And a screenful identical to the one before it, at a
+scroll position that genuinely differs, is photographed again after a forced repaint,
+up to three times.
+
+It repairs rather than refuses, because two screenfuls can be identical honestly on a
+blank stretch of a page and the pixels cannot tell that apart from a stale frame.
+
+The race lives inside Chrome and cannot be provoked from outside, so
+`node test/e2e/run.mjs --frozen` stages a worker whose capture step serves the previous
+frame once. Without the repair the fixture check reports the sticky header and the
+fixed bar each appearing twice, which is exactly what the news page did.
+
 ### Added: the download menu says what each format would cost
 A quality slider with no readout is guesswork. Nobody moves one because they want
 quality 78; they move it because the file is too big to attach, and without a number

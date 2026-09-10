@@ -1495,3 +1495,55 @@ The green is its own token pair rather than a tint mixed with transparent. The
 rendered-page audit reads computed colours, and a translucent ground resolves to
 whatever is behind it, which is how the first attempt measured green on green at
 1:1 and was right to fail.
+
+## D56: A screenful that repeats the one before it is photographed again
+
+`chrome.tabs.captureVisibleTab` does not photograph the page. It hands back the
+last frame the compositor presented. Those are the same thing only while the
+page is producing frames, and a capture spends its first step making sure it is
+not: `PREPARE_CSS` pauses every animation and every transition, and F2 pauses
+anything playing. On a prepared page the scroll is the only thing left that
+produces a frame at all.
+
+Lose that race and the screenful that arrives is the previous one. Nothing
+downstream can tell. The tile is the right size, it is placed at the right
+offset because `scrollAndSettle` reported the position the page really did reach,
+and it is a photograph of the right page. The output repeats one screenful and
+loses the one that should have been there, and says nothing.
+
+This was observed on a real news page on 2026-09-10: the top of the article
+appeared twice, and the second copy still carried the fixed sign-in banner that
+the extension hides immediately after the first screenful, which is what proved
+the second photograph was taken before that CSS existed rather than after it.
+
+**Two changes, because prevention and repair answer different halves.**
+
+*Prevention.* `scrollAndSettle` ended on a single `requestAnimationFrame`. That
+callback runs **before** the frame it belongs to is drawn, so it proves the page
+is animating and nothing more. It now waits for a second one, which cannot run
+until the first frame has actually been produced.
+
+*Repair.* A screenful identical to the one before it, taken at a scroll position
+that genuinely differs, is photographed again, after a forced repaint: one pixel
+away and back, which is the smallest change that cannot be folded away, since the
+scroll offset really does change twice and the page ends where it started. Three
+attempts, then the screenful is kept.
+
+**Why it repairs rather than fails.** Two screenfuls can be identical honestly,
+on a long blank stretch of a page. There is no way to tell that apart from a
+stale frame by looking at the pixels, so the cheap answer is to try again: a
+stretch that really is identical simply arrives identical again and is kept, at
+a cost of one extra capture. Refusing the capture instead would turn a common,
+harmless case into a failure.
+
+**Why not simply wait longer.** Waiting is a guess about a page that by then is
+producing no frames at all. A page with nothing moving on it can sit on the same
+presented frame indefinitely, so a longer delay makes the race rarer without
+closing it, and slows every capture on every page to do it.
+
+**How it is proved.** The race lives inside Chrome's compositor and cannot be
+provoked from outside, so `node test/e2e/run.mjs --frozen` makes the worker's own
+capture step serve the previous frame once, the same staging trick `--stale` uses
+for the port protocol. An unrepaired build fails the fixture check with the
+sticky header and the fixed bar each appearing twice, which is exactly what the
+real page did.
