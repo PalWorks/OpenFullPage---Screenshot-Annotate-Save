@@ -13,7 +13,7 @@
 import { applyFilename, captureBasename } from '../lib/plan.js';
 import { buildPdf, deflate, planPdfPages, rgbaToRgb } from '../lib/pdf.js';
 import { CORNERED_KINDS, SHAPE_TOOLS, kindOfTool } from '../lib/edit.js';
-import { OUTPUT_FORMATS, encodeOrThrow, extensionOf } from '../lib/encode.js';
+import { DOWNLOAD_FORMATS, OUTPUT_FORMATS, encodeOrThrow, extensionOf } from '../lib/encode.js';
 import { PROTOCOL_MISMATCH, speaksOurProtocol } from '../lib/protocol.js';
 import { createEditor } from './editor.js';
 import { defaultStyle, saveSettings } from '../lib/settings.js';
@@ -65,6 +65,8 @@ const ui = {
   frameWell: el('frame-well'),
   frameWidth: el('frame-width'),
   ctx: el('ctx'),
+  quality: el('quality'),
+  qualityOut: el('quality-out'),
 };
 
 // Single-key tool shortcuts, which is how tool palettes are normally driven.
@@ -104,10 +106,17 @@ const NUDGES = {
   ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1],
 };
 
-// What the lossy encoders are given. WebP and JPEG both take it, and 0.92 is
-// where JPEG stops being visibly worse than the original on a screenshot, which
-// is mostly flat colour and hard edges rather than photographic detail.
-const LOSSY_QUALITY = 0.92;
+// How long a confirmation stays. Long enough to be seen after a glance away,
+// short enough that the toolbar is not still congratulating itself by the time
+// the next thing is done.
+const CONFIRM_MS = 2000;
+
+// What the lossy encoders are given, as a percentage, because that is what the
+// control shows. 92 is where JPEG stops being visibly worse than the original on
+// a screenshot, which is mostly flat colour and hard edges rather than
+// photographic detail, and it is what this was hardcoded to before it was a
+// control at all.
+let quality = 92;
 
 // The stitched capture, kept untouched. The visible canvas is rendered from it
 // on every edit, so undo is exact and repeated edits never degrade the image.
@@ -162,6 +171,53 @@ function markSaved() {
 function say(text, isError = false) {
   ui.status.textContent = text;
   ui.status.classList.toggle('error', isError);
+  ui.status.classList.remove('done');
+}
+
+/**
+ * Confirm, where the reader is already looking.
+ *
+ * Copying and saving both said so in the status line, at the far end of a row
+ * that also carries a filename and a pixel count, in the same muted grey as
+ * both. It is easy to miss entirely, and "did that work" is the one question a
+ * capture tool has to answer without being asked twice.
+ *
+ * So the button that was pressed answers: its glyph becomes a tick and it takes
+ * a green ground for two seconds. The status line still carries the sentence,
+ * briefly on the same green so it reads as the record rather than as one more
+ * grey label.
+ *
+ * The button does not grow to fit a word. Copy and Download are fixed-width icon
+ * buttons, and widening one would shove Download, Upload, Theme and Settings
+ * sideways and back again. A quieter answer in place beats a louder one that
+ * moves the furniture.
+ *
+ * `aria-label` changes with it, so this is an answer for a screen reader too and
+ * not only a colour.
+ */
+const answered = new Map();
+
+function confirmOn(button, text) {
+  say(text);
+  ui.status.classList.add('done');
+
+  if (button) {
+    clearTimeout(answered.get(button)?.timer);
+    const label = answered.get(button)?.label ?? button.getAttribute('aria-label');
+    button.classList.add('done');
+    button.setAttribute('aria-label', text);
+    answered.set(button, {
+      label,
+      timer: setTimeout(() => {
+        button.classList.remove('done');
+        button.setAttribute('aria-label', label);
+        answered.delete(button);
+      }, CONFIRM_MS),
+    });
+  }
+
+  clearTimeout(confirmOn.fade);
+  confirmOn.fade = setTimeout(() => ui.status.classList.remove('done'), CONFIRM_MS);
 }
 
 function formatSize(bytes) {
@@ -272,6 +328,8 @@ async function finish() {
       // to answer to the document underneath rather than to whatever was true
       // when it was opened.
       showMenuState(state);
+      // Every measured file size describes an image that no longer exists.
+      forgetSizes(state);
       ui.dimensions.textContent = `${state.crop.w} × ${state.crop.h} pixels`;
       markPressed('[data-tool]', (b) => b.dataset.tool === state.tool);
       showStyle(state.style, state.tool);
@@ -301,6 +359,7 @@ async function finish() {
   });
   ui.filename.disabled = false;
   format = OUTPUT_FORMATS[settings.format] ? settings.format : 'png';
+  setQuality(settings.quality ?? 92);
   showExtension();
 
   const modeNote =
@@ -526,6 +585,12 @@ function showExtension() {
 function openMenu(open) {
   ui.formats.hidden = !open;
   ui.download.setAttribute('aria-expanded', String(open));
+  // Measuring is what the menu is for now, and it costs real work, so it starts
+  // when the menu opens and stops when it closes.
+  if (open) {
+    showSizes();
+    measureSizes();
+  }
 }
 
 ui.download.addEventListener('click', (event) => {
@@ -1271,14 +1336,17 @@ document.addEventListener('keyup', (event) => {
  * The visible canvas already holds the crop and every annotation, so exporting
  * is just encoding it. What you see is exactly what you get.
  */
-async function encode(format) {
+async function encode(format, { quiet = false } = {}) {
   const canvas = editor.flatten();
   const spec = OUTPUT_FORMATS[format] ?? OUTPUT_FORMATS.png;
-  if (format === 'pdf') return { blob: await encodePdf(canvas), extension: spec.extension };
+  // `quiet` is for measuring a size rather than saving a file: the PDF path
+  // narrates its pages on the status line, and a measurement narrating itself
+  // would overwrite whatever the reader was actually told last.
+  if (format === 'pdf') return { blob: await encodePdf(canvas, quiet), extension: spec.extension };
   // `quality` is passed only to the encoders that take one. Handing a quality to
   // the PNG encoder is not an error, it is simply ignored, but passing it says
   // something untrue about what PNG does.
-  const blob = await encodeOrThrow(canvas, spec.mime, spec.quality ? LOSSY_QUALITY : undefined);
+  const blob = await encodeOrThrow(canvas, spec.mime, spec.quality ? quality / 100 : undefined);
   return { blob, extension: spec.extension };
 }
 
@@ -1294,14 +1362,14 @@ async function encode(format) {
  * uncompressed for a moment, and one 1265 x 16384 image is 62 MB of them; a
  * slice is a tenth of that and only one is alive at a time.
  */
-async function encodePdf(canvas) {
+async function encodePdf(canvas, quiet = false) {
   const slices = planPdfPages(canvas.width, canvas.height);
   const scratch = document.createElement('canvas');
   const ink = scratch.getContext('2d', { alpha: false, willReadFrequently: true });
   const pages = [];
 
   for (const [index, slice] of slices.entries()) {
-    if (slices.length > 1) say(`Building the PDF, page ${index + 1} of ${slices.length}…`);
+    if (slices.length > 1 && !quiet) say(`Building the PDF, page ${index + 1} of ${slices.length}…`);
     scratch.width = canvas.width;
     scratch.height = slice.h;
     ink.drawImage(canvas, 0, slice.y, canvas.width, slice.h, 0, 0, canvas.width, slice.h);
@@ -1343,7 +1411,7 @@ ui.copy.addEventListener('click', async () => {
   if (!editor) return;
   if (await copyToClipboard()) {
     markSaved();
-    say('Copied to the clipboard.');
+    confirmOn(ui.copy, 'Copied to the clipboard.');
   }
 });
 
@@ -1366,7 +1434,7 @@ for (const host of ui.toolbar.querySelectorAll('[data-host]')) {
     const name = host.dataset.hostName;
     if (!(await copyToClipboard())) return;
     markSaved();
-    say(`Copied. Paste it on ${name}, which is opening in a new tab.`);
+    confirmOn(ui.upload, `Copied. Paste it on ${name}, which is opening in a new tab.`);
     chrome.tabs.create({ url: host.dataset.host, active: true });
   });
 }
@@ -1409,7 +1477,8 @@ async function save(chosen, { ask = true } = {}) {
     // the download off.
     setTimeout(() => URL.revokeObjectURL(url), 60000);
     markSaved();
-    say(
+    confirmOn(
+      ui.download,
       `Saved as ${extension.toUpperCase()}${edited ? ', with your edits' : ''}, ${formatSize(blob.size)}.`,
     );
     return id ?? 0;
@@ -1428,6 +1497,138 @@ for (const item of ui.formats.querySelectorAll('[data-format]')) {
     save(item.dataset.format);
   });
 }
+
+// WHAT EACH FORMAT WOULD ACTUALLY COST
+//
+// A quality slider with no readout is guesswork. Nobody moves one because they
+// want "quality 78"; they move it because the file is too big to attach, and
+// without a number the control cannot answer the only question being asked.
+//
+// So these sizes are real. Each is the capture encoded for that format, at the
+// quality currently set, measured while the menu is open. Nothing is estimated
+// from a thumbnail, because a compressed size does not scale with pixel count
+// and a wrong number is worse than none.
+//
+// The cost is paid where it is affordable. Measuring happens only while the menu
+// is open, one format at a time with a yield between, cheapest first, so the two
+// rows the slider moves answer immediately and the PDF, which has to deflate
+// twenty megabytes of samples, arrives a moment later. Everything is cached
+// against the quality it was measured at, and the whole cache is dropped the
+// moment the image changes.
+
+/** Measured sizes, keyed by format and by the quality that produced them. */
+const sizes = new Map();
+/**
+ * What the image was when these were measured.
+ *
+ * A description of the picture, not a count of notifications. The first draft
+ * bumped a generation counter from `onChange` and it never measured anything:
+ * `render()` ends by notifying, `flatten()` renders twice and `restoreSelection`
+ * renders again, so every measurement invalidated itself before its own encoder
+ * had finished. Selection, hover and the crop bar all repaint too, and none of
+ * them changes a single pixel of what a saved file would contain.
+ *
+ * The stamp moves when the drawing does: a commit on the history, a shape added
+ * or removed, or a different crop. It does not move for anything that is merely
+ * drawn on top of the image and hidden again before an export.
+ */
+let imageStamp = '';
+let measuring = false;
+// Cheapest first. The two the slider moves are also the two worth having first.
+const SIZE_ORDER = ['jpeg', 'webp', 'png', 'pdf'];
+
+/** Lossless formats measure once; the lossy ones measure once per quality. */
+const sizeKey = (name) => `${name}:${OUTPUT_FORMATS[name].quality ? quality : 0}`;
+
+function showSizes() {
+  for (const name of DOWNLOAD_FORMATS) {
+    const cell = ui.formats.querySelector(`[data-size="${name}"]`);
+    if (!cell) continue;
+    const bytes = sizes.get(sizeKey(name));
+    // null is a format this capture cannot be encoded as, which is a real
+    // answer and a different one from "not measured yet".
+    cell.textContent = bytes === undefined ? '…' : bytes === null ? 'too large' : formatSize(bytes);
+    cell.classList.toggle('pending', bytes === undefined);
+  }
+}
+
+async function measureSizes() {
+  if (!editor || measuring || ui.formats.hidden) return;
+  measuring = true;
+  try {
+    // Restarted rather than abandoned when the image or the quality changes:
+    // returning would leave `measuring` true until the finally ran, and the
+    // caller that noticed the change cannot start a replacement while it is.
+    // The attempt limit is against an image being edited faster than a format
+    // can be measured, where giving up is right because the next edit restarts.
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const mine = imageStamp;
+      let complete = true;
+      for (const name of SIZE_ORDER) {
+        // The menu is closed, so nobody is reading these and the work is waste.
+        if (ui.formats.hidden) return;
+        const key = sizeKey(name);
+        if (sizes.has(key)) continue;
+        let bytes = null;
+        try {
+          bytes = (await encode(name, { quiet: true })).blob.size;
+        } catch {
+          // A save says why on the status line. A measurement is not something
+          // the reader asked for, so the row says it and nothing interrupts.
+        } finally {
+          editor.restoreSelection();
+        }
+        if (mine !== imageStamp) {
+          complete = false;
+          break;
+        }
+        sizes.set(key, bytes);
+        showSizes();
+        // One turn of the event loop between formats, so a click, a keystroke
+        // or the slider is answered rather than queued behind a PDF.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      if (complete) return;
+    }
+  } finally {
+    measuring = false;
+  }
+}
+
+/**
+ * Called on every repaint. Does nothing unless the picture actually changed.
+ *
+ * @param {{crop: {w: number, h: number}}} state the editor's own report
+ */
+function forgetSizes(state) {
+  if (!editor) return;
+  const { past, future, present } = editor.document;
+  const stamp = `${past.length}.${future.length}.${present.shapes.length}.${state.crop.w}x${state.crop.h}`;
+  if (stamp === imageStamp) return;
+  imageStamp = stamp;
+  sizes.clear();
+  // Nothing on screen to correct while the menu is shut.
+  if (ui.formats.hidden) return;
+  showSizes();
+  measureSizes();
+}
+
+function setQuality(percent) {
+  quality = Math.min(100, Math.max(40, Math.round(percent) || 92));
+  ui.quality.value = String(quality);
+  ui.qualityOut.textContent = `${quality}%`;
+}
+
+ui.quality.addEventListener('input', () => {
+  setQuality(Number(ui.quality.value));
+  showSizes();
+  measureSizes();
+});
+
+// Saved on release rather than on every step of the drag: `input` fires per
+// pixel of travel and each one would be a write to storage.
+ui.quality.addEventListener('change', () => saveSettings({ quality }));
+ui.quality.addEventListener('keydown', (event) => event.stopPropagation());
 
 // THE CONNECTION
 

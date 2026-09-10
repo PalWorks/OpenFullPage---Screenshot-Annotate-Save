@@ -146,6 +146,10 @@ export const DEFAULTS = {
   textFrameColour: null,
   textFramePlate: null,
   textFrameWidth: 2,
+  // What the lossy encoders are given, as a percentage. Deliberately outside
+  // STYLE_KEYS: Reset puts the drawing tools back, and how a file is written out
+  // is not a drawing tool, the same reasoning that keeps `format` out of it.
+  quality: 92,
   // Toolbar controls the user has switched off. Empty means the curated set.
   hiddenButtons: [],
   // Which shapes are hidden from the Shapes popover.
@@ -260,6 +264,12 @@ export function sanitise(raw) {
       : null;
   if (Number.isFinite(raw.textFrameWidth)) {
     clean.textFrameWidth = Math.min(64, Math.max(1, Math.round(raw.textFrameWidth)));
+  }
+  if (Number.isFinite(raw.quality)) {
+    // The floor is 40 rather than 0: below it a screenshot is unreadable, and a
+    // control that can be dragged to a value nobody would keep is a control that
+    // wastes a drag.
+    clean.quality = Math.min(100, Math.max(40, Math.round(raw.quality)));
   }
   clean.textBold = raw.textBold !== false;
   clean.textItalic = raw.textItalic === true;

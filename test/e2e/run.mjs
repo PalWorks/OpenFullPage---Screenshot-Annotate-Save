@@ -1769,6 +1769,147 @@ async function exerciseMultiSelect(cdp, session, check, p) {
  * because the interesting failures are Chrome not reaching the handler and the
  * browser's own menu opening over the top of ours.
  */
+/** "345 KB" and "1.2 MB" back into bytes, so two of them can be compared. */
+function bytesOf(text) {
+  const m = /^([\d.]+)\s*(KB|MB|B)$/.exec(String(text).trim());
+  if (!m) return null;
+  return Number(m[1]) * (m[2] === 'MB' ? 1024 * 1024 : m[2] === 'KB' ? 1024 : 1);
+}
+
+/**
+ * The file sizes in the download menu, and the quality control they exist for.
+ *
+ * A quality slider with no readout is guesswork: nobody moves one because they
+ * want "quality 78", they move it because the file is too big to send. So the
+ * check is not that a number appears, it is that the number answers: dragging
+ * quality down has to make the two lossy formats smaller and leave the two
+ * lossless ones untouched, and untouched means not even re-measured.
+ */
+async function exerciseFileSizes(cdp, session, check) {
+  const read = () =>
+    evaluate(cdp, session, `JSON.stringify(Object.fromEntries(
+      [...document.querySelectorAll('#formats [data-size]')].map((c) => [c.dataset.size, c.textContent])
+    ))`).then(JSON.parse);
+
+  const settled = (label) =>
+    until(label, async () => {
+      const shown = await read();
+      return Object.values(shown).every((v) => v !== '…') ? shown : null;
+    }, { timeoutMs: 90000, everyMs: 250 });
+
+  await clickButton(cdp, session, '#download');
+  const full = await settled('every format to report a file size');
+  const bytes = Object.fromEntries(Object.entries(full).map(([k, v]) => [k, bytesOf(v)]));
+  const missing = Object.entries(bytes).filter(([, v]) => !v).map(([k]) => k);
+  check(missing.length === 0,
+    `no readable file size for ${missing.join(', ')} (${JSON.stringify(full)})`,
+    `every format reports what it would cost (${Object.entries(full).map(([k, v]) => `${k} ${v}`).join(', ')})`);
+  if (missing.length) return;
+
+  // The menu has to survive being used. A slider inside a menu that closes on
+  // the first click is a slider nobody can drag.
+  await evaluate(cdp, session, `(() => {
+    const q = document.getElementById('quality');
+    q.value = '45';
+    q.dispatchEvent(new Event('input', { bubbles: true }));
+    q.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await sleep(120);
+  const stillOpen = await evaluate(cdp, session,
+    'document.getElementById("formats").hidden === false');
+  check(stillOpen, 'moving the quality slider closed the download menu',
+    'the download menu stays open while the quality is being set');
+
+  // The lossless rows must not even go blank: they are cached against a quality
+  // of nothing, so a re-measure would be work done to produce the same number.
+  const midDrag = await read();
+  check(midDrag.png !== '…' && midDrag.pdf !== '…',
+    `changing the quality re-measured a lossless format (png ${midDrag.png}, pdf ${midDrag.pdf})`,
+    'changing the quality does not re-measure PNG or PDF');
+
+  const lower = await settled('the lossy formats to re-measure at a lower quality');
+  const after = Object.fromEntries(Object.entries(lower).map(([k, v]) => [k, bytesOf(v)]));
+
+  check(after.jpeg < bytes.jpeg && after.webp < bytes.webp,
+    `dropping the quality did not shrink the lossy formats (jpeg ${full.jpeg} to ${lower.jpeg}, webp ${full.webp} to ${lower.webp})`,
+    `dropping the quality shrinks JPEG and WebP (${full.jpeg} to ${lower.jpeg}, ${full.webp} to ${lower.webp})`);
+  check(lower.png === full.png && lower.pdf === full.pdf,
+    `the quality changed a lossless format (png ${full.png} to ${lower.png}, pdf ${full.pdf} to ${lower.pdf})`,
+    'and leaves PNG and PDF exactly where they were');
+
+  // Put it back, because the saves that follow are checked against real files.
+  await evaluate(cdp, session, `(() => {
+    const q = document.getElementById('quality');
+    q.value = '92';
+    q.dispatchEvent(new Event('input', { bubbles: true }));
+    q.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await evaluate(cdp, session, 'document.body.click()');
+  await sleep(150);
+}
+
+/**
+ * The confirmation, where the reader is actually looking.
+ *
+ * Both halves matter and the second is the one that rots: a button that lights
+ * up and never goes out is a button that says "saved" about a file saved ten
+ * minutes ago.
+ */
+async function exerciseConfirmation(cdp, session, check) {
+  const lit = () => evaluate(cdp, session, `JSON.stringify({
+    button: document.getElementById('download').classList.contains('done'),
+    status: document.getElementById('status').classList.contains('done'),
+    label: document.getElementById('download').getAttribute('aria-label'),
+  })`).then(JSON.parse);
+
+  // The saves above left their own confirmation up. Wait for it to go before
+  // pressing anything, or this reads the previous answer and reports that the
+  // button lit up for a save it never made.
+  // Checked rather than merely waited on. A confirmation that never goes out is
+  // exactly the defect this pass exists to catch, and a bare `until` here would
+  // report it by aborting the whole run with a timeout instead of naming it.
+  const cleared = await until('the previous confirmation to clear', async () => {
+    const now = await lit();
+    return now.button || now.status ? null : now;
+  }, { timeoutMs: 15000, everyMs: 200 }).catch(() => null);
+  check(Boolean(cleared),
+    'a confirmation from an earlier save never went out: the toolbar is still announcing it',
+    'a confirmation from an earlier save goes out on its own');
+  if (!cleared) return;
+
+  await evaluate(cdp, session, `document.getElementById('download').click()`);
+  await evaluate(cdp, session,
+    `document.querySelector('#formats [data-format="png"]').click()`, { userGesture: true });
+
+  const on = await until('the download button to confirm the save', async () => {
+    const now = await lit();
+    return now.button ? now : null;
+  }, { timeoutMs: 15000, everyMs: 120 }).catch(() => null);
+
+  check(Boolean(on), 'saving lit nothing up: the reader is told only in the status line',
+    'the button that was pressed answers, not only the status line');
+  if (!on) return;
+
+  check(on.status, 'the status line was not marked as an answer',
+    'and the status line carries the same mark, so the sentence reads as the record');
+  check(/saved as png/i.test(on.label),
+    `the button's accessible name did not say what happened: ${on.label}`,
+    `a screen reader is told too, not only the colour (${on.label})`);
+
+  const off = await until('the confirmation to fade', async () => {
+    const now = await lit();
+    return !now.button && !now.status ? now : null;
+  }, { timeoutMs: 15000, everyMs: 200 }).catch(() => null);
+
+  check(Boolean(off), 'the confirmation never went out, so it now describes a save nobody remembers',
+    'and it goes out again on its own');
+  if (off) {
+    check(/download/i.test(off.label),
+      `the button kept the confirmation as its name: ${off.label}`,
+      'the button takes its own name back');
+  }
+}
+
 async function exercisePaintOrder(cdp, session, check, p) {
   const GREEN = [34, 197, 94];
   const BLUE = [59, 130, 246];
@@ -3155,6 +3296,18 @@ async function main() {
           );
         }
 
+        // What each format would actually cost, and the control that exists to
+        // change it. Before the saves, because it puts the quality back to 92
+        // and the files written below are checked against real bytes.
+        if (process.argv.includes('--edit')) {
+          console.log('\n  the download menu:');
+          const problems = [];
+          const check = (ok, bad, good) => (ok ? console.log(`  ok   ${good}`) : problems.push(bad));
+          await exerciseFileSizes(cdp, result, check);
+          for (const problem of problems) console.log(`  FAIL ${problem}`);
+          if (problems.length) process.exitCode = 1;
+        }
+
         // Both formats, with a real gestured click each time, that is what
         // chrome.permissions.request requires, and asking only at this point is
         // the whole reason the result lives in a tab.
@@ -3173,6 +3326,15 @@ async function main() {
             `the ${format} download from ${url}`,
             async () => (completedDownloads(downloadDir) ?? []).length > before,
           );
+        }
+
+        if (process.argv.includes('--edit')) {
+          console.log('\n  saying so:');
+          const problems = [];
+          const check = (ok, bad, good) => (ok ? console.log(`  ok   ${good}`) : problems.push(bad));
+          await exerciseConfirmation(cdp, result, check);
+          for (const problem of problems) console.log(`  FAIL ${problem}`);
+          if (problems.length) process.exitCode = 1;
         }
 
         // Exporting locks the canvas so a multi-page encode cannot photograph a

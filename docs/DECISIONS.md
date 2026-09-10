@@ -1416,3 +1416,82 @@ The check is exercised by `node test/e2e/run.mjs --stale`, which points the
 worker at a protocol module claiming a later version while the pages read the
 real one. That is the only way to make the two ends disagree, because they
 otherwise read the same file.
+
+## D54: The file size is the feature. The quality slider is how you move it
+
+**2026-09-10.** ROADMAP F21 was "a quality slider for JPEG and WebP", and it was
+approved in that shape. The maintainer sent it back with the reason:
+
+> people generally play around with quality and compression only to save on file
+> size. Adjusting file quality without feedback on how it affects file size is
+> not very useful.
+
+That is correct, and it inverts the feature. Nobody moves a quality slider
+because they want quality 78. They move it because the file is too big to attach,
+and a control that cannot answer the only question being asked is a control that
+gets dragged at random until it looks about right.
+
+**So every row in the download menu carries what that format would actually
+cost**, and the two lossy rows re-measure as the slider moves.
+
+**The sizes are real, not estimated.** The obvious cheap version encodes a
+downscaled copy and multiplies. It does not work: a compressed size does not
+scale with pixel count, so the number would be confidently wrong, and a wrong
+number is worse than no number. Each row is the capture encoded for that format
+at the quality currently set.
+
+That costs real work, so it is spent only where it is affordable:
+
+- **Only while the menu is open.** Nothing is measured for a menu nobody has
+  opened, and an open measurement stops the moment it closes.
+- **One format at a time, cheapest first, with a yield between.** JPEG and WebP
+  are the two the slider moves and they answer first; the PDF, which has to
+  deflate the whole image, arrives a moment later. The interface stays live
+  throughout.
+- **Cached against the quality that produced it.** A lossless format is measured
+  once and never again until the picture changes, so dragging the slider never
+  re-measures PNG or PDF.
+
+**Invalidation is by a stamp of the image, not by a count of notifications**, and
+that distinction is the whole reason this works. The first version bumped a
+generation counter from `onChange` and measured nothing at all, ever:
+`render()` ends by notifying, `flatten()` renders twice and `restoreSelection()`
+renders again, so every measurement invalidated itself before its own encoder
+finished. Selection, hover and the crop bar repaint too, and not one of them
+changes a pixel of what a saved file would contain. The stamp moves when the
+history commits, when a shape is added or removed, or when the crop changes.
+
+The slider itself is capped below at 40. Under that a screenshot is unreadable,
+and a control that can be dragged to a value nobody would keep wastes the drag.
+
+## D55: The confirmation answers at the button, and does not grow to do it
+
+**2026-09-10, ROADMAP F26.** Copying and saving both said so in the status line,
+at the far end of a row that also carries a filename and a pixel count, in the
+same muted grey as both. "Did that work" is the one question a capture tool has
+to answer without being asked twice, and it was being answered where nobody was
+looking.
+
+The alternative considered and rejected was a toast: a floating panel that slides
+in, says it, and fades. It is what most applications do and it is impossible to
+miss. It is also a new floating surface that has to be positioned, dismissed,
+kept clear of the toolbar, and kept out of an export, for a sentence that already
+has somewhere to live.
+
+**The button that was pressed answers instead.** Its glyph becomes a tick, it
+takes a green ground for two seconds, and its accessible name becomes the
+sentence, so this is an answer for a screen reader and not only a colour. The
+status line still carries the sentence, briefly on the same green, so it reads as
+the record rather than as one more grey label.
+
+**It does not grow to fit a word.** Copy, Download and Upload are fixed-width
+icon buttons, and widening one for two seconds would shove everything to its
+right sideways and back again. A quieter answer in place beats a louder one that
+moves the furniture, which is the same call made for the paint order menu's
+disabled items (D49) and for the corner row that greys out rather than hiding
+(D18).
+
+The green is its own token pair rather than a tint mixed with transparent. The
+rendered-page audit reads computed colours, and a translucent ground resolves to
+whatever is behind it, which is how the first attempt measured green on green at
+1:1 and was right to fail.

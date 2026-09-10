@@ -59,8 +59,10 @@ implements them twice. Every one has tests.
 | **F1** | WebP export, and the output formats described once instead of in three lists that could disagree | `src/lib/encode.js`, `src/ui/result.html`, D52 |
 | **T11** | The port protocol carries a version. An update replaces the worker and leaves the pages it opened running old code, and a message shape change would fail silently | `src/lib/protocol.js`, `--stale`, D53 |
 | **F2** | Anything playing is paused for the capture and started again afterwards. Only what was playing, so a video already stopped stays stopped | `src/content/prepare.js`, L27, L28 |
+| **F21** | Export quality, and what each format would actually cost. The sizes are the capture really encoded, measured while the menu is open, cheapest format first | `src/ui/result.js`, D54 |
+| **F26** | The button that was pressed answers, with a tick, a green ground and an accessible name that says what happened. It does not change width to do it | `src/ui/result.*`, D55 |
 
-**Still open from the 1.7.0 list below:** F21 and F26. T2, T11, F1 and F2 are done.
+**Release 1.7.0 is complete.** T1, T2, T3, T10, T11, T19, T20, F1, F2, F21 and F26 have all shipped.
 **Still open from 1.8.0:** F6 and F4. F27 is closed.
 
 **Queued by the maintainer on 2026-09-10:** F3, the rating nudge, and F42,

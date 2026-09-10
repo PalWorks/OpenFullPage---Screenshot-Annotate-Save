@@ -13,6 +13,44 @@ a clean checkout with `./tools/pack.sh`, not merely checkable against one downlo
 Everything below is on `main` and not yet packaged. It covers the toolbar rework
 and the capture reliability work of 2026-09-08 and 2026-09-09.
 
+### Added: the download menu says what each format would cost
+A quality slider with no readout is guesswork. Nobody moves one because they want
+quality 78; they move it because the file is too big to attach, and without a number
+the control cannot answer the only question being asked. That was the maintainer's
+objection to the first design, and it was right.
+
+So every row in the download menu now carries what that format would actually cost,
+and a Quality control under the list moves the two lossy ones. The sizes are real:
+each is the capture encoded for that format at the quality currently set. Estimating
+from a downscaled copy does not work, because a compressed size does not scale with
+pixel count, and a confidently wrong number is worse than none.
+
+The work is spent only where it is affordable. Measuring happens only while the menu
+is open, one format at a time with a yield between, cheapest first, so the two rows
+the slider moves answer immediately and the PDF arrives a moment later. A lossless
+format is measured once and never again until the picture changes, so dragging the
+slider never re-measures PNG or PDF.
+
+Invalidation is by a stamp of the image rather than a count of repaints, and that is
+the part worth remembering: `render()` ends by notifying, so the first version
+invalidated every measurement before its own encoder had finished and never produced
+a single number. [docs/DECISIONS.md](docs/DECISIONS.md) D54.
+
+### Changed: the button you pressed says it worked
+Copying and saving both said so in the status line, at the far end of a row that also
+carries a filename and a pixel count, in the same muted grey as both.
+
+The button that was pressed now answers: its glyph becomes a tick, it takes a green
+ground for two seconds, and its accessible name becomes the sentence, so a screen
+reader is told and not only a sighted reader. The status line still carries the words,
+briefly on the same green, so it reads as the record rather than the announcement.
+
+It does not grow to fit a word. Copy, Download and Upload are fixed-width icon
+buttons and widening one would shove everything to its right sideways and back again.
+A toast was the other candidate and was refused: a new floating surface to position,
+dismiss, keep clear of the toolbar and keep out of an export, for a sentence that
+already has somewhere to live. [docs/DECISIONS.md](docs/DECISIONS.md) D55.
+
 ### Added: WebP export
 A fourth format in the download menu. Smaller than JPEG at the same quality, and
 every browser in current use reads it. The quality is the same 0.92 JPEG has always

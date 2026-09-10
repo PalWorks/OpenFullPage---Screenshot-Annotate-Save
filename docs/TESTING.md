@@ -149,6 +149,11 @@ Four failures worth remembering, all found this way:
   Escape and therefore drops the selection. The inspector shows the *pending* style
   the moment nothing is selected, so every check was reading defaults and reporting
   that a working control did nothing. Pick the shape up again before each switch.
+- **`render()` ends by notifying, so `onChange` is not a signal that the picture
+  changed.** Selection, hover, the crop bar and every export repaint fire it, and
+  `flatten()` fires it twice on its own. The download menu's file sizes invalidated
+  themselves on it and measured nothing at all, ever, with no error anywhere. Invalidate
+  on a description of the image, not on a count of repaints.
 - **A check that cleans up with a fixed number of undos is a check that reaches into
   its neighbours.** The frame block added an undo step per switch, the count typed
   after it went stale, and one undo too many removed a shape belonging to an earlier

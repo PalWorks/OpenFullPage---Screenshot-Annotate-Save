@@ -117,7 +117,8 @@ The capture opens in a tab with a real editor. Shapes stay **live objects**: sel
 | History | `Cmd`/`Ctrl`+`Z`, add `Shift` to redo. Covers moves and resizes, not only drawing |
 | Reset | Removes your edits when there are some, and restores the default tools and colours when there are none |
 | Theme | System, light or dark, cycled from the toolbar. System is the default and follows the operating system. The capture is laid on a solarized mat rather than on white or black, so a white screenshot still has a visible edge |
-| Output | `Cmd`/`Ctrl`+`C` to copy, or Download as PNG, JPEG, WebP or PDF with a filename you can edit. An encoder that cannot manage the image says so, rather than saving nothing |
+| Output | `Cmd`/`Ctrl`+`C` to copy, or Download as PNG, JPEG, WebP or PDF with a filename you can edit. **The menu shows what each format would actually cost**, measured by encoding the real capture, and a Quality control moves the two lossy ones so you can see the file get smaller as you drag. An encoder that cannot manage the image says so, rather than saving nothing |
+| Confirmation | The button you pressed answers: a tick and a green ground for two seconds, and its accessible name becomes what happened. No notification permission, and nothing floats over the page |
 | Upload | Copies the image and opens an image host so you can paste it there. The extension performs no upload and cannot |
 | Constrain | Hold `Shift` for squares, circles and 45 degree lines, while drawing and while resizing |
 

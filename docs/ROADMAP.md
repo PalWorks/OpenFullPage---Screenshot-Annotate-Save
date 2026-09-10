@@ -34,9 +34,9 @@ already scoped and ready to start, or **planned** with the effort in the form
 | 1.7.0 repairs | T2 | `encodeOrThrow`, so a null blob cannot fail silently | shipped 2026-09-10 | D52. A null blob was a download of nothing with no error anywhere |
 | 1.7.0 repairs | T11 | Version the port protocol | shipped 2026-09-10 | D53. Unblocks F10. Exercised by `--stale` |
 | 1.7.0 wins | F1 | WebP export | shipped 2026-09-10 | D52. Output formats are described once now, not in three lists |
-| 1.7.0 wins | F21 | Export quality control | **next**, 0.5d / 10m | 0.92 is hardcoded today, a guess made once on the user's behalf. Applies to JPEG and WebP |
+| 1.7.0 wins | F21 | Export quality, and what each format costs | shipped 2026-09-10 | D54. The size readout is the feature; the slider is how you move it |
 | 1.7.0 wins | F2 | Pause playing media during the capture | shipped 2026-09-10 | L27, L28. Only what was playing, resumed first in the tidy-up |
-| 1.7.0 wins | F26 | Unmissable confirmation on copy and save | **next**, 0.5d / 15m | Without reaching for the `notifications` permission |
+| 1.7.0 wins | F26 | Unmissable confirmation on copy and save | shipped 2026-09-10 | D55. The button answers, at the width it already had. No new permission |
 | 1.8.0 toolbar | F24 | Toolbar regrouped, and configurable | shipped | D17, D18, D20, D21. 26 flat controls became grouped buttons carrying 68 |
 | 1.8.0 toolbar | F25 | Upload, as a hand-off | shipped | D16. The extension never uploads. It copies and opens the host |
 | 1.8.0 toolbar | F35 | PDF export, ahead of its release | shipped 2026-09-09 | D31. Hand written, around 200 lines, no library |
@@ -69,9 +69,12 @@ already scoped and ready to start, or **planned** with the effort in the form
 | Debt | T5 | Test that the GOVERNANCE.md canary is not stale | planned, P2 | It has already drifted, L19 |
 | Debt | T13 | Use the exported `HISTORY_LIMIT` instead of a second hardcoded 60 | planned, P3 | |
 
-**What to pick up next, in order:** F21 and F26, which are all that is left of
-release 1.7.0. Then F10, which is the only item on this page that fixes something
-a user has actually hit, and which T11 has now unblocked.
+**Release 1.7.0 is complete.** Every repair and every free win in it has shipped.
+
+**What to pick up next: F10**, multi-part export for very long pages. It is the only
+item on this page that fixes something a user has actually hit, T11 has unblocked it,
+and it is the last thing standing between the product and an honest claim that it
+captures long pages. After it, F13 verifies the same seams in the field.
 
 
 ## The rule every item is measured against
@@ -168,9 +171,9 @@ Small, and it removes every known silent failure.
 | T20 | **Selection handles hold their size on screen** | **shipped**, D19 | A defect, not a preference. `drawSelection()` draws handles at nine **canvas** pixels; at the 12% a 14,000px capture is fitted to, that is one screen pixel, and the 1.5px dashed outline vanishes entirely. `pickTolerance()` already divides by the display factor, so the shape is still easy to grab and impossible to see. One `screenScale()` helper feeds both |
 | T1 | Fix the false storage claim in the README | **shipped** | Done 2026-09-08 |
 | F1 | **WebP export** | **shipped**, D52 | And the output formats are described once, in `src/lib/encode.js`, rather than in the settings list, the extension table and the markup, which could disagree in either direction without an error |
-| F21 | **Export quality control** | 0.5d / 10m | A quality slider for JPEG and WebP. We hardcode 0.92 today, which is a guess made once on the user's behalf |
+| F21 | **Export quality, and what each format costs** | **shipped**, D54 | Approved as a slider and sent back with the reason: people move a quality control only to change a file size, so one without a readout cannot answer the question being asked. Every row in the download menu now carries the real encoded size, and the two lossy ones re-measure as the slider moves. Measured only while the menu is open, cheapest format first, and cached against the quality that produced it |
 | F2 | **Pause playing media during the capture** | **shipped**, L27, L28 | A walk takes seconds and a video playing through it is photographed at a different frame in every screenful it spans. Only what was playing is paused, and it is the first thing started again when the page is handed back, because it is the one piece of the tidy-up the reader can hear |
-| F26 | **Unmissable confirmation on copy and save** | 0.5d / 15m | The status line already says it. Make it impossible to miss without resorting to the `notifications` permission |
+| F26 | **Unmissable confirmation on copy and save** | **shipped**, D55 | The button that was pressed answers: a tick, a green ground for two seconds, and an accessible name that says what happened. At the width it already had, because widening an icon button would shove everything to its right sideways and back. A toast was refused as a new floating surface for a sentence that already has somewhere to live |
 
 ## Release 1.8.0: the toolbar becomes yours
 

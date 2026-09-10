@@ -16,6 +16,14 @@
     --surface: #ffffff;
     --sunken: #fafafa;
     --danger: #dc2626;
+    /* The answer to "did that work". Green-700, which clears 4.5:1 on both the
+       surface and the mat, unlike the green everyone reaches for first. The
+       ground it sits on is a solid token rather than a tint of itself mixed
+       with transparent: the rendered-page audit reads a computed background,
+       and a translucent one resolves to the colour underneath, which is how a
+       green-on-green pair measured 1:1 and was correct to fail. */
+    --ok: #15803d;
+    --ok-soft: #dcfce7;
     /* The mat: the surface the capture is laid on, and nothing else. Solarized
        base3 and base03, which are warm and cool off-neutrals rather than paper
        white and black. That is the whole point of them here: a screenshot is
@@ -42,6 +50,8 @@
       --sunken: #101012;
       --mat: #002b36;
       --mat-edge: #073642;
+      --ok: #4ade80;
+      --ok-soft: #14532d;
     }
   }
   :root[data-theme="dark"] {
@@ -52,6 +62,8 @@
     --sunken: #101012;
     --mat: #002b36;
     --mat-edge: #073642;
+    --ok: #4ade80;
+    --ok-soft: #14532d;
   }
   * { box-sizing: border-box; }
   body {
@@ -187,11 +199,13 @@
     background: var(--surface);
     box-shadow: 0 10px 28px rgb(0 0 0 / 0.16);
   }
+  /* A row, not a column: the name and its note on the left, the file size on
+     the right, where a size is read. */
   #toolbar .menu button {
     display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 1px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
     width: 100%;
     padding: 7px 10px;
     border: 0;
@@ -200,10 +214,34 @@
     font-weight: 600;
     text-align: left;
   }
-  #toolbar .menu button span { color: var(--muted); font-weight: 400; font-size: 11.5px; }
+  .menu button .what { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0; }
+  #toolbar .menu button .what span { color: var(--muted); font-weight: 400; font-size: 11.5px; }
+  /* Tabular figures and a reserved width, so the column does not jitter as the
+     numbers land one at a time or as the slider moves. */
+  #toolbar .menu button .size {
+    flex: none;
+    min-width: 58px;
+    text-align: right;
+    color: var(--muted);
+    font: 500 11.5px/1.2 ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+  #toolbar .menu button .size.pending { opacity: 0.55; }
   #toolbar .menu button:hover { background: var(--line); }
   #toolbar .menu button[aria-pressed="true"] { background: var(--indigo); color: #fff; }
-  #toolbar .menu button[aria-pressed="true"] span { color: rgb(255 255 255 / 0.75); }
+  #toolbar .menu button[aria-pressed="true"] .what span,
+  #toolbar .menu button[aria-pressed="true"] .size { color: rgb(255 255 255 / 0.75); }
+  .menu .qrow { display: flex; align-items: center; gap: 8px; padding: 7px 10px 2px; margin-top: 4px; border-top: 1px solid var(--line); }
+  .menu .qrow label { flex: none; font-size: 11.5px; color: var(--muted); font-weight: 600; }
+  .menu .qrow input[type="range"] { flex: 1; min-width: 0; accent-color: var(--indigo); }
+  .menu .qrow output {
+    flex: none;
+    min-width: 34px;
+    text-align: right;
+    font: 500 11.5px/1.2 ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+  .menu .qnote { margin: 0 10px 2px; color: var(--muted); font-size: 11px; }
 
   /* The canvas menu. Shaped like the download menu on purpose: a reader who has
      opened one has already learned this one. */
@@ -284,6 +322,30 @@
   #ext { flex: none; color: var(--muted); font-size: 12.5px; }
   #dimensions, #status { color: var(--muted); font-size: 12.5px; }
   #status.error { color: var(--danger); font-weight: 600; }
+  /* The record of what just happened, briefly given a ground so it reads as an
+     answer rather than as one more grey label in a row of them. */
+  #status.done {
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: var(--ok-soft);
+    color: var(--ok);
+    font-weight: 600;
+  }
+  /* A button that has just done what it was asked. The glyph swaps to a tick and
+     the button takes the same green, for two seconds, at exactly the width it
+     already had: growing it to fit a word would shove Download, Upload, Theme
+     and Settings sideways and back again, which is a worse answer than a
+     quieter one. */
+  #toolbar button.icon.done {
+    border-color: var(--ok);
+    color: var(--ok);
+    background: var(--ok-soft);
+  }
+  /* The caret stays: Download and Upload are menus, and a menu that loses its
+     chevron for two seconds looks like a different button. */
+  #toolbar button.icon.done > svg:not(.tick):not(.caret) { display: none; }
+  #toolbar button.icon .tick { display: none; }
+  #toolbar button.icon.done .tick { display: inline-flex; }
 
   /* ---- Grouped toolbar buttons (DECISIONS.md D18) ----
      A button carries a chevron; the chevron opens the whole related set, and
@@ -1021,20 +1083,39 @@
   <button class="icon" id="copy" data-button="copy" type="button" disabled aria-label="Copy image"
           title="Copy image (Cmd/Ctrl+C)">
     <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect x="6.6" y="2.6" width="10.8" height="13" rx="2"/><path d="M13.4 17.4H4.6a2 2 0 0 1-2-2V6"/></svg>
+    <svg class="tick" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="m4.2 10.6 4 4 7.6-9"/></svg>
   </button>
 
   <span class="menuwrap" data-button="download">
     <button class="icon wide" id="download" type="button" disabled aria-label="Download"
             aria-haspopup="true" aria-expanded="false" title="Download">
       <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M10 2.6v9.8"/><path d="M6.2 8.8 10 12.6l3.8-3.8"/><path d="M3.4 15.4h13.2"/></svg>
+      <svg class="tick" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="m4.2 10.6 4 4 7.6-9"/></svg>
       <svg class="caret" viewBox="0 0 8 8" aria-hidden="true" focusable="false"><path d="M1.4 2.9 4 5.5l2.6-2.6"/></svg>
     </button>
     <div class="menu" id="formats" role="menu" aria-label="Download format" hidden>
       <p class="menu-title" aria-hidden="true">Download as</p>
-      <button type="button" role="menuitem" data-format="png">PNG<span>Lossless, larger file</span></button>
-      <button type="button" role="menuitem" data-format="jpeg">JPEG<span>Smaller file, slight loss</span></button>
-      <button type="button" role="menuitem" data-format="webp">WebP<span>Smallest file at the same quality, and every current browser reads it</span></button>
-      <button type="button" role="menuitem" data-format="pdf">PDF<span>Lossless, one page, or several if the capture is very long</span></button>
+      <button type="button" role="menuitem" data-format="png"><span class="what">PNG<span>Lossless, larger file</span></span><span class="size" data-size="png">&hellip;</span></button>
+      <button type="button" role="menuitem" data-format="jpeg"><span class="what">JPEG<span>Smaller file, slight loss</span></span><span class="size" data-size="jpeg">&hellip;</span></button>
+      <button type="button" role="menuitem" data-format="webp"><span class="what">WebP<span>Smallest file at the same quality, and every current browser reads it</span></span><span class="size" data-size="webp">&hellip;</span></button>
+      <button type="button" role="menuitem" data-format="pdf"><span class="what">PDF<span>Lossless, one page, or several if the capture is very long</span></span><span class="size" data-size="pdf">&hellip;</span></button>
+      <!-- QUALITY
+           Adjusting a compression setting without being told what it does to the
+           file is guesswork, and file size is the only reason anyone touches it.
+           So the sizes above are real: each one is the capture actually encoded,
+           measured while the menu is open, and the two lossy rows re-measure as
+           this moves. It is the readout that earns the control, not the slider.
+
+           Shown for every format rather than only the two it changes, because
+           watching JPEG and WebP move while PNG and PDF sit still is what
+           teaches a reader what "lossy" means without a paragraph about it. -->
+      <div class="qrow">
+        <label for="quality">Quality</label>
+        <input id="quality" type="range" min="40" max="100" step="1" value="92"
+               aria-label="Export quality for JPEG and WebP">
+        <output id="quality-out" for="quality">92%</output>
+      </div>
+      <p class="qnote">PNG and PDF are lossless and ignore this.</p>
     </div>
   </span>
 
@@ -1042,6 +1123,7 @@
     <button class="icon combo" type="button" id="upload" data-pop="pop-upload" disabled
             aria-haspopup="true" aria-expanded="false" aria-label="Upload" title="Upload to an image host">
       <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M10 13.4V3.6"/><path d="M6.2 7.4 10 3.6l3.8 3.8"/><path d="M3.4 15.4h13.2"/></svg>
+      <svg class="tick" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="m4.2 10.6 4 4 7.6-9"/></svg>
       <svg class="caret" viewBox="0 0 8 8" aria-hidden="true" focusable="false"><path d="M1.4 2.9 4 5.5l2.6-2.6"/></svg>
     </button>
     <div class="pop hosts" id="pop-upload" role="group" aria-labelledby="pop-upload-title" hidden>

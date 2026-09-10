@@ -126,7 +126,7 @@ test('every key sanitise knows about is one DEFAULTS declares', () => {
   const sample = {
     defaultMode: 'visible', extraModes: true, tool: 'rect', colour: '#123456',
     strokeWidth: 8, captureDelay: 3, progressPopup: false, directDownload: true,
-    theme: 'dark', format: 'jpeg',
+    theme: 'dark', format: 'jpeg', quality: 78,
     dash: 'dashed', lineEnds: 'none', corner: 12, fill: '#abcdef', fillOpacity: 0.5,
     textSize: 40, textFamily: 'serif', textBold: false, textItalic: true,
     textUnderline: true, textAlign: 'justify', textColour: '#00ff88',
@@ -168,6 +168,28 @@ test('a stored tool name cannot be arbitrary text', () => {
   for (const junk of ['<script>', 'a', 'waytoolongtoolname', 42]) {
     assert.equal(sanitise({ tool: junk }).tool, DEFAULTS.tool, String(junk));
   }
+});
+
+test('the export quality is clamped to a range worth dragging through', () => {
+  assert.equal(sanitise({}).quality, 92);
+  for (const [given, want] of [[40, 40], [100, 100], [78, 78], [77.6, 78]]) {
+    assert.equal(sanitise({ quality: given }).quality, want, String(given));
+  }
+  // Below 40 a screenshot is unreadable and above 100 is not a thing, so both
+  // ends clamp rather than being thrown away: a stored 0 should become the
+  // lowest usable value, not silently jump back to 92.
+  assert.equal(sanitise({ quality: 0 }).quality, 40);
+  assert.equal(sanitise({ quality: -20 }).quality, 40);
+  assert.equal(sanitise({ quality: 500 }).quality, 100);
+  for (const junk of ['92', null, undefined, NaN, {}]) {
+    assert.equal(sanitise({ quality: junk }).quality, 92, String(junk));
+  }
+});
+
+test('Reset leaves the export quality alone, the way it leaves the format alone', () => {
+  // How a file is written out is not a drawing tool. Reset puts the tools and
+  // colours back and must not quietly change what the next save weighs.
+  assert.ok(!STYLE_KEYS.includes('quality'));
 });
 
 test('the remembered download format has to be one we can actually encode', () => {
