@@ -27,6 +27,26 @@ export const HIDE_FIXED_CSS = `
 `;
 
 /**
+ * Inserted before anything is measured, for elements the reader picked out.
+ *
+ * `display: none`, not `visibility: hidden`, and that difference is the whole
+ * reason this cannot reuse the stylesheet above. Hiding a fixed banner with
+ * `visibility` is right: it is out of the flow, so nothing moves, and the point
+ * is only to stop it riding down the page. A reader who picks a cookie bar out
+ * of the middle of an article means "take it out", and `visibility` would leave
+ * a hole exactly its size.
+ *
+ * A separate attribute for the same reason, plus one more: `remarkFixed()`
+ * strips `data-fpc-fixed` from anything whose computed position is not `fixed`,
+ * and a hidden in-flow element is not fixed. Reusing that attribute would have
+ * the mark torn off on the first screenful and the element back for the rest of
+ * the capture.
+ */
+export const HIDE_PICKED_CSS = `
+  [data-fpc-hidden] { display: none !important; }
+`;
+
+/**
  * Tag every fixed and sticky element so the stylesheets above can reach them.
  * Runs before measuring, because unsticking changes the page's height.
  * @returns {{fixed:number, sticky:number}}
@@ -81,6 +101,10 @@ export async function remarkFixed() {
 
   for (const el of document.querySelectorAll('*')) {
     if (el.hasAttribute('data-fpc-sticky')) continue;
+    // Not ours to reconsider. An element the reader took out is display:none,
+    // so it is not fixed, and without this line the walk would helpfully strip
+    // the mark off it and hand it back to the picture.
+    if (el.hasAttribute('data-fpc-hidden')) continue;
     const marked = el.hasAttribute('data-fpc-fixed');
     if (getComputedStyle(el).position === 'fixed') {
       fixed += 1;
@@ -439,6 +463,12 @@ export function restorePage(x, y) {
   for (const el of document.querySelectorAll('[data-fpc-fixed], [data-fpc-sticky]')) {
     el.removeAttribute('data-fpc-fixed');
     el.removeAttribute('data-fpc-sticky');
+  }
+  // Whatever the reader took out of the shot goes back, always. This runs from
+  // a `finally`, so it runs when the capture fails too: the alternative is
+  // leaving somebody's real page with pieces missing.
+  for (const el of document.querySelectorAll('[data-fpc-hidden]')) {
+    el.removeAttribute('data-fpc-hidden');
   }
   for (const frame of document.querySelectorAll('[data-fpc-frame]')) {
     frame.style.height = frame.getAttribute('data-fpc-frame');

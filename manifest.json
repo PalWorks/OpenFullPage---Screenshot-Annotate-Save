@@ -58,6 +58,12 @@
         "default": "Alt+Shift+E"
       },
       "description": "Pick an element to capture"
+    },
+    "capture-remove": {
+      "suggested_key": {
+        "default": "Alt+Shift+R"
+      },
+      "description": "Hide things, then capture the whole page"
     }
   },
   "content_security_policy": {

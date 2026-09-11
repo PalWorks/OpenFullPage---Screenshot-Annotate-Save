@@ -25,6 +25,7 @@
 
 import {
   HIDE_FIXED_CSS,
+  HIDE_PICKED_CSS,
   PREPARE_CSS,
   expandSameOriginFrames,
   markSpecialElements,
@@ -43,7 +44,7 @@ import { clearProgress, showFailure, showProgress } from './lib/badge.js';
 import { sealed, speaksOurProtocol } from './lib/protocol.js';
 import { planCapture } from './lib/plan.js';
 import { measurePage } from './content/measure.js';
-import { pickElement } from './content/pick.js';
+import { pickElement, pickForRemoval } from './content/pick.js';
 
 // captureVisibleTab is quota-limited to a couple of calls per second. Start
 // optimistically and back off only when Chrome actually complains.
@@ -71,6 +72,18 @@ const RESULT_TAB_TIMEOUT_MS = 10000;
 // page is not a broken one: this is the point at which we stop believing the
 // step will ever answer, not the point at which it is late.
 const STEP_TIMEOUT_MS = 20000;
+
+/**
+ * How long a picker may wait for the reader before it gives up.
+ *
+ * The two pickers are the only steps in the capture that wait for a person
+ * rather than for the page, and the ordinary step budget of twenty seconds is
+ * the wrong question to ask of someone choosing. Each picker is told a budget a
+ * little shorter than this so that it tears down its own listeners and answers,
+ * rather than being abandoned mid-promise with its handlers still swallowing
+ * every click on the reader's page.
+ */
+const PICK_BUDGET_MS = 300000;
 
 // Putting the page back is courtesy. The capture is already in hand by then, so
 // tidying gets a short budget and is never allowed to hold the result up.
@@ -227,9 +240,13 @@ async function openResultTab(captureId, sourceTab, { active = true } = {}) {
 // THE PAGE
 
 async function inPage(tabId, func, args = [], extra = {}) {
+  // A step that waits for a person needs a different budget from one that waits
+  // for a page. Twenty seconds is generous for a script and absurd for someone
+  // deciding which four things to take out of a screenshot.
+  const { timeoutMs = STEP_TIMEOUT_MS, ...target } = extra;
   const results = await withTimeout(
-    chrome.scripting.executeScript({ target: { tabId, ...extra }, func, args }),
-    STEP_TIMEOUT_MS,
+    chrome.scripting.executeScript({ target: { tabId, ...target }, func, args }),
+    timeoutMs,
     func.name || 'a page script',
   );
   return results[0]?.result;
@@ -332,6 +349,7 @@ async function runCapture(tab, mode, settings) {
   // that this capture did not pause.
   let mediaPaused = false;
   let restored = false;
+  let pickedHidden = false;
   let origin = { x: 0, y: 0 };
 
   const restore = async () => {
@@ -342,6 +360,9 @@ async function runCapture(tab, mode, settings) {
       if (mediaPaused) await inAllFrames(tabId, resumeMedia);
       if (fixedHidden) {
         await chrome.scripting.removeCSS({ target: { tabId }, css: HIDE_FIXED_CSS }).catch(() => {});
+      }
+      if (pickedHidden) {
+        await chrome.scripting.removeCSS({ target: { tabId }, css: HIDE_PICKED_CSS }).catch(() => {});
       }
       if (prepared) {
         await chrome.scripting.removeCSS({ target: { tabId }, css: PREPARE_CSS }).catch(() => {});
@@ -387,16 +408,36 @@ async function runCapture(tab, mode, settings) {
     // Where the user points, before anything on the page is disturbed.
     let region = null;
     if (mode === 'element') {
-      region = await inPage(tabId, pickElement);
+      region = await inPage(tabId, pickElement, [PICK_BUDGET_MS - 5000], { timeoutMs: PICK_BUDGET_MS });
       if (!region) {
         clearProgress();
         return;
       }
     }
 
+    // Or what the user wants out of the shot. The stylesheet goes in first so
+    // the picks take effect as they are made, and `pickedHidden` is what tells
+    // the tidy-up to take it out again, including when the capture throws.
+    if (mode === 'remove') {
+      await chrome.scripting.insertCSS({ target: { tabId }, css: HIDE_PICKED_CSS });
+      pickedHidden = true;
+      const hidden = await inPage(tabId, pickForRemoval, [PICK_BUDGET_MS - 5000], { timeoutMs: PICK_BUDGET_MS });
+      if (hidden === null) {
+        clearProgress();
+        return;
+      }
+      // Taking something out of the flow changes the height the plan is built
+      // from, so the page is measured again before anything else happens.
+      metrics = await inPage(tabId, measurePage);
+    }
+
     if (settings.captureDelay > 0) await wait(settings.captureDelay * 1000);
 
-    const wholePage = mode === 'full';
+    // 'remove' is a full page capture with a picker in front of it. Saying so
+    // here rather than adding a second condition further down is what keeps it
+    // on the path that prepares the page, replans when it grows, and hides
+    // fixed elements after the first screenful.
+    const wholePage = mode === 'full' || mode === 'remove';
     if (wholePage && metrics.fullHeight > metrics.viewportHeight) {
       // Order matters: unsticking headers changes the document height, so the
       // page must be prepared before it is measured for real.
@@ -589,7 +630,11 @@ chrome.action.onClicked.addListener((tab) => {
 });
 
 chrome.commands.onCommand.addListener(async (command) => {
-  const modes = { 'capture-visible': 'visible', 'capture-element': 'element' };
+  const modes = {
+    'capture-visible': 'visible',
+    'capture-element': 'element',
+    'capture-remove': 'remove',
+  };
   if (!modes[command]) return;
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (tab) start({ tabId: tab.id, mode: modes[command] });

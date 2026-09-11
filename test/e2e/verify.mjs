@@ -111,7 +111,7 @@ function bandsOf(img, colour, x = 4) {
   return bands;
 }
 
-export function verifyFixture(path) {
+export function verifyFixture(path, options = {}) {
   const img = decodePng(readFileSync(path));
   const problems = [];
   const notes = [];
@@ -128,9 +128,17 @@ export function verifyFixture(path) {
     else notes.push(`sticky header once at ${from}..${to}`);
   }
 
-  // 2. The fixed cookie bar belongs to the first tile only.
+  // 2. The fixed cookie bar belongs to the first tile only, unless the reader
+  //    took it out of the shot before the shot was taken, which is the whole
+  //    point of the removal mode and is therefore the assertion there.
   const bars = bandsOf(img, BAR);
-  if (bars.length !== 1) {
+  if (options.removed) {
+    if (bars.length !== 0) {
+      problems.push(`the element taken out of the shot is still in the picture ${bars.length} times: ${JSON.stringify(bars)}`);
+    } else {
+      notes.push('the element taken out of the shot is absent from the picture');
+    }
+  } else if (bars.length !== 1) {
     problems.push(`fixed bar appears ${bars.length} times: ${JSON.stringify(bars)}`);
   } else {
     notes.push(`fixed bar once at ${bars[0][0]}..${bars[0][1]}`);
