@@ -339,3 +339,150 @@ export function outlineHit(kind, rect, point, tolerance, shape = null) {
   if (pointInPolygon(points, point)) return true;
   return distanceToPolygon(points, point) <= tolerance;
 }
+
+// FREEHAND PATHS
+//
+// A pen stroke is the one shape whose payload is a list rather than a handful
+// of numbers, which makes two things true that are not true of anything else
+// here.
+//
+// The first is that it has to be thinned. A pointer reports moves faster than
+// anybody draws, and a stroke held for a few seconds is thousands of samples
+// describing a line the eye reads as smooth at a few dozen.
+//
+// The second is that it must never be edited in place. `commit()` snapshots the
+// containing arrays and keeps a *reference* to every shape, so history shares
+// these points with the present. Mutating them would silently rewrite the past:
+// undo would hand back a state that had already been changed. Every function
+// below returns a new array, and every caller has to keep it that way.
+
+/**
+ * The distance from a point to an open polyline.
+ *
+ * Open, unlike `distanceToPolygon`, which closes the shape: a stroke that
+ * starts and ends far apart is not a shape with a long invisible side.
+ *
+ * @param {Array<[number, number]>} points
+ * @param {{x:number, y:number}} point
+ * @returns {number} Infinity if there is nothing to measure against
+ */
+export function distanceToPath(points, point) {
+  if (!points || points.length === 0) return Infinity;
+  if (points.length === 1) return Math.hypot(point.x - points[0][0], point.y - points[0][1]);
+
+  let best = Infinity;
+  for (let i = 1; i < points.length; i += 1) {
+    const d = distanceToSegment(point, points[i - 1], points[i]);
+    if (d < best) best = d;
+  }
+  return best;
+}
+
+/**
+ * The box a path occupies.
+ *
+ * @param {Array<[number, number]>} points
+ * @returns {{x:number, y:number, w:number, h:number}}
+ */
+export function pathBounds(points) {
+  if (!points || points.length === 0) return { x: 0, y: 0, w: 0, h: 0 };
+
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+
+  for (const [x, y] of points) {
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}
+
+/**
+ * Ramer, Douglas and Peucker: drop every point that is closer to the line
+ * between its neighbours than `tolerance`.
+ *
+ * Written out rather than taken from a package, which is the rule here and is
+ * also the right call for twenty lines with no edge cases worth arguing about.
+ * Iterative rather than recursive, because a stroke can be thousands of points
+ * and a recursive version blows the stack on exactly the input this exists for.
+ *
+ * The ends are always kept: a simplification that moves where a stroke starts
+ * is not a simplification.
+ *
+ * @param {Array<[number, number]>} points
+ * @param {number} tolerance in canvas pixels
+ * @returns {Array<[number, number]>} a new array, never the one passed in
+ */
+export function simplifyPath(points, tolerance) {
+  if (!points || points.length <= 2) return points ? [...points] : [];
+  if (!(tolerance > 0)) return [...points];
+
+  const keep = new Uint8Array(points.length);
+  keep[0] = 1;
+  keep[points.length - 1] = 1;
+
+  // An explicit stack of [first, last] spans, standing in for the recursion.
+  const stack = [[0, points.length - 1]];
+
+  while (stack.length > 0) {
+    const [first, last] = stack.pop();
+    if (last - first < 2) continue;
+
+    let worst = -1;
+    let worstAt = -1;
+    for (let i = first + 1; i < last; i += 1) {
+      const d = distanceToSegment(
+        { x: points[i][0], y: points[i][1] },
+        points[first],
+        points[last],
+      );
+      if (d > worst) {
+        worst = d;
+        worstAt = i;
+      }
+    }
+
+    if (worst > tolerance) {
+      keep[worstAt] = 1;
+      stack.push([first, worstAt], [worstAt, last]);
+    }
+  }
+
+  const out = [];
+  for (let i = 0; i < points.length; i += 1) if (keep[i]) out.push([points[i][0], points[i][1]]);
+  return out;
+}
+
+/**
+ * Move every point by the same amount.
+ *
+ * @param {Array<[number, number]>} points
+ * @returns {Array<[number, number]>} a new array
+ */
+export const movePath = (points, dx, dy) => (points ?? []).map(([x, y]) => [x + dx, y + dy]);
+
+/**
+ * Fit a path into a new box, keeping its shape.
+ *
+ * A path with no width or height in one axis (a perfectly straight horizontal
+ * stroke, say) cannot be scaled in that axis without dividing by nothing, so
+ * that axis is left alone and the stroke is moved instead.
+ *
+ * @param {Array<[number, number]>} points
+ * @param {{x:number,y:number,w:number,h:number}} from
+ * @param {{x:number,y:number,w:number,h:number}} to
+ * @returns {Array<[number, number]>} a new array
+ */
+export function fitPath(points, from, to) {
+  const sx = from.w > 0 ? to.w / from.w : 1;
+  const sy = from.h > 0 ? to.h / from.h : 1;
+  return (points ?? []).map(([x, y]) => [
+    to.x + (x - from.x) * sx,
+    to.y + (y - from.y) * sy,
+  ]);
+}

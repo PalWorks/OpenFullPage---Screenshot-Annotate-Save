@@ -15,34 +15,23 @@
 import {
   decorationOps,
   outlineOps,
+  simplifyPath,
 } from '../lib/geometry.js';
 
 import {
   BOX_TOOLS,
-  CORNER_HANDLES,
   CORNERED_KINDS,
-  isSelected,
-  moveShapes,
-  removeShapes,
-  selectedIds,
-  selectedShapes,
-  shapesInMarquee,
-  toggleSelected,
-  inkOf,
-  isFramedText,
-  strokeOf,
-  textRadius,
-  FILLABLE_TOOLS,
-  POINT_TOOLS,
-  cornerOf,
-  kindOfTool,
-  TOOL_PRESETS,
+  CORNER_HANDLES,
   DEFAULT_FILL_OPACITY,
+  FILLABLE_TOOLS,
   MAX_STROKE,
   MAX_TEXT_SIZE,
   MIN_STROKE,
   MIN_TEXT_SIZE,
+  PATH_TOOLS,
+  POINT_TOOLS,
   TEXT_LINE_RATIO,
+  TOOL_PRESETS,
   alignOf,
   amend,
   arrowGeometry,
@@ -52,46 +41,59 @@ import {
   clampRect,
   commit,
   constrain,
+  cornerOf,
   createDocument,
   cropHandleAt,
   cropHandlesFor,
   dashOf,
-  handleCursor,
   dashPattern,
   effectiveCrop,
-  fillAlphaOf,
-  inkAlphaOf,
-  strokeAlphaOf,
-  fillOf,
   endsOf,
+  fillAlphaOf,
+  fillOf,
   fontOf,
-  hasEnd,
   handleAt,
+  handleCursor,
   handlesFor,
+  hasEnd,
+  inkAlphaOf,
+  inkOf,
   insideRect,
   isEdited,
+  isFramedText,
+  isSelected,
   isUsableCrop,
   isUsableDrag,
+  kindOfTool,
   linesOf,
-  wrapOf,
-  wrappedLinesOf,
   measureText,
   moveCrop,
   moveShape,
+  moveShapes,
   newId,
   nextCounterNumber,
   normalizeRect,
   redo,
   removeShape,
+  removeShapes,
   reorderShapes,
-  wouldReorder,
   replaceShape,
   reset,
   resizeCrop,
   resizeShape,
+  selectedIds,
   selectedShape,
+  selectedShapes,
   shapeAt,
+  shapesInMarquee,
+  strokeAlphaOf,
+  strokeOf,
+  textRadius,
+  toggleSelected,
   undo,
+  wouldReorder,
+  wrapOf,
+  wrappedLinesOf,
 } from '../lib/edit.js';
 
 const DASH = [8, 6];
@@ -153,6 +155,10 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
   };
 
   let drag = null;
+  /** How far the pointer must travel before a freehand sample is worth keeping. */
+  const PEN_SAMPLE_GAP = 1.5;
+  /** How far a simplified stroke may stray from the one the reader drew. */
+  const PEN_TOLERANCE = 0.6;
   // The document as it was when the current arrow key burst began, so the
   // whole burst collapses into one undo step. Null when no burst is open.
   let nudging = null;
@@ -357,7 +363,39 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
     ctx.lineCap = dashOf(shape) === 'dotted' ? 'round' : 'round';
     ctx.lineJoin = 'round';
 
-    if (shape.kind === 'arrow' || shape.kind === 'line') {
+    if (shape.points) {
+      // Smoothed through the midpoints of consecutive samples rather than
+      // joined corner to corner. The classic trick, and the reason a stroke
+      // drawn by hand does not look like a chain of tiny straight lines: each
+      // sample becomes the control point of a curve between its neighbours'
+      // midpoints, so the line passes near every sample without kinking at any
+      // of them. The hit tester still measures against the segments, which is
+      // close enough at any stroke width a person would use and keeps one
+      // description of where the stroke is.
+      const pts = shape.points;
+      applyDash(shape);
+      ctx.beginPath();
+
+      if (pts.length === 1) {
+        // A tap. Deliberately a dot rather than nothing: the reader chose the
+        // pen and pressed it somewhere, and a stroke of no length is how you
+        // dot a thing you are pointing at.
+        ctx.arc(pts[0][0] + dx, pts[0][1] + dy, Math.max(0.5, shape.width / 2), 0, Math.PI * 2);
+        ctx.fillStyle = ctx.strokeStyle;
+        ctx.fill();
+      } else {
+        ctx.moveTo(pts[0][0] + dx, pts[0][1] + dy);
+        for (let i = 1; i < pts.length - 1; i += 1) {
+          const mx = (pts[i][0] + pts[i + 1][0]) / 2;
+          const my = (pts[i][1] + pts[i + 1][1]) / 2;
+          ctx.quadraticCurveTo(pts[i][0] + dx, pts[i][1] + dy, mx + dx, my + dy);
+        }
+        const last = pts[pts.length - 1];
+        ctx.lineTo(last[0] + dx, last[1] + dy);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+    } else if (shape.kind === 'arrow' || shape.kind === 'line') {
       // One geometry per end: the shaft stops short wherever a head is drawn, so
       // the point of the arrow is the point of the line and not a stub past it.
       const atStart = hasEnd(shape, 'start');
@@ -1134,8 +1172,52 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
       return;
     }
 
+    if (PATH_TOOLS.includes(tool)) {
+      // Thinned at the source. A pointer reports moves far faster than anybody
+      // draws, and keeping every one of them would put thousands of points in a
+      // shape that reads as smooth at a few dozen.
+      drag = { mode: 'pen', points: [[point.x, point.y]] };
+      render(penShape(drag.points));
+      return;
+    }
+
+    if (tool === 'eraser') {
+      // One commit for the whole drag, not one per shape. The same rule the
+      // arrow keys already follow: a burst of removals is one thing the reader
+      // did, so one press of undo has to put all of it back.
+      drag = { mode: 'erase', before: doc.present, removed: 0 };
+      eraseAt(point);
+      return;
+    }
+
     drag = { mode: 'draw', from: point };
   });
+
+  /** The stroke as it stands, for the preview and for the commit. */
+  function penShape(points) {
+    return {
+      id: 'pen-preview',
+      kind: 'pen',
+      points,
+      colour,
+      width,
+      dash,
+      strokeOpacity,
+    };
+  }
+
+  /** Delete whatever is under the pointer. Idempotent: crossing twice is once. */
+  function eraseAt(point) {
+    const found = shapeAt(doc.present.shapes, point, pickTolerance());
+    if (!found) return;
+    doc = amend(doc, {
+      ...doc.present,
+      shapes: doc.present.shapes.filter((sh) => sh.id !== found.id),
+      selection: [],
+    });
+    drag.removed += 1;
+    render();
+  }
 
   canvas.addEventListener('pointermove', (event) => {
     if (!drag) {
@@ -1158,6 +1240,30 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
         drag.rect, point.x - drag.from.x, point.y - drag.from.y, effectiveCrop(doc),
       );
       render();
+      return;
+    }
+
+    if (drag.mode === 'pen') {
+      const last = drag.points[drag.points.length - 1];
+      // Shift straightens, the way it constrains every other drag here: the
+      // stroke becomes the line from where it started to where the pointer is.
+      if (event.shiftKey) {
+        drag.points = [drag.points[0], [point.x, point.y]];
+        render(penShape(drag.points));
+        return;
+      }
+      // A sample closer than this to the last kept one describes no new part of
+      // the line. Dropping it here rather than at the end is what keeps the
+      // in-progress array small on a long slow stroke.
+      if (Math.hypot(point.x - last[0], point.y - last[1]) >= PEN_SAMPLE_GAP) {
+        drag.points = [...drag.points, [point.x, point.y]];
+      }
+      render(penShape(drag.points));
+      return;
+    }
+
+    if (drag.mode === 'erase') {
+      eraseAt(point);
       return;
     }
 
@@ -1246,6 +1352,35 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
     const finished = drag;
     drag = null;
     hoverId = null;
+
+    if (finished.mode === 'pen') {
+      // Simplified once, when the stroke ends, rather than on every sample:
+      // running it live would fight the thinning above and cost work on a shape
+      // that is about to change again anyway.
+      const points = simplifyPath(finished.points, PEN_TOLERANCE);
+      doc = commit(doc, {
+        ...doc.present,
+        shapes: [...doc.present.shapes, { ...penShape(points), id: newId() }],
+        selection: [],
+      });
+      render();
+      return;
+    }
+
+    if (finished.mode === 'erase') {
+      // Nothing was under the pointer for the whole drag, so there is nothing
+      // to undo and no step worth putting on the stack.
+      if (finished.removed === 0) {
+        render();
+        return;
+      }
+      // One step for the drag. `commit` is given the state as it was before the
+      // drag started, so the whole burst collapses into a single undo.
+      const after = doc.present;
+      doc = commit({ ...doc, present: finished.before }, after);
+      render();
+      return;
+    }
 
     if (finished.mode === 'draw') {
       const to = finished.to ?? toImage(event);

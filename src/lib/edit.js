@@ -15,10 +15,14 @@
 // view, so cropping twice, or cropping and undoing, moves nothing.
 
 import {
-  CORNERS,
   CORNERED_KINDS,
+  CORNERS,
   cornerOf,
+  distanceToPath,
+  fitPath,
+  movePath,
   outlineHit,
+  pathBounds,
 } from './geometry.js';
 
 export { CORNERS, CORNERED_KINDS, cornerOf };
@@ -27,6 +31,7 @@ export const TOOLS = [
   'select',
   'arrow',
   'line',
+  'pen',
   'rect',
   'rounded',
   'stadium',
@@ -43,6 +48,7 @@ export const TOOLS = [
   'text',
   'counter',
   'crop',
+  'eraser',
 ];
 
 /**
@@ -53,7 +59,7 @@ export const TOOLS = [
  * the headings the popover draws.
  */
 export const SHAPE_GROUPS = [
-  ['Lines', ['arrow', 'line']],
+  ['Lines', ['arrow', 'line', 'pen']],
   ['Boxes', ['rect', 'rounded', 'stadium', 'ellipse', 'callout', 'loupe', 'highlight']],
   ['Flowchart', ['rhombus', 'hexagon', 'parallelogram', 'triangle', 'cylinder']],
 ];
@@ -97,6 +103,20 @@ export const BOX_TOOLS = [
 ];
 /** Tools whose shape is defined by two endpoints. */
 export const LINE_TOOLS = ['arrow', 'line'];
+/**
+ * Tools whose shape is a list of points rather than a box or a pair of ends.
+ *
+ * Its own class rather than a member of LINE_TOOLS. Being in the Lines group of
+ * the popover is a statement about where the reader finds it, and nothing else:
+ * a pen has no `from` and no `to`, so every function that branches on the shape
+ * of a shape has to be told about it separately. Reading group membership as
+ * behaviour is how a pen ends up drawn as a straight line between its first and
+ * last sample.
+ */
+export const PATH_TOOLS = ['pen'];
+
+/** The smallest a numbered step may be dragged. Below this it is not a number. */
+export const MIN_COUNTER_RADIUS = 8;
 /** Tools that place something at a single point. */
 export const POINT_TOOLS = ['text', 'counter'];
 
@@ -667,6 +687,7 @@ export const newId = () => `s${nextId++}`;
 export function boundsOf(shape) {
   if (shape.rect) return { ...shape.rect };
   if (shape.from && shape.to) return normalizeRect(shape.from, shape.to);
+  if (shape.points) return pathBounds(shape.points);
   if (shape.kind === 'counter') {
     const r = shape.radius;
     return { x: shape.at.x - r, y: shape.at.y - r, w: r * 2, h: r * 2 };
@@ -722,6 +743,9 @@ const distanceToSegment = (p, a, b) => {
 export function hits(shape, point, tolerance) {
   if (LINE_TOOLS.includes(shape.kind)) {
     return distanceToSegment(point, shape.from, shape.to) <= shape.width / 2 + tolerance;
+  }
+  if (shape.points) {
+    return distanceToPath(shape.points, point) <= (shape.width ?? 1) / 2 + tolerance;
   }
   if (shape.kind === 'counter') {
     return Math.hypot(point.x - shape.at.x, point.y - shape.at.y) <= shape.radius + tolerance;
@@ -779,7 +803,6 @@ export function handlesFor(shape, minEdge) {
       { id: 'to', x: shape.to.x, y: shape.to.y },
     ];
   }
-  if (shape.kind === 'counter') return [];
 
   const b = boundsOf(shape);
   const right = b.x + b.w;
@@ -827,6 +850,9 @@ export function moveShape(shape, dx, dy) {
   if (shape.from) moved.from = { x: shape.from.x + dx, y: shape.from.y + dy };
   if (shape.to) moved.to = { x: shape.to.x + dx, y: shape.to.y + dy };
   if (shape.at) moved.at = { x: shape.at.x + dx, y: shape.at.y + dy };
+  // A new array every time. History keeps references to shapes, so editing
+  // these in place would rewrite states that have already been snapshot.
+  if (shape.points) moved.points = movePath(shape.points, dx, dy);
   return moved;
 }
 
@@ -865,6 +891,32 @@ export function resizeShape(shape, handleId, point) {
   }
 
   if (!CORNER_HANDLES.includes(handleId) && !EDGE_HANDLES.includes(handleId)) return shape;
+
+  if (shape.points) {
+    let left = b.x;
+    let top = b.y;
+    let right = b.x + b.w;
+    let bottom = b.y + b.h;
+    if (handleId.includes('w')) left = point.x;
+    if (handleId.includes('e')) right = point.x;
+    if (handleId.includes('n')) top = point.y;
+    if (handleId.includes('s')) bottom = point.y;
+    return { ...shape, points: fitPath(shape.points, b, normalizeRect({ x: left, y: top }, { x: right, y: bottom })) };
+  }
+
+  if (shape.kind === 'counter') {
+    // A circle has no independent width and height, so it grows about its own
+    // centre rather than anchoring the opposite corner the way a box does.
+    // Dragging any corner outward makes it bigger, which is the only reading of
+    // the gesture that does not surprise.
+    if (!CORNER_HANDLES.includes(handleId)) return shape;
+    const radius = Math.max(
+      MIN_COUNTER_RADIUS,
+      Math.abs(point.x - shape.at.x),
+      Math.abs(point.y - shape.at.y),
+    );
+    return { ...shape, radius };
+  }
 
   let left = b.x;
   let top = b.y;

@@ -10,20 +10,16 @@ import test from 'node:test';
 import {
   CROP_HANDLES,
   DEFAULT_FILL_OPACITY,
+  MAX_TEXT_SIZE,
+  MIN_COUNTER_RADIUS,
+  MIN_CROP,
+  MIN_TEXT_SIZE,
   MIN_WRAP,
   PAINTS,
   PAINT_KINDS,
-  MAX_TEXT_SIZE,
-  MIN_CROP,
-  MIN_TEXT_SIZE,
   TEXT_ALIGNS,
   TEXT_LINE_RATIO,
   alignOf,
-  linesOf,
-  wrapLine,
-  wrapOf,
-  wrappedLinesOf,
-  measureText,
   amend,
   arrowGeometry,
   boundsOf,
@@ -37,43 +33,48 @@ import {
   cropHandleAt,
   cropHandlesFor,
   effectiveCrop,
-  insideRect,
-  moveCrop,
-  resizeCrop,
+  fillAlphaOf,
   glyphBoxOf,
   handleAt,
   handlesFor,
-  fillAlphaOf,
+  hits,
   inkAlphaOf,
   inkOf,
-  strokeAlphaOf,
-  isFramedText,
-  strokeOf,
-  textPadding,
-  textRadius,
-  hits,
+  insideRect,
   isEdited,
+  isFramedText,
   isUsableCrop,
   isUsableDrag,
+  linesOf,
+  measureText,
+  moveCrop,
   moveShape,
+  moveShapes,
   nextCounterNumber,
   normalizeRect,
   redo,
   removeShape,
+  removeShapes,
+  reorderShapes,
   replaceShape,
   reset,
+  resizeCrop,
   resizeShape,
-  moveShapes,
-  removeShapes,
   selectedIds,
   selectedShape,
   selectedShapes,
-  shapesInMarquee,
-  toggleSelected,
   shapeAt,
+  shapesInMarquee,
+  strokeAlphaOf,
+  strokeOf,
+  textPadding,
+  textRadius,
+  toggleSelected,
   undo,
-  reorderShapes,
   wouldReorder,
+  wrapLine,
+  wrapOf,
+  wrappedLinesOf,
 } from '../src/lib/edit.js';
 
 const doc = () => createDocument(1000, 4000);
@@ -705,11 +706,35 @@ test('a text box is as wide as its widest line and as tall as all of them', () =
   assert.equal(box.h, 3 * 20 * TEXT_LINE_RATIO);
 });
 
-test('text carries resize handles and a numbered step does not', () => {
+test('text and a numbered step each carry the handles their shape can use', () => {
   // Bundling the two point tools together is what left text with no handles at
   // all, so this asserts they are treated separately.
-  assert.equal(handlesFor(someText()).length, 6);
-  assert.equal(handlesFor({ kind: 'counter', at: { x: 0, y: 0 }, radius: 12 }).length, 0);
+  assert.equal(handlesFor(someText()).length, 6, 'text: four corners and two sides');
+  // A numbered step used to have none, which meant its size was whatever the
+  // stroke width happened to be when it was placed and nothing could change it
+  // afterwards. It gets the four corners; a circle has no independent width and
+  // height, so it has no use for the edge midpoints.
+  const counter = { kind: 'counter', at: { x: 0, y: 0 }, radius: 12 };
+  const ids = handlesFor(counter).map((h) => h.id);
+  assert.deepEqual(ids.filter((id) => ['nw', 'ne', 'se', 'sw'].includes(id)).length, 4);
+});
+
+test('dragging a numbered step corner resizes it about its own centre', () => {
+  const counter = { kind: 'counter', at: { x: 100, y: 100 }, radius: 12 };
+
+  const bigger = resizeShape(counter, 'se', { x: 140, y: 130 });
+  assert.equal(bigger.radius, 40, 'the axis that moved further sets the radius');
+  assert.deepEqual(bigger.at, counter.at, 'the centre does not move');
+
+  // The floor exists because a numbered step smaller than its own digit is not
+  // a numbered step.
+  const tiny = resizeShape(counter, 'nw', { x: 100, y: 100 });
+  assert.equal(tiny.radius, MIN_COUNTER_RADIUS);
+});
+
+test('a numbered step ignores the edge handles it does not have', () => {
+  const counter = { kind: 'counter', at: { x: 100, y: 100 }, radius: 12 };
+  assert.equal(resizeShape(counter, 'e', { x: 400, y: 100 }), counter);
 });
 
 test('dragging a text corner changes the point size, never the aspect', () => {
