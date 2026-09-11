@@ -236,7 +236,7 @@ All settings live on the options page (right click the toolbar icon, or `chrome:
 | Save straight to your downloads | off | Skips the editor entirely. Needs the `downloads` permission, requested when you switch it on |
 | Download format | PNG | Remembered from the last save |
 | Theme | system | System, light or dark |
-| Toolbar controls | curated set | Each of the 19 buttons can be switched off individually, and so can each of the 14 shapes |
+| Toolbar controls | curated set | Each of the 21 buttons can be switched off individually, and so can each of the 15 shapes |
 | Drawing style | red, 4px, arrow | Tool, colour, stroke, dash, arrowheads, fill, opacity, text family, size and weight are all remembered between captures |
 | Advanced access | off | `webNavigation` and `<all_urls>`, for cross origin frames |
 
@@ -461,7 +461,7 @@ Two layers, no framework.
 
 ```bash
 ./tools/check.sh                 # everything CI runs: pack, unit tests, icons, verifier
-node --test 'test/**/*.test.js'  # 229 unit tests, including the security invariants
+node --test 'test/**/*.test.js'  # 264 unit tests, including the security invariants
 node tools/make-icons.mjs --check
 node test/e2e/run.mjs            # real Chrome, drives a capture over CDP
 ```

@@ -62,7 +62,8 @@ fifteen.
 | `src/ui/progress.js` | The capture progress popup. Whether Chrome opens it is checked by `--headed --popup` | TESTING |
 | `src/content/measure.js` | Page metrics, injected | DOMAIN |
 | `src/content/prepare.js` | Sticky and fixed handling, scrolling, lazy loading, frames | ARCHITECTURE, DOMAIN |
-| `src/content/pick.js` | The element picker | nothing |
+| `src/lib/open.js` | What may be opened from disk, and what to say when it may not | DOMAIN |
+| `src/content/pick.js` | The two pickers: point at one element to capture, or point at several to leave out | DOMAIN, DECISIONS D66 |
 | `test/invariants.test.js` | The security invariants. The heart of the project | AGENTS |
 | `test/lib/scan.js` | The banned pattern scanner and manifest checks | AGENTS |
 | `tools/pack.mjs` | Deterministic zip packaging | AGENTS |

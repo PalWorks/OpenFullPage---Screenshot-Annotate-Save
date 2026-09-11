@@ -11,7 +11,108 @@ a clean checkout with `./tools/pack.sh`, not merely checkable against one downlo
 ## [Unreleased]
 
 Everything below is on `main` and not yet packaged. It covers the toolbar rework
-and the capture reliability work of 2026-09-08 to 2026-09-10.
+and the capture reliability work of 2026-09-08 to 2026-09-11.
+
+### Added: open an image to edit, not only one you captured
+The editor was always a base picture plus a list of shapes, and nothing in it ever
+asked where the base came from. So an image opened from disk is the same product with
+a different first step.
+
+Three ways in: **paste** with `Cmd`/`Ctrl`+`V`, which is how a screenshot taken by the
+operating system gets annotated, **drop** a file anywhere on the window, and an
+**Open** button in the toolbar, immediately left of Download, on `Cmd`/`Ctrl`+`O`.
+
+There is no fourth. The extension icon captures on a single click with no menu, which
+is a release check in its own right, so there is nowhere on it to put an Open entry
+without putting a menu in front of every capture. A context menu would need
+`contextMenus`, granted at install, which the fourth rule forbids.
+
+Paste is the `paste` event and its `clipboardData`, deliberately, not
+`navigator.clipboard.read()`. The asynchronous clipboard needs the `clipboardRead`
+permission; the event needs nothing at all, because the reader's own paste is the
+authorisation. The same feature, one permission apart.
+
+Opening the result tab with no capture behind it used to produce one grey sentence
+telling you to go somewhere else. It was the only screen that could do what you
+wanted and it was a dead end. It now offers to open an image, and the whole window is
+the drop target.
+
+Raster only, by an explicit list rather than `image/*`, which admits SVG: an SVG is a
+document rather than a picture. Both canvas limits are checked, not just the side one,
+because a 16384 square image is inside the side limit on both axes and still more than
+twice the area limit. A photograph taken on a phone arrives the right way up, because
+the decode asks for the EXIF orientation; without that nothing throws and you annotate
+a sideways picture. And pasting into a tab that already holds a picture opens a **new
+tab**, because the unload guard cannot save you there: the tab never unloads.
+
+### Added: a freehand pen, an object eraser, and resizable numbered steps
+The pen is the first shape in this editor whose payload is a list rather than a handful
+of numbers, and two things follow that are true of nothing else.
+
+It is **thinned**: a pointer reports moves far faster than anybody draws, so samples
+within 1.5 pixels of the last one kept are dropped as they arrive, and the finished
+stroke is simplified once. Two thousand samples become about a hundred points, and that
+is a number asserted in a test rather than a claim in a comment.
+
+And it is **never edited in place**. History shares shape objects by reference, so
+mutating a point array would silently rewrite states already on the undo stack, and undo
+would hand back a state that had itself been changed. Every path operation returns a new
+array. Hold `Shift` to straighten a stroke.
+
+The **eraser** deletes whatever you drag over, and a whole drag is **one** undo step
+rather than one per shape, following the rule arrow-key nudging already set. There is no
+pixel eraser and there will not be: it would bake pixels into the base.
+
+**Numbered steps can be resized.** They had no handles at all, so their size was whatever
+the stroke width happened to be when they were placed and nothing could change it
+afterwards. They now carry the four corners and grow about their own centre.
+
+Pen is `F` and Eraser is `E`. `P` is Redact and `O` is Ellipse, so neither could have the
+initial you would guess first.
+
+### Added: take things out of the shot before taking it
+A fourth capture mode, on `Alt`+`Shift`+`R` and on the options page. Hover to highlight,
+click to hide, `Z` to put the last one back, `Enter` to capture, `Esc` to cancel. A bar
+across the bottom says what each key does and how many things are hidden, because a
+capture that silently removed nothing looks exactly like one that removed three things.
+
+Nothing is ever deleted from your page. Each pick gets an attribute and a stylesheet does
+the rest, so putting the page back is removing an attribute, and it happens even when the
+capture fails.
+
+It uses `display: none` rather than the `visibility: hidden` that hides fixed elements.
+That difference is the whole feature: hiding a fixed banner with `visibility` is right,
+because it is out of the flow and nothing moves, but a reader who picks a cookie bar out
+of the middle of an article means take it out, and `visibility` would leave a hole exactly
+its size.
+
+The automatic half described on the roadmap, hiding fixed overlays from the first
+screenful, was **dropped rather than shipped**. `HIDE_FIXED_CSS` is indiscriminate, so on
+a site whose header is `position: fixed` it produces a capture with no header at all,
+which is worse than the banner it was meant to remove.
+
+Both pickers also gained a budget fit for a person. Every step in the capture was bounded
+at twenty seconds, which is generous for a script and absurd for someone deciding which
+four things to take out of a screenshot. They now have five minutes, and each gives up
+just before its caller does, rather than being abandoned mid-promise with its listeners
+still swallowing every click on your page.
+
+### Added: choose how big the saved file is
+A size control in the download menu, under the quality slider. One editable value, a
+scale, with the size it produces shown beside it.
+
+Not width and height linked by a lock plus a per cent, which is three sources of truth for
+one number: type 633 into the width of a 1265 by 4204 picture and the height becomes 2102,
+which recomputes the width as 632, and you watch a field you typed in change under you.
+
+It lives in the one function that turns the document into pixels, which serves Copy,
+Download and the size readout alike. So those three can never disagree about how big the
+image is, and the bytes shown in the menu are the bytes of the file that will actually be
+written, which is the entire point of the readout.
+
+Never enlarges: a screenshot scaled up invents detail that was never captured. The
+roadmap also asked for centimetres, inches and a resolution, and all three were refused: a
+PNG has no physical size, so they would describe nothing.
 
 ### Fixed: the screenshot run left the download menu open
 Test harness only. The shipped extension was never affected, but the bug hid two real

@@ -46,15 +46,15 @@ already scoped and ready to start, or **planned** with the effort in the form
 | 1.8.0 toolbar | F41 | Hover cursors, hover outline, Escape cancels a drag | shipped | D42 |
 | 1.8.0 toolbar | F27 | The editor says what is under the pointer | shipped 2026-09-10 | D42, D44, D49. Finished by the paint order menu and a key in every tooltip |
 | 1.8.0 toolbar | F40 | Text is a shape, with a frame and a plate | shipped 2026-09-10 | D46, D50. The Frame block replaced the hint that stood in for it |
-| 1.8.0 toolbar | F4 | Freehand pen and object eraser | planned, 2d / 45m | No pixel eraser: it would bake pixels into the immutable base |
+| 1.8.0 toolbar | F4 | Freehand pen and object eraser | shipped 2026-09-11 | D65. The first shape whose payload is a list, so it is thinned and never edited in place. Numbered steps gained resize handles in the same work. No pixel eraser |
 | 1.8.0 toolbar | F6 | Navigate a large capture: zoom and an overview pane | shipped 2026-09-10 | D58. Zoom is a width, not a scroll container, so L17 closed rather than fired. The pane is the progress popup's page with a marker on it |
 | 1.8.0 toolbar | F44 | Opacity in every colour popover, and the frame switches removed | shipped 2026-09-10 | D57, D62. Five hand-written colour panels became one built from `PAINTS`. A redaction still cannot take an opacity |
 | 1.8.0 toolbar | F43 | A caption wraps inside a width you set | shipped 2026-09-10 | D60, L41. Two side handles set the width, the height follows the words. A word that exactly fits and a word that cannot fit are the two tests |
-| 1.8.0 toolbar | F45 | Open an image to edit, not only one you captured | planned, 2d / 45m | Every editing tool already works on a base plus shapes. The base does not have to have come from a capture. No new permission, and nothing leaves the machine |
+| 1.8.0 toolbar | F45 | Open an image to edit, not only one you captured | shipped 2026-09-11 | Three ways in: paste, drop, and an Open button. The icon cannot carry a fourth without putting a menu in front of every capture. Paste is the `paste` event, never `navigator.clipboard.read`, which would need a permission |
 | 1.9.0 long pages | F10 | Multi-part export for very long pages | planned, 5d / 2h | **The known defect.** Must stream part by part or Chrome kills the worker |
 | 1.9.0 long pages | F13 | Runtime seam verification | planned, 5d / 2h | We verify seams in tests. This verifies them in the field |
 | 1.9.5 region | F28 | Select a region of the canvas | planned, 2d / 45m | A marquee other operations take as an argument. Rectangle only |
-| 1.10.0 capture | F15 | Remove an element before capturing | planned, 2d / 45m | Cookie banners and chat widgets. No new permission |
+| 1.10.0 capture | F15 | Remove an element before capturing | shipped 2026-09-11 | D66. The manual picker only. The automatic half was dropped: `HIDE_FIXED_CSS` is indiscriminate and would take real headers out too, L46 |
 | 1.11.0 output | F5 | Presentation frame | planned, 3d / 1h | Padding, a background, an optional window frame. Pure canvas |
 | 1.12.0 thanks | F3 | Rating nudge | shipped 2026-09-10 | D59. No review gating: one ask, and the feedback link beside it rather than behind it. Exercised by `--nudge` |
 | 1.12.0 thanks | F42 | Donations | shipped 2026-09-10 | D48. The GOVERNANCE.md amendment landed in the same commit. Ships with an empty list, so the section stays hidden until there is somewhere to send money |
@@ -63,7 +63,7 @@ already scoped and ready to start, or **planned** with the effort in the form
 | Phase 2 out | F16 | Before and after | planned, 0.5d / 15m | Nearly free: the pristine capture is already on its own canvas |
 | Phase 2 out | F23 | Text watermark | planned, 1d / 20m | Typed text only, never an image loaded from a URL |
 | Phase 3 | F20 | Presentation finish and image adjustments | planned, 4d / 1.5h | All `ctx.filter` and compositing, no library |
-| Phase 3 | F30 | Adjust size on export | planned, 1.5d / 30m | The "resulting size" readout is the part that earns it |
+| Phase 3 | F30 | Adjust size on export | shipped 2026-09-11 | D67. One scale, not three fields. It lives in `encode()`, the only function that makes pixels, so Copy, Download and the readout cannot disagree |
 | Phase 4 | F11 | Capture library | planned, 8d / 3h | **The only feature that changes the trust posture.** Off by default, IndexedDB |
 | Phase 4 | F18 | Command palette | planned, 2d / 40m | The cheapest real progress on L14, the editor without a pointer |
 | Phase 4 | F22 | Remappable editor shortcuts | planned, 2d / 40m | In-editor keys only |

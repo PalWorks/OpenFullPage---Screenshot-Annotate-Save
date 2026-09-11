@@ -40,9 +40,20 @@ node test/e2e/run.mjs --headed --popup  # prove Chrome opens the toolbar popup
 node test/e2e/run.mjs --stale   # a worker newer than the tab it is talking to
 node test/e2e/run.mjs --frozen  # Chrome hands back a frame it already presented
 node test/e2e/run.mjs --nudge   # the fifth capture asks for a rating, once
+node test/e2e/run.mjs --remove  # hide things on the page, then capture without them
 
 FPC_URLS=https://example.com/a,https://example.com/b node test/e2e/run.mjs
 ```
+
+`--remove` drives the fourth capture mode: it turns the extra modes on (with them
+off, `start()` silently captures the whole page instead, so a run that forgot
+would pass while testing nothing), hovers the fixture's cookie bar, clicks it,
+presses Enter, and then checks **both halves**. That the element is absent from
+the picture, read in pixels by `verify.mjs`. And that the page was put back
+afterwards: no attribute left behind, the element displayed again, the picker's
+own chrome gone. The second half is the one that matters more. A capture that
+leaves somebody's real page with pieces missing is worse than one that fails,
+because the failure is at least visible.
 
 `FPC_SHOT_DIR=/some/dir` also screenshots the result tab, which is the quickest way
 to review its UI. It photographs the download menu open as well as the toolbar at
@@ -164,6 +175,20 @@ Failures worth remembering, all found this way:
   check. The failure surfaced three hundred lines away, in the loupe redaction test,
   as a redaction that suddenly had less to change. Undo until the canvas is clean
   and assert that it is, rather than counting.
+- **An element can report hidden and still be laid out.** A `display` set on a
+  class beats the browser's own `[hidden]` rule. When that happened to the
+  landing surface it sat in `main`'s flex row and pushed the capture sideways,
+  which moved every pointer coordinate below it: thirty checks failed at once,
+  none of which mentioned layout, and they read as "the line drew nothing" and
+  "the cursor was move, not default". Anything given a `display` in the
+  stylesheet needs a `[hidden]` rule to go with it, and `--edit` now sweeps
+  every `[hidden]` element for a non-zero box so the next one is named on sight.
+- **A check that draws on the shared canvas is a check that reaches into its
+  neighbours.** The pen and eraser pass tidied up after itself and still broke
+  four checks three hundred lines away. Rather than keep guessing which piece of
+  shared state it disturbed, it was moved onto the image the import pass opens,
+  where it has a canvas of its own and nothing else is comparing that canvas
+  against itself. Worth remembering as a first move rather than a last one.
 - **A helper that toggles a control depends on state it did not set.** The
   `FPC_SHOT_DIR` pass photographs the download menu open and used to leave it open.
   `#download` is a toggle, so `exerciseFileSizes` closed the menu it meant to open,

@@ -1553,6 +1553,122 @@ for the port protocol. An unrepaired build fails the fixture check with the
 sticky header and the fixed bar each appearing twice, which is exactly what the
 real page did.
 
+## D67: The export size lives in the one function that makes pixels
+
+**2026-09-11.** F30 asked for a way to make the saved file smaller. The roadmap
+described it as another product's dialog: width and height in pixels, per cent,
+centimetres, inches, and a resolution in dots per inch.
+
+Three of those are meaningless here. A PNG has no physical size, so centimetres
+and inches describe nothing, and the resolution is a number written into a header
+that changes no pixel. Only the page count of a PDF is physical, and `pdf.js`
+already decides that from the canvas. Carrying four unit systems into a menu
+whose whole job is "make this small enough to send" is copying a dialog rather
+than solving a problem.
+
+**Decision.** One editable value: a scale. The size it produces is shown beside
+it, read only.
+
+Width and height linked by a lock, plus a per cent, is three sources of truth for
+one number. Type 633 into the width of a 1265 by 4204 picture and the height
+becomes 2102, which recomputes the width as 632. The reader watches a field
+they typed in change under them. A scale cannot do that, because there is only
+one number.
+
+**And it lives in `encode()`**, which is the only function in the product that
+calls `editor.flatten()`. It has three callers: Copy, Download, and the
+measurement behind the size readout. One scale there means all three see the
+same picture, and it means the bytes in the menu are the bytes of the file that
+will actually be written, which is the entire point of the readout.
+
+**Consequences.** The measured sizes are cached, and the key varied only by
+format and quality. An export scale changes every format, PNG and PDF included,
+so it had to go into the key; without it the menu confidently reports the size of
+an image that is no longer the one about to be written. Proven by removing it:
+the readout stays at 6 KB where it should fall to 2 KB.
+
+Resizing is not an edit. It changes the file that comes out, not the thing being
+edited, so it is not undoable and leaves no step on the history stack.
+
+## D66: What is taken out of the shot is hidden, never deleted, and never with visibility
+
+**2026-09-11.** F15 was planned as a small feature: mark the picked element with
+a data attribute and hide it "via the same stylesheet mechanism the fixed
+elements use, so `restore()` already puts it back". Every clause of that was
+wrong, and the review found all three before any of it was built.
+
+**`HIDE_FIXED_CSS` is `visibility: hidden`, which preserves layout.** That is
+right for a fixed banner: it is out of the flow, nothing moves, and the only job
+is to stop it riding down the page. It is wrong for an element a reader picks out
+of the middle of an article, where it leaves a hole exactly the size of the thing
+that was removed. Manual removal is `display: none`.
+
+**`remarkFixed()` would have torn the mark off.** It runs before every screenful
+and removes `data-fpc-fixed` from anything whose computed position is not
+`fixed`. A hidden in-flow element is not fixed, so reusing that attribute means
+the mark is stripped on the first screenful and the element is handed back to the
+picture for the rest of the capture.
+
+**`restore()` did not already put it back.** It removes two known stylesheets and
+`restorePage()` removes three known attributes. A new attribute is invisible to
+both, so a capture that threw would leave the reader's own page with pieces
+missing, which is worse than a capture that fails: the failure is at least
+visible.
+
+**Decision.** Its own attribute, `data-fpc-hidden`, its own stylesheet using
+`display: none`, explicitly skipped by `remarkFixed()`, and removed in **both**
+cleanup paths. Nothing is ever deleted from the page, so putting it back is
+removing an attribute.
+
+**Consequences.** The "automatic" half of F15, hiding fixed overlays from the
+first screenful, was dropped. `HIDE_FIXED_CSS` is indiscriminate, so on a site
+whose header is `position: fixed` it produces a capture with no header at all,
+which is worse than the banner it was meant to remove. Telling page chrome from a
+transient overlay is a real problem and it is not this one.
+
+The picker also gained what it was missing: a bar saying what each key does, a
+count of what has been hidden, and Z to put the last one back. A capture that
+silently removed nothing looked exactly like one that removed three things.
+
+## D65: A pen is the first shape whose payload is a list, so it is never edited in place
+
+**2026-09-11.** Every shape in this editor was a handful of numbers: two points,
+a box, a radius. A freehand stroke is an array, and two things follow that are
+true of nothing else.
+
+**It has to be thinned.** A pointer reports moves far faster than anybody draws.
+A stroke held for a few seconds is thousands of samples describing a line the eye
+reads as smooth at a few dozen. Samples are dropped as they arrive if they are
+within 1.5 pixels of the last one kept, and the finished stroke is simplified
+once with Ramer, Douglas and Peucker at a tolerance of 0.6 pixels. Two thousand
+samples become about a hundred points, and that number is an assertion in
+`test/path.test.js` rather than a claim in a comment.
+
+**It must never be edited in place, and this is the half that would have bitten.**
+The plan said the risk was memory: every commit copying every point. That is
+false. `commit()` is `past: [...doc.past, doc.present]`, a shallow array copy
+holding a **reference** to the previous present. Shapes are never deep copied, so
+a stroke's points exist once however many commits follow.
+
+The real hazard is the opposite. Because history shares shape objects by
+reference, **mutating a point array silently rewrites every past and future state
+that shares it**, and undo hands back a state that has itself been edited. Every
+path function returns a new array, and one test tries to mutate the output and
+asserts the input is untouched.
+
+**Decision.** `PATH_TOOLS` is its own class. Membership of `SHAPE_GROUPS` is
+toolbar enumeration and nothing else: a pen has no `from` and no `to`, so every
+function that branches on the shape of a shape is told about it separately.
+Reading group membership as behaviour is how a pen ends up drawn as a straight
+line between its first and last sample.
+
+**Consequences.** The eraser commits once per drag rather than once per shape,
+reusing the pattern arrow-key nudging already established, because erasing five
+things and needing five undos reads as a broken undo. Numbered steps gained the
+resize handles they never had, in the same work: the pen forced a rewrite of
+`boundsOf`, `handlesFor` and the resize transform, and a counter needed exactly
+those three.
+
 ## D64: A check opens what it needs, and says so when it was already open
 
 **2026-09-10.** The store screenshot pass photographs the download menu open,

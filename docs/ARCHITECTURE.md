@@ -44,6 +44,8 @@ button (clicking it captures immediately), and no page can reach the extension
   2  measurePage()                    metrics: viewport, document, dpr, title, url
         │
   3  mode == element ? pickElement()  the user points at something first
+     mode == remove  ? pickForRemoval()  or picks things to leave out, which
+                                      changes the height, so 2 runs again
         │
   4  markSpecialElements()            tag fixed and sticky elements
      insertCSS(PREPARE_CSS)           unstick, pause animations, kill the caret

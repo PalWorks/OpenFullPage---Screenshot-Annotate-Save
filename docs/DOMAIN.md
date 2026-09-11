@@ -94,18 +94,49 @@ uniform across drawing, moving, resizing, restyling and cropping.
 **Present.** `{shapes[], crop, selected}`.
 
 **Shape.** A live object, not a baked stroke. Once drawn it can be selected, moved,
-resized, restyled or deleted. Kinds carry the model: `arrow`, `line`, `text`,
-`counter`, and the eleven in `GEOMETRY_KINDS` (`rect`, `highlight`, `pixelate`,
+resized, restyled or deleted. Kinds carry the model: `arrow`, `line`, `pen`,
+`text`, `counter`, and the eleven in `GEOMETRY_KINDS` (`rect`, `highlight`, `pixelate`,
 `ellipse`, `rhombus`, `triangle`, `hexagon`, `parallelogram`, `cylinder`, `callout`,
 `loupe`), each described once as path operations that the canvas and the hit tester
 both read.
 
 **Tool entry.** What the Shapes popover offers, which is not the same list.
-`SHAPE_TOOLS` in `src/lib/edit.js` holds fourteen entries, because **Rounded box**
+`SHAPE_TOOLS` in `src/lib/edit.js` holds fifteen entries, because **Rounded box**
 and **Stadium** pick `rect` and set a corner radius rather than adding two kinds to
 the model. Anything that needs the list derives it from `SHAPE_TOOLS` rather than
 repeating it: the hand-written copy went stale within one release, and the sweep
 tested twelve shapes without a word about the two it had never heard of. D51.
+
+**Pen.** The one shape whose payload is a list rather than a handful of numbers:
+`points`, an array of `[x, y]` pairs. Two things follow that are true of nothing
+else here. It has to be **thinned**, because a pointer reports moves far faster
+than anybody draws, and it must **never be edited in place**, because `commit()`
+snapshots the containing arrays and keeps a reference to every shape. Mutating a
+point array would rewrite states already on the undo stack, so undo would hand
+back a state that had itself been changed. Every path function returns a new
+array. D65.
+
+**Eraser.** A tool, not a shape. It deletes whatever is under the pointer, and a
+drag deletes everything it crosses as **one** undo step, the same rule arrow-key
+nudging already follows. There is no pixel eraser and there will not be: it
+would bake pixels into the base, and the base is the one thing the editor never
+writes to.
+
+**Export size.** A scale applied to the flattened picture on its way to an
+encoder, between `flatten()` and `toBlob`. Deliberately **not part of the
+document**: resizing changes the file that comes out, not the thing being
+edited, so it is not undoable and leaves no step on the history stack. It lives
+in `encode()`, the only function that turns the document into pixels, which is
+why Copy, Download and the size readout can never disagree about how big the
+image is. D67.
+
+**Removal.** Taking something out of the shot before the shot is taken. Elements
+are **hidden, never deleted**: each pick gets `data-fpc-hidden` and a stylesheet
+does the rest, so `restorePage()` puts the page back by removing an attribute,
+including when the capture throws. It uses `display: none` rather than the
+`visibility: hidden` that hides fixed elements, because a reader who picks a
+cookie bar out of the middle of an article means "take it out", and `visibility`
+leaves a hole exactly its size. D66.
 
 **Paint.** One of the five things a shape can be given a colour for, declared once in
 `PAINTS`: `border` and `fill` on a shape, `text`, `frame` and `plate` on a caption.
