@@ -9,10 +9,12 @@ import test from 'node:test';
 
 import {
   LIMITS,
+  MIN_EXPORT_SCALE,
   MIN_OUTPUT_SCALE,
   applyFilename,
   captureBasename,
   captureFilename,
+  exportSize,
   fitsInViewport,
   planCapture,
 } from '../src/lib/plan.js';
@@ -243,4 +245,40 @@ test('the basename and the full filename agree', () => {
   const args = { product: 'OpenFullPage', url: 'https://a.test/b', date: new Date(2026, 8, 8, 1, 2, 3) };
   assert.equal(`${captureBasename(args)}.png`, captureFilename(args));
   assert.equal(captureBasename(args), 'openfullpage-20260908T010203-a-test-b');
+});
+
+test('an export scale gives the size the file will actually be', () => {
+  assert.deepEqual(exportSize(1265, 4204, 0.5), { w: 633, h: 2102, scale: 0.5 });
+  assert.deepEqual(exportSize(800, 600, 1), { w: 800, h: 600, scale: 1 });
+});
+
+test('an export never upscales, because enlarging a screenshot invents detail', () => {
+  assert.deepEqual(exportSize(100, 50, 2), { w: 100, h: 50, scale: 1 });
+  assert.deepEqual(exportSize(100, 50, 99), { w: 100, h: 50, scale: 1 });
+});
+
+test('an export scale is clamped to something worth keeping, at both ends', () => {
+  const tiny = exportSize(1265, 4204, 0.0001);
+  assert.equal(tiny.scale, MIN_EXPORT_SCALE);
+  assert.equal(tiny.w, 127);
+});
+
+test('a scale that would round a side away still produces a picture', () => {
+  // Three pixels at a tenth is 0.3, and a canvas of width 0 throws rather than
+  // encoding an empty file.
+  const { w, h } = exportSize(3, 3, MIN_EXPORT_SCALE);
+  assert.ok(w >= 1 && h >= 1, `rounded to ${w}x${h}`);
+});
+
+test('the scale reported back is the one that was used, not the one asked for', () => {
+  // The readout shows this, so a clamp the reader cannot see would make the
+  // menu say one thing and the file be another.
+  assert.equal(exportSize(100, 100, 5).scale, 1);
+  assert.equal(exportSize(100, 100, 0).scale, MIN_EXPORT_SCALE);
+  assert.equal(exportSize(100, 100, NaN).scale, 1);
+});
+
+test('a size of nothing is treated as one pixel rather than dividing by it', () => {
+  assert.deepEqual(exportSize(0, 0, 1), { w: 1, h: 1, scale: 1 });
+  assert.deepEqual(exportSize(NaN, NaN, 1), { w: 1, h: 1, scale: 1 });
 });

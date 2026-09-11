@@ -8,19 +8,21 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  CAPTURE_MODES,
   DEFAULTS,
   DOWNLOAD_FORMATS,
+  SHAPE_TOOLS,
   STYLE_KEYS,
   TEXT_ALIGNS,
   THEMES,
   TOOLBAR_BUTTONS,
-  SHAPE_TOOLS,
   TOOLBAR_GROUPS,
   TOOLS,
   defaultStyle,
   sanitise,
   saveSettings,
 } from '../src/lib/settings.js';
+import { MIN_EXPORT_SCALE } from '../src/lib/plan.js';
 
 test('an empty store gives exactly the defaults', () => {
   assert.deepEqual(sanitise({}), DEFAULTS);
@@ -136,7 +138,7 @@ test('every key sanitise knows about is one DEFAULTS declares', () => {
   const sample = {
     defaultMode: 'visible', extraModes: true, tool: 'rect', colour: '#123456',
     strokeWidth: 8, captureDelay: 3, progressPopup: false, directDownload: true,
-    theme: 'dark', format: 'jpeg', quality: 78,
+    theme: 'dark', format: 'jpeg', quality: 78, exportScale: 0.5,
     dash: 'dashed', lineEnds: 'none', corner: 12, fill: '#abcdef', fillOpacity: 0.5,
     strokeOpacity: 0.7,
     textSize: 40, textFamily: 'serif', textBold: false, textItalic: true,
@@ -357,4 +359,34 @@ test('a failed write does not stop the next one', async () => {
   } finally {
     globalThis.chrome = previous;
   }
+});
+
+test('the export size is clamped to a range worth dragging through', () => {
+  // Never above full size: enlarging a screenshot invents detail that was never
+  // captured. Never below a tenth: that is a thumbnail, and the file stops
+  // getting usefully smaller.
+  assert.equal(sanitise({ exportScale: 4 }).exportScale, 1);
+  assert.equal(sanitise({ exportScale: 0 }).exportScale, MIN_EXPORT_SCALE);
+  assert.equal(sanitise({ exportScale: -1 }).exportScale, MIN_EXPORT_SCALE);
+  assert.equal(sanitise({ exportScale: 0.5 }).exportScale, 0.5);
+  // Rubbish falls back to the default rather than to NaN, which would make
+  // every measured size read "too large".
+  assert.equal(sanitise({ exportScale: 'half' }).exportScale, DEFAULTS.exportScale);
+});
+
+test('Reset leaves the export size alone, the way it leaves the quality alone', () => {
+  // It is an output setting, not a drawing style. Reset puts the pen back, not
+  // the size of the file.
+  assert.ok(!STYLE_KEYS.includes('exportScale'));
+});
+
+test('the fourth capture mode is a mode storage will accept', () => {
+  // A mode the options page offers and sanitise drops is a setting that reverts
+  // on the next load, which reads to a user as the choice not sticking.
+  assert.equal(sanitise({ extraModes: true, defaultMode: 'remove' }).defaultMode, 'remove');
+  assert.ok(CAPTURE_MODES.includes('remove'));
+});
+
+test('the extra modes switch still forces the plain one, whatever was stored', () => {
+  assert.equal(sanitise({ extraModes: false, defaultMode: 'remove' }).defaultMode, 'full');
 });

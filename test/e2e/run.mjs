@@ -613,6 +613,323 @@ const clickButton = (cdp, session, selector) =>
 
 
 /**
+ * The export size.
+ *
+ * Driven on the opened image, where the picture is a known 600 by 400 and the
+ * arithmetic can be checked rather than merely observed to change.
+ *
+ * The check that earns its place is the last one: the measured sizes have to
+ * fall when the scale does. They are cached, and the cache key used to vary
+ * only by format and quality, so a scale change left the menu confidently
+ * reporting the size of an image that was no longer the one about to be
+ * written.
+ */
+async function exerciseExportSize(cdp, session, check) {
+  const read = () => evaluate(cdp, session, `JSON.stringify({
+    dims: document.getElementById('export-dims').textContent,
+    out: document.getElementById('export-scale-out').textContent,
+    png: document.querySelector('#formats [data-size="png"]').textContent,
+  })`).then(JSON.parse);
+
+  const wasOpen = await evaluate(cdp, session,
+    'document.getElementById("formats").hidden === false');
+  check(!wasOpen, 'the download menu was already open before the export size checks ran',
+    'the download menu starts closed for the export size checks');
+  if (!wasOpen) await clickButton(cdp, session, '#download');
+
+  const settled = (label) => until(label, async () => {
+    const now = await read();
+    return now.png !== '…' ? now : null;
+  }, { timeoutMs: 60000, everyMs: 250 });
+
+  const full = await settled('the sizes to measure at full size');
+  check(/600 by 400/.test(full.dims),
+    `the readout says "${full.dims}" for a 600 by 400 picture at 100%`,
+    `the readout says what the file will be, not what the slider is (${full.dims})`);
+
+  await evaluate(cdp, session, `(() => {
+    const r = document.getElementById('export-scale');
+    r.value = '50';
+    r.dispatchEvent(new Event('input', { bubbles: true }));
+    r.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await sleep(200);
+
+  const half = await read();
+  check(/300 by 200/.test(half.dims),
+    `at 50% the readout says "${half.dims}", expected 300 by 200`,
+    'halving the size halves both sides, and the readout says so');
+  check(half.out === '50%', `the slider readout says "${half.out}"`, 'the slider says where it is');
+
+  const measured = await settled('the sizes to re-measure at the smaller size');
+  check(bytesOf(measured.png) < bytesOf(full.png),
+    `PNG measured ${full.png} at full size and ${measured.png} at half, so the sizes are cached against the old picture`,
+    `the measured sizes follow the export size (PNG ${full.png} to ${measured.png})`);
+
+  // Put it back: the saves that follow are checked against real files.
+  await evaluate(cdp, session, `(() => {
+    const r = document.getElementById('export-scale');
+    r.value = '100';
+    r.dispatchEvent(new Event('input', { bubbles: true }));
+    r.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await evaluate(cdp, session, 'document.body.click()');
+  await sleep(200);
+}
+
+/**
+ * The pen and the eraser.
+ *
+ * The pen rides the shape sweep for "does it draw at all", because it is in
+ * SHAPE_TOOLS and the sweep is derived from that list. What the sweep cannot
+ * see is the two things that make a pen a pen rather than a line, and both are
+ * checked in pixels here rather than by reading the model: a model kept tidy
+ * proves nothing about what landed on the canvas.
+ */
+async function exerciseFreehand(cdp, session, check) {
+  const RED = [0xef, 0x44, 0x44];
+
+  // Undo only until the part of the canvas this check dirtied is clean again,
+  // never until the undo button goes grey. Undoing everything would reach into
+  // the checks either side, which is exactly the failure TESTING.md records:
+  // the loupe redaction had less to change, and the reported defect surfaced
+  // three hundred lines from its cause.
+  const tidy = async (scan, baseline, label) => {
+    let ink = await countColour(cdp, session, scan, RED);
+    for (let i = 0; i < 12 && ink > baseline + 30; i += 1) {
+      await clickButton(cdp, session, '#undo');
+      await sleep(140);
+      ink = await countColour(cdp, session, scan, RED);
+    }
+    check(ink <= baseline + 30,
+      `${label} survived every undo this check had (${ink} pixels left, started at ${baseline})`,
+      `the ${label} block leaves the canvas the way it found it`);
+  };
+
+  await clickButton(cdp, session, '[data-pop="pop-border"]');
+  await clickButton(cdp, session, '[data-paint="border"][data-colour="#ef4444"]');
+  await clickButton(cdp, session, '[data-pop="pop-border"]');
+
+  const spot = await visibleSpot(cdp, session, { across: 0.2, down: 120 });
+  const box = await evaluate(cdp, session, `(() => {
+    const c = document.getElementById('canvas');
+    const b = c.getBoundingClientRect();
+    return JSON.stringify({ left: b.left, top: b.top, scale: c.width / b.width });
+  })()`).then(JSON.parse);
+  const toImage = (pt) => ({
+    x: Math.round((pt.x - box.left) * box.scale),
+    y: Math.round((pt.y - box.top) * box.scale),
+  });
+
+  // An arc. Drawn so that a stroke which kept only its two ends would leave the
+  // top of the arc empty, which is exactly what the check reads.
+  const startAt = { x: spot.from.x, y: spot.from.y + 90 };
+  const endAt = { x: spot.from.x + 160, y: spot.from.y + 90 };
+  const rise = 80;
+
+  await clickButton(cdp, session, '[data-pop="pop-shapes"]');
+  await clickButton(cdp, session, '[data-tool="pen"]');
+  await sleep(150);
+
+
+  // What was in these two boxes before the stroke existed. The capture
+  // underneath is a real page, not a blank sheet, so "some red" is not proof.
+  const midX = Math.round((startAt.x + endAt.x) / 2);
+  const apexAt = toImage({ x: midX, y: startAt.y - rise });
+  const chordAt = toImage({ x: midX, y: startAt.y });
+  const apexWas = await countColour(cdp, session,
+    { x: apexAt.x - 14, y: apexAt.y - 14, w: 28, h: 28 }, RED);
+  const chordWas = await countColour(cdp, session,
+    { x: chordAt.x - 10, y: chordAt.y - 6, w: 20, h: 12 }, RED);
+
+  await cdp.send('Input.dispatchMouseEvent',
+    { type: 'mousePressed', ...startAt, button: 'left', buttons: 1, clickCount: 1 }, session);
+  for (let i = 1; i <= 28; i += 1) {
+    const t = i / 28;
+    await cdp.send('Input.dispatchMouseEvent', {
+      type: 'mouseMoved',
+      x: Math.round(startAt.x + (endAt.x - startAt.x) * t),
+      y: Math.round(startAt.y - Math.sin(t * Math.PI) * rise),
+      button: 'left',
+      buttons: 1,
+    }, session);
+  }
+  await cdp.send('Input.dispatchMouseEvent',
+    { type: 'mouseReleased', ...endAt, button: 'left', buttons: 0, clickCount: 1 }, session);
+  await sleep(300);
+
+  // The top of the arc, where a straight line between the two ends never goes.
+  const apex = apexAt;
+  const chord = chordAt;
+  const apexBox = { x: apex.x - 14, y: apex.y - 14, w: 28, h: 28 };
+  const chordBox = { x: chord.x - 10, y: chord.y - 6, w: 20, h: 12 };
+  const onApex = await countColour(cdp, session, apexBox, RED);
+  const onChord = await countColour(cdp, session, chordBox, RED);
+
+  check(onApex > apexWas + 20,
+    `the freehand stroke put nothing at the top of the arc (${apexWas} pixels before, ${onApex} after), so it was flattened to a line`,
+    `a freehand stroke keeps the curve it was drawn as (${apexWas} to ${onApex} pixels at the top of the arc)`);
+  check(onChord <= chordWas + 20,
+    `the stroke drew straight between its two ends (${chordWas} to ${onChord} pixels), which is a line and not the arc that was drawn`,
+    'and draws nothing along the straight line between its ends, which is what a flattened stroke would be');
+
+  await tidy({ x: apexBox.x - 40, y: apexBox.y - 10, w: 240, h: 160 }, 0, 'freehand');
+
+  // Three shapes, one eraser drag across all of them, one undo to put them all
+  // back. Erasing three things and needing three undos is the kind of defect
+  // that reads to a user as "the undo is broken".
+  await clickButton(cdp, session, '[data-pop="pop-shapes"]');
+  await clickButton(cdp, session, '[data-tool="rect"]');
+  await sleep(120);
+
+  const row = { y: spot.from.y + 40 };
+  for (let i = 0; i < 3; i += 1) {
+    const x = spot.from.x + i * 64;
+    await dragOn(cdp, session, { x, y: row.y }, { x: x + 44, y: row.y + 44 }, 4);
+  }
+  await sleep(250);
+
+  const a = toImage({ x: spot.from.x - 10, y: row.y - 10 });
+  const z = toImage({ x: spot.from.x + 190, y: row.y + 60 });
+  const scan = { x: a.x, y: a.y, w: z.x - a.x, h: z.y - a.y };
+
+  const drawn = await countColour(cdp, session, scan, RED);
+  check(drawn > 0, 'the three shapes to erase drew nothing', `three shapes drew ${drawn} pixels to erase`);
+
+  await clickButton(cdp, session, '[data-tool="eraser"]');
+  await sleep(150);
+  await dragOn(cdp, session,
+    { x: spot.from.x + 10, y: row.y + 22 },
+    { x: spot.from.x + 170, y: row.y + 22 }, 28);
+  await sleep(300);
+
+  const erased = await countColour(cdp, session, scan, RED);
+  check(erased === 0,
+    `dragging the eraser across three shapes left ${erased} pixels behind`,
+    'dragging the eraser across three shapes removes every one of them');
+
+  await evaluate(cdp, session, `document.getElementById('undo').click()`, { userGesture: true });
+  await sleep(350);
+  const back = await countColour(cdp, session, scan, RED);
+  check(Math.abs(back - drawn) < drawn * 0.05,
+    `one undo after an eraser drag restored ${back} of ${drawn} pixels, so the drag left one undo step per shape`,
+    'one undo puts back everything a single eraser drag removed');
+
+  await tidy(scan, 0, 'eraser');
+  await clickButton(cdp, session, '[data-tool="select"]');
+}
+
+/**
+ * Opening an image the reader already had, rather than one we captured.
+ *
+ * Driven against a bare result page, which is exactly what the tab is when it
+ * is opened from anywhere other than a capture. The file is built in the page
+ * and delivered by a real `paste` event, because that is the whole point of the
+ * paste trigger: it rides the reader's own gesture and therefore needs no
+ * clipboard permission. A test that called the importer directly would prove
+ * nothing about the thing that actually matters here.
+ */
+async function exerciseImport(cdp, session, check) {
+  const state = () => evaluate(cdp, session, `JSON.stringify({
+    landing: document.getElementById('landing').offsetHeight > 0,
+    canvas: !document.getElementById('canvas').hidden,
+    status: document.getElementById('status').textContent,
+    filename: document.getElementById('filename').value,
+    w: document.getElementById('canvas').width,
+    h: document.getElementById('canvas').height,
+    opened: (window.__opened || []).length,
+    openedUrl: (window.__opened || [])[0] || '',
+  })`).then(JSON.parse);
+
+  const paste = (build) => evaluate(cdp, session, `(async () => {
+    const dt = new DataTransfer();
+    ${build}
+    document.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true }));
+  })()`);
+
+  const png = (name, w, h) => `
+    const c = document.createElement('canvas');
+    c.width = ${w}; c.height = ${h};
+    const g = c.getContext('2d');
+    g.fillStyle = '#2563eb'; g.fillRect(0, 0, ${w}, ${h});
+    const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
+    dt.items.add(new File([blob], ${JSON.stringify(name)}, { type: 'image/png' }));`;
+
+  // A window.open that records rather than opens, so the "do not destroy the
+  // picture already here" branch can be checked without a second real tab.
+  await evaluate(cdp, session, `(() => { window.__opened = []; window.open = (u) => { window.__opened.push(u); return null; }; })()`);
+
+  const idle = await state();
+  check(idle.landing && !idle.canvas,
+    `a result tab opened with no capture showed no landing surface (${JSON.stringify(idle)})`,
+    'a result tab opened with no capture offers to open an image instead of dead ending');
+
+  const wiring = await evaluate(cdp, session, `JSON.stringify({
+    button: Boolean(document.getElementById('open')),
+    accept: document.getElementById('open-file').accept,
+  })`).then(JSON.parse);
+  check(wiring.button, 'the toolbar carries no Open control', 'the toolbar carries an Open control');
+  check(!wiring.accept.includes('image/*') && wiring.accept.includes('image/png'),
+    `the file dialog accepts "${wiring.accept}", which admits more than the decoder does`,
+    'the file dialog offers exactly the raster types the decoder accepts, not image/*');
+
+  // Pasting words is not a failed image paste. It must do nothing at all.
+  await paste(`dt.setData('text/plain', 'just some words');`);
+  await sleep(250);
+  const afterText = await state();
+  check(!afterText.canvas && afterText.landing,
+    `pasting text opened something (${JSON.stringify(afterText)})`,
+    'pasting text into the tab does nothing, because it is not a failed image paste');
+
+  // An SVG is a drawing, not a picture, and the refusal has to say so.
+  await paste(`dt.items.add(new File(['<svg xmlns="http://www.w3.org/2000/svg"/>'], 'logo.svg', { type: 'image/svg+xml' }));`);
+  await sleep(250);
+  const afterSvg = await state();
+  check(!afterSvg.canvas && /SVG/.test(afterSvg.status),
+    `an SVG was not refused by name (canvas ${afterSvg.canvas}, status "${afterSvg.status}")`,
+    'an SVG is refused, and the reason says what to open instead');
+
+  // The real thing.
+  await paste(png('holiday.png', 600, 400));
+  const opened = await until('the pasted image to open', async () => {
+    const now = await state();
+    return now.canvas ? now : null;
+  }, { timeoutMs: 15000, everyMs: 200 });
+
+  check(opened.w === 600 && opened.h === 400,
+    `the pasted image opened at ${opened.w}x${opened.h}, expected 600x400`,
+    `a pasted image opens at its own size (${opened.w}x${opened.h})`);
+  check(!opened.landing,
+    'the landing surface still occupies space behind the image, so it is pushing the canvas around',
+    'the landing surface takes no space once there is a picture');
+  check(opened.filename === 'holiday',
+    `the filename box says "${opened.filename}", expected the file's own name without its extension`,
+    'the filename box opens on the name the file arrived with, without its extension');
+
+  const middle = await evaluate(cdp, session, `(() => {
+    const c = document.getElementById('canvas');
+    const d = c.getContext('2d').getImageData(300, 200, 1, 1).data;
+    return JSON.stringify([d[0], d[1], d[2]]);
+  })()`).then(JSON.parse);
+  check(Math.abs(middle[2] - 235) < 30 && middle[0] < 80,
+    `the opened image drew ${middle} in the middle, not the blue it was made of`,
+    'the pixels of the opened image are really on the canvas');
+
+  // The critical one. A second paste must not open over a picture that is
+  // already here: the unload guard cannot save it, because the tab never
+  // unloads, so a stray paste would silently destroy the work.
+  await paste(png('second.png', 40, 40));
+  await sleep(400);
+  const afterSecond = await state();
+  check(afterSecond.w === 600 && afterSecond.h === 400,
+    `pasting over an open picture replaced it (${afterSecond.w}x${afterSecond.h}), destroying whatever was drawn on it`,
+    'pasting while a picture is open leaves that picture exactly as it was');
+  check(afterSecond.opened === 1 && afterSecond.openedUrl.includes('#open='),
+    `the second image did not go to a new tab (opened ${afterSecond.opened}, url "${afterSecond.openedUrl}")`,
+    'the second image is handed to a new tab, so the first one keeps its edits');
+}
+
+/**
  * Purpose made screenshots of the real product, for the site and the store.
  *
  * Deliberately not the same pass as exerciseEditor: that one ends cropped and
@@ -1294,6 +1611,20 @@ async function exerciseEditor(cdp, session, log) {
 
   // 8. The grouped style controls.
   await exerciseStyleToolbar(cdp, session, check, p);
+
+  // 8a1. Nothing that is meant to be out of the way is quietly taking up room.
+  // A `display` set on a class beats the browser's own `[hidden]` rule, so an
+  // element can report hidden and still be laid out. When that happened to the
+  // landing surface it sat in main's flex row and moved the capture sideways,
+  // which moved every pointer coordinate below and failed thirty checks at once,
+  // none of which mentioned layout.
+  const stowed = await evaluate(cdp, session, `JSON.stringify(
+    [...document.querySelectorAll('[hidden]')]
+      .filter((el) => el.offsetWidth > 0 || el.offsetHeight > 0)
+      .map((el) => el.id || el.className))`).then(JSON.parse);
+  check(stowed.length === 0,
+    `elements are hidden and still laid out, so they are pushing the page around: ${stowed.join(', ')}`,
+    'everything marked hidden really takes up no space');
 
   // 8a2. Zoom, and the overview pane that says where you are in a long capture.
   await exerciseZoom(cdp, session, check);
@@ -3620,12 +3951,76 @@ async function main() {
           `chrome.storage.local.set({ captureCount: 4, nudgesShown: 0, nudgeDone: false })`);
       }
 
+      // The fourth mode is gated behind the extra-modes switch, and with it off
+      // `start()` quietly captures the whole page instead. A run that forgot
+      // this would pass while testing nothing.
+      const removing = process.argv.includes('--remove');
+      // The picker lives in the captured page, so this mode is the only one
+      // that needs to drive that page directly rather than through the driver.
+      let pageSession = null;
+      if (removing) {
+        await evaluate(cdp, driver, `chrome.storage.local.set({ extraModes: true })`);
+        ({ sessionId: pageSession } = await cdp.send('Target.attachToTarget', {
+          targetId,
+          flatten: true,
+        }));
+        sessionNames.set(pageSession, 'captured page');
+        await cdp.send('Runtime.enable', {}, pageSession);
+      }
+
       const started = await evaluate(
         cdp,
         driver,
-        `chrome.runtime.sendMessage({ type: 'start', tabId: ${tabId} })`,
+        `chrome.runtime.sendMessage({ type: 'start', tabId: ${tabId}${removing ? ", mode: 'remove'" : ''} })`,
       );
       if (!started?.started) throw new Error(`capture did not start: ${JSON.stringify(started)}`);
+
+      if (removing) {
+        console.log('\n  taking something out of the shot before taking it:');
+        const problems = [];
+        const check = (ok, bad, good) => (ok ? console.log(`  ok   ${good}`) : problems.push(bad));
+
+        const bar = await until('the removal picker to come up', async () => {
+          const text = await evaluate(cdp, pageSession,
+            `(() => { const d = [...document.documentElement.children].find((n) => n.textContent && n.textContent.includes('Click to hide')); return d ? d.textContent : ''; })()`);
+          return text || null;
+        }, { timeoutMs: 15000, everyMs: 200 });
+        check(/Nothing hidden yet/.test(bar),
+          `the picker came up saying "${bar}" rather than telling the reader what the keys do`,
+          'the picker says what each key does, and that nothing is hidden yet');
+
+        const box = await evaluate(cdp, pageSession,
+          `(() => { const b = document.getElementById('cookiebar').getBoundingClientRect(); return JSON.stringify({ x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) }); })()`)
+          .then(JSON.parse);
+
+        await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: box.x, y: box.y }, pageSession);
+        await sleep(200);
+        await cdp.send('Input.dispatchMouseEvent',
+          { type: 'mousePressed', x: box.x, y: box.y, button: 'left', buttons: 1, clickCount: 1 }, pageSession);
+        await cdp.send('Input.dispatchMouseEvent',
+          { type: 'mouseReleased', x: box.x, y: box.y, button: 'left', buttons: 0, clickCount: 1 }, pageSession);
+        await sleep(300);
+
+        const counted = await evaluate(cdp, pageSession,
+          `(() => { const d = [...document.documentElement.children].find((n) => n.textContent && n.textContent.includes('Click to hide')); return d ? d.textContent : ''; })()`);
+        check(/1 hidden/.test(counted),
+          `after one click the picker said "${counted}", so it is not counting what it hid`,
+          'the picker counts what it has hidden, so a silent success is not mistaken for a failure');
+
+        const gone = await evaluate(cdp, pageSession,
+          `getComputedStyle(document.getElementById('cookiebar')).display`);
+        check(gone === 'none',
+          `the hidden element is still displayed as "${gone}", so it will be in the picture`,
+          'a hidden element is taken out of the flow, not left as a hole its own size');
+
+        await cdp.send('Input.dispatchKeyEvent',
+          { type: 'rawKeyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 }, pageSession);
+        await cdp.send('Input.dispatchKeyEvent',
+          { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 }, pageSession);
+
+        for (const problem of problems) console.log(`  FAIL ${problem}`);
+        if (problems.length) process.exitCode = 1;
+      }
 
       // Before anything waits on the capture: the popup opens at the very start
       // and is gone once the result tab takes focus, so there is no later moment
@@ -4074,8 +4469,56 @@ async function main() {
         }
       }
 
+      // The half that matters most. A capture that leaves somebody's real page
+      // with pieces missing is worse than one that fails: the failure is at
+      // least visible. Checked after the capture rather than instead of it,
+      // because `restore()` runs from a `finally` and this is the only place
+      // that can see whether it did.
+      if (process.argv.includes('--remove')) {
+        console.log('\n  putting the page back:');
+        const left = await evaluate(cdp, pageSession, `JSON.stringify({
+          marked: document.querySelectorAll('[data-fpc-hidden]').length,
+          display: getComputedStyle(document.getElementById('cookiebar')).display,
+          picker: [...document.documentElement.children].filter((n) => n.textContent && n.textContent.includes('Click to hide')).length,
+        })`).then(JSON.parse);
+
+        const problems = [];
+        const check = (ok, bad, good) => (ok ? console.log(`  ok   ${good}`) : problems.push(bad));
+        check(left.marked === 0,
+          `${left.marked} elements are still marked hidden, so the page was left with pieces missing`,
+          'nothing is left marked hidden once the capture is done');
+        check(left.display !== 'none',
+          `the element taken out of the shot is still display:${left.display} on the real page`,
+          'the element taken out of the shot is back on the page');
+        check(left.picker === 0,
+          'the picker chrome is still on the page after the capture finished',
+          'the picker takes its own chrome away with it');
+        for (const problem of problems) console.log(`  FAIL ${problem}`);
+        if (problems.length) process.exitCode = 1;
+      }
+
       await cdp.send('Target.closeTarget', { targetId: resultTarget.targetId });
       await cdp.send('Target.closeTarget', { targetId });
+    }
+
+    // Opening an image rather than capturing one. Run against the driver page,
+    // which is a bare result tab and therefore exactly the state this feature
+    // is about, and run last because it leaves a picture in it.
+    if (process.argv.includes('--edit')) {
+      console.log('\n  opening an image, rather than capturing one:');
+      const problems = [];
+      const check = (ok, bad, good) => (ok ? console.log(`  ok   ${good}`) : problems.push(bad));
+      await exerciseImport(cdp, driver, check);
+      // The pen and the eraser, drawn on the image that pass just opened. Its
+      // own canvas, deliberately: these draw and erase freely, and the capture's
+      // result tab is shared with a dozen checks that compare it against
+      // themselves.
+      await exerciseFreehand(cdp, driver, check);
+      // The export size, on the same opened image: a known 600 by 400 means the
+      // arithmetic can be checked rather than merely watched to change.
+      await exerciseExportSize(cdp, driver, check);
+      for (const problem of problems) console.log(`  FAIL ${problem}`);
+      if (problems.length) process.exitCode = 1;
     }
 
     const files = await until('every download to finish', async () => {
@@ -4200,7 +4643,7 @@ async function main() {
       }
 
       console.log('\nverifying the fixture capture:');
-      const { problems, notes } = verifyFixture(path);
+      const { problems, notes } = verifyFixture(path, { removed: process.argv.includes('--remove') });
       for (const note of notes) console.log(`  ok   ${note}`);
       for (const problem of problems) console.log(`  FAIL ${problem}`);
       if (problems.length) process.exitCode = 1;

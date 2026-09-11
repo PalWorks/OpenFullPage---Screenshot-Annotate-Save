@@ -143,6 +143,57 @@
   .bar { height: 100%; width: 0%; background: var(--amber); transition: width 140ms linear; }
 
   main { padding: 24px; display: flex; justify-content: center; }
+
+  /* THE LANDING SURFACE
+     Sized to what it holds rather than to the viewport: a 100vh panel would
+     push the toolbar out of the first thing the reader sees, and the toolbar is
+     how they do anything else. The dashed edge is the drop target, and it is
+     the whole window rather than this card, so a near miss still works. */
+  .landing { display: flex; justify-content: center; width: 100%; padding: 40px 0 64px; }
+  /* `display` on a class beats the browser's own `[hidden]` rule, so a hidden
+     landing surface would still be laid out: it sat in main's flex row beside
+     the capture and pushed it sideways, which moved every pointer coordinate in
+     the editor. Anything given a display here has to say this too. */
+  .landing[hidden] { display: none; }
+  .landing-card {
+    border: 2px dashed var(--line);
+    border-radius: 14px;
+    padding: 40px 36px;
+    text-align: center;
+    max-width: 480px;
+    background: var(--surface);
+    transition: border-color 120ms ease, background 120ms ease;
+  }
+  .landing-glyph {
+    width: 40px; height: 40px;
+    fill: none; stroke: var(--muted); stroke-width: 1.3;
+    stroke-linecap: round; stroke-linejoin: round;
+    margin-bottom: 12px;
+  }
+  .landing-title { margin: 0 0 4px; font-size: 17px; font-weight: 600; }
+  .landing-sub { margin: 0 0 20px; color: var(--muted); font-size: 13px; }
+  .landing-sub kbd {
+    font: 600 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+    border: 1px solid var(--line); border-radius: 4px;
+    padding: 3px 5px; background: var(--sunken);
+  }
+  .landing-act {
+    font: 600 14px/1 inherit;
+    padding: 10px 20px; border-radius: 8px;
+    border: 1px solid transparent;
+    background: var(--indigo); color: #fff; cursor: pointer;
+  }
+  .landing-act:hover { background: var(--indigo-bright); }
+  .landing-note {
+    margin: 22px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6;
+    max-width: 34ch; margin-inline: auto;
+  }
+  /* While a file is over the window. Set on the card from script so the whole
+     window is the target and only the card has to say so. */
+  .landing-card.over { border-color: var(--indigo); background: var(--sunken); }
+  @media (prefers-reduced-motion: reduce) {
+    .landing-card { transition: none; }
+  }
   figure { margin: 0; max-width: 100%; }
   /* The capture sits on the mat, so its edge is drawn against the mat rather
      than against the page's own line colour: on solarized the neutral grey
@@ -1013,6 +1064,7 @@
         <div class="grid" role="group" aria-labelledby="pop-shapes-lines">
         <button class="icon" type="button" data-tool="arrow" data-shape="arrow" aria-pressed="true" aria-label="Arrow" title="Arrow (A)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M4 16 16 4"/><path d="M10.2 4H16v5.8"/></svg></button>
         <button class="icon" type="button" data-tool="line" data-shape="line" aria-pressed="false" aria-label="Line" title="Line (L)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M4 16 16 4"/></svg></button>
+        <button class="icon" type="button" data-tool="pen" data-shape="pen" aria-pressed="false" aria-label="Pen" title="Pen, draw freehand (F)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M3.4 16.6c2.2-.4 2.6-2.4 3.6-4.4 1.2-2.4 3-5 5.4-6.2 1.8-.9 3.4-.3 3.8 1.1.5 1.7-1 3.3-3 3.9-1.7.5-3-.1-3.2-1"/></svg></button>
         </div>
       </div>
       <div class="grp-block" data-group="boxes">
@@ -1163,6 +1215,7 @@
   <button class="icon" type="button" data-tool="counter" data-button="counter" aria-pressed="false" aria-label="Numbered step" title="Numbered step (N)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="6.8"/><path d="M8.8 8.2 10.6 6.9v6.4"/></svg></button>
   <button class="icon" type="button" data-tool="pixelate" data-button="pixelate" aria-pressed="false" aria-label="Redact" title="Redact (P)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><g fill="currentColor" stroke="none"><rect x="2" y="2" width="4" height="4"/><rect x="6" y="2" width="4" height="4" fill-opacity="0.3"/><rect x="10" y="2" width="4" height="4" fill-opacity="0.7"/><rect x="14" y="2" width="4" height="4" fill-opacity="0.35"/><rect x="2" y="6" width="4" height="4" fill-opacity="0.3"/><rect x="6" y="6" width="4" height="4" fill-opacity="0.85"/><rect x="10" y="6" width="4" height="4" fill-opacity="0.3"/><rect x="14" y="6" width="4" height="4"/><rect x="2" y="10" width="4" height="4" fill-opacity="0.7"/><rect x="6" y="10" width="4" height="4" fill-opacity="0.3"/><rect x="10" y="10" width="4" height="4"/><rect x="14" y="10" width="4" height="4" fill-opacity="0.5"/><rect x="2" y="14" width="4" height="4" fill-opacity="0.35"/><rect x="6" y="14" width="4" height="4"/><rect x="10" y="14" width="4" height="4" fill-opacity="0.45"/><rect x="14" y="14" width="4" height="4" fill-opacity="0.3"/></g></svg></button>
   <button class="icon" type="button" data-tool="crop" data-button="crop" aria-pressed="false" aria-label="Crop" title="Crop (C)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M5.6 2v12.4H18"/><path d="M2 5.6h12.4V18"/></svg></button>
+  <button class="icon" type="button" data-tool="eraser" data-button="eraser" aria-pressed="false" aria-label="Eraser" title="Eraser, delete what you drag over (E)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M8.6 16.4 3.6 11.4a1.4 1.4 0 0 1 0-2l5.6-5.6a1.4 1.4 0 0 1 2 0l4 4a1.4 1.4 0 0 1 0 2l-6.6 6.6Z"/><path d="M16.4 16.4h-7.8"/><path d="M6.2 8.8 11.2 13.8"/></svg></button>
 
   <span class="sep"></span>
 
@@ -1279,6 +1332,14 @@
     <svg class="tick" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="m4.2 10.6 4 4 7.6-9"/></svg>
   </button>
 
+  <button class="icon" id="open" data-button="open" type="button" aria-label="Open an image"
+          title="Open an image to edit (Cmd/Ctrl+O)">
+    <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M2.9 15.1V5.6a1.1 1.1 0 0 1 1.1-1.1h3.2l1.5 1.9h6.1a1.1 1.1 0 0 1 1.1 1.1v1.2"/><path d="M2.9 15.1 4.8 9.6h12.5l-1.9 5.5Z"/></svg>
+  </button>
+  <!-- Never disabled, unlike Copy, Download and Upload. Those act on a picture
+       and there may not be one yet; this is how you get one. -->
+  <input type="file" id="open-file" hidden>
+
   <span class="menuwrap" data-button="download">
     <button class="icon wide" id="download" type="button" disabled aria-label="Download"
             aria-haspopup="true" aria-expanded="false" title="Download">
@@ -1309,13 +1370,31 @@
         <output id="quality-out" for="quality">92%</output>
       </div>
       <p class="qnote">PNG and PDF are lossless and ignore this.</p>
+
+      <!-- THE EXPORT SIZE
+           One editable value, not three. Width, height and a per cent linked by
+           a lock is three sources of truth for one number, and typing into any
+           of them fights the other two: 633 becomes 632 on the way back through
+           the aspect ratio. A scale is the number, and the size it produces is
+           shown beside it as a fact rather than as another field.
+           The sizes above already re-measure when this moves, because they are
+           measured through the same encode the download uses. -->
+      <div class="qrow">
+        <label for="export-scale">Size</label>
+        <input id="export-scale" type="range" min="10" max="100" step="1" value="100"
+               aria-label="Export size, as a percentage of the picture">
+        <output id="export-scale-out" for="export-scale">100%</output>
+      </div>
+      <p class="qnote" id="export-dims">Full size.</p>
     </div>
   </span>
 
   <span class="grp" data-button="upload">
     <button class="icon combo" type="button" id="upload" data-pop="pop-upload" disabled
-            aria-haspopup="true" aria-expanded="false" aria-label="Upload" title="Upload to an image host">
-      <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M10 13.4V3.6"/><path d="M6.2 7.4 10 3.6l3.8 3.8"/><path d="M3.4 15.4h13.2"/></svg>
+            aria-haspopup="true" aria-expanded="false" aria-label="Upload" title="Upload to an image host and get a link">
+      <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><!-- Drawn as a filled outline rather than a stroked path, like the Select
+           arrow above. The stroke on the group is what brings a band drawn at a
+           lighter weight up to the 1.6 the rest of the toolbar uses. --><g transform="translate(1.5,1.3) scale(0.1)" fill="currentColor" stroke="currentColor" stroke-width="6" stroke-linejoin="round" stroke-linecap="round"><path d="M136.131,74.838c-.827-27.362-23.446-49.369-51.131-49.369-26.79,0-48.835,20.607-50.982,46.733-16.82,3.514-29.018,18.185-29.018,35.757,0,20.165,16.478,36.57,36.731,36.57,2.761,0,5-2.239,5-5s-2.239-5-5-5c-14.739,0-26.731-11.919-26.731-26.57,0-13.849,10.441-25.218,24.288-26.446,2.58-.229,4.558-2.39,4.558-4.98v-.144c0-22.563,18.461-40.92,41.154-40.92s41.154,18.357,41.154,40.92c0,.875-.026,1.748-.078,2.595-.081,1.338.378,2.652,1.274,3.648s2.155,1.591,3.494,1.65c13.545.604,24.155,11.634,24.155,25.111,0,13.86-11.344,25.135-25.288,25.135-2.762,0-5,2.239-5,5s2.238,5,5,5c19.458,0,35.288-15.762,35.288-35.135,0-17.198-12.34-31.545-28.869-34.557Z"/><path d="M88.529,76.149c-1.953-1.952-5.118-1.952-7.071,0l-23.966,23.966c-1.953,1.953-1.953,5.119,0,7.071.977.976,2.256,1.464,3.536,1.464s2.559-.488,3.536-1.464l15.588-15.588v51.933c0,2.761,2.239,5,5,5s5-2.239,5-5v-51.616l15.589,15.589c.976.976,2.256,1.464,3.535,1.464s2.56-.488,3.535-1.464c1.953-1.953,1.953-5.119,0-7.071l-24.282-24.283Z"/></g></svg>
       <svg class="tick" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="m4.2 10.6 4 4 7.6-9"/></svg>
       <svg class="caret" viewBox="0 0 8 8" aria-hidden="true" focusable="false"><path d="M1.4 2.9 4 5.5l2.6-2.6"/></svg>
     </button>
@@ -1379,6 +1458,27 @@
 
 <main>
   <figure><canvas id="canvas" hidden></canvas></figure>
+
+  <!-- THE LANDING SURFACE
+       What the tab shows when it was opened without a capture behind it. It
+       used to be one grey sentence, which was fine while the only way to get a
+       picture in here was to capture one somewhere else. Now that an image can
+       be opened from disk, that sentence was a dead end: the reader is told to
+       go away, on the one screen that can do the thing they want.
+       Hidden whenever a capture is streaming, because then there is a real
+       picture on the way and this would be answering a question nobody asked. -->
+  <div class="landing" id="landing" hidden>
+    <div class="landing-card">
+      <svg class="landing-glyph" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M2.9 15.1V5.6a1.1 1.1 0 0 1 1.1-1.1h3.2l1.5 1.9h6.1a1.1 1.1 0 0 1 1.1 1.1v1.2"/><path d="M2.9 15.1 4.8 9.6h12.5l-1.9 5.5Z"/></svg>
+      <p class="landing-title">Drop an image here to edit it</p>
+      <p class="landing-sub">or paste one with <kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + <kbd>V</kbd></p>
+      <button type="button" id="landing-open" class="landing-act">Open an image…</button>
+      <p class="landing-note">
+        To capture a page instead, click the OpenFullPage button on that page.
+        Nothing you open here leaves your computer.
+      </p>
+    </div>
+  </div>
 </main>
 
 <!-- THE OVERVIEW PANE

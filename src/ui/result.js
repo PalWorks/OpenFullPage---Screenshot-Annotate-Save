@@ -10,14 +10,27 @@
 // Copy are real clicks in a real page, so the downloads permission can be asked
 // for at the moment it is needed rather than at install time.
 
-import { applyFilename, captureBasename } from '../lib/plan.js';
+import {
+  MIN_EXPORT_SCALE,
+  applyFilename,
+  captureBasename,
+  exportSize,
+} from '../lib/plan.js';
 import { buildPdf, deflate, planPdfPages, rgbaToRgb } from '../lib/pdf.js';
-import { CORNERED_KINDS, PAINTS, PAINT_KINDS, SHAPE_TOOLS, kindOfTool } from '../lib/edit.js';
+import {
+  CORNERED_KINDS,
+  PAINTS,
+  PAINT_KINDS,
+  SHAPE_TOOLS,
+  effectiveCrop,
+  kindOfTool,
+} from '../lib/edit.js';
 import { DOWNLOAD_FORMATS, OUTPUT_FORMATS, encodeOrThrow, extensionOf } from '../lib/encode.js';
 import { PROTOCOL_MISMATCH, speaksOurProtocol } from '../lib/protocol.js';
 import { captureWasClean, reviewsUrl, shouldNudge } from '../lib/nudge.js';
 import { createEditor } from './editor.js';
 import { defaultStyle, saveSettings } from '../lib/settings.js';
+import { IMPORT_ACCEPT, importBasename, refuseDimensions, refuseFile } from '../lib/open.js';
 import { THEME_STATE, cycleTheme, startTheme, themeLabel } from '../lib/theme.js';
 
 const el = (id) => document.getElementById(id);
@@ -35,6 +48,10 @@ const ui = {
   status: el('status'),
   note: el('note'),
   canvas: el('canvas'),
+  open: el('open'),
+  openFile: el('open-file'),
+  landing: el('landing'),
+  landingOpen: el('landing-open'),
   toolbar: el('toolbar'),
   theme: el('theme'),
   cropBar: el('crop-bar'),
@@ -77,6 +94,9 @@ const ui = {
   ctx: el('ctx'),
   quality: el('quality'),
   qualityOut: el('quality-out'),
+  exportScale: el('export-scale'),
+  exportScaleOut: el('export-scale-out'),
+  exportDims: el('export-dims'),
 };
 
 // Single-key tool shortcuts, which is how tool palettes are normally driven.
@@ -97,7 +117,7 @@ const ui = {
 const TOOL_KEYS = {
   v: 'select', a: 'arrow', l: 'line', r: 'rect', u: 'rounded', s: 'stadium',
   o: 'ellipse', b: 'callout', z: 'loupe', h: 'highlight', p: 'pixelate',
-  t: 'text', n: 'counter', c: 'crop',
+  t: 'text', n: 'counter', c: 'crop', f: 'pen', e: 'eraser',
   d: 'rhombus', g: 'hexagon', m: 'parallelogram', i: 'triangle', y: 'cylinder',
 };
 
@@ -127,6 +147,7 @@ const CONFIRM_MS = 2000;
 // photographic detail, and it is what this was hardcoded to before it was a
 // control at all.
 let quality = 92;
+let exportScale = 1;
 
 // The stitched capture, kept untouched. The visible canvas is rendered from it
 // on every edit, so undo is exact and repeated edits never degrade the image.
@@ -320,64 +341,7 @@ async function finish() {
   lastFrameColour = settings.textFrameColour ?? settings.colour ?? lastFrameColour;
   lastPlateColour = settings.textFramePlate ?? lastPlateColour;
 
-  editor = createEditor({
-    base,
-    canvas: ui.canvas,
-    initial: settings,
-    onChange(state) {
-      edited = state.edited;
-      ui.undo.disabled = !state.canUndo;
-      ui.redo.disabled = !state.canRedo;
-      ui.revert.disabled = false;
-      ui.revert.title = resetLabel(state.edited);
-      // selectedCount, not selected: `selected` is the ONE selected shape and
-      // is deliberately null for a set, so reading it here would disable Delete
-      // exactly when several things are selected.
-      ui.delete.disabled = state.selectedCount === 0;
-      // The canvas menu is open while the reader looks at it, so its items have
-      // to answer to the document underneath rather than to whatever was true
-      // when it was opened.
-      showMenuState(state);
-      // Every measured file size describes an image that no longer exists.
-      forgetSizes(state);
-      ui.dimensions.textContent = `${state.crop.w} × ${state.crop.h} pixels`;
-      markPressed('[data-tool]', (b) => b.dataset.tool === state.tool);
-      showStyle(state.style, state.tool);
-      showCropBar(state.pendingCrop);
-      // A crop changes how big the picture is, so a fit has to be worked out
-      // again. Safe to call from here because applyZoom only redraws when the
-      // width it wants is not the width already set, so this settles in one
-      // pass rather than notifying its way round in a circle. D58.
-      applyZoom();
-    },
-  });
-
-  editor.render();
-  applyHiddenButtons(settings.hiddenButtons ?? []);
-  applyHiddenShapes(settings.hiddenShapes ?? []);
-
-  ui.canvas.hidden = false;
-  // Fit the width, which is what the old max-width rule did on its own, so a
-  // capture opens exactly where it always has.
-  applyZoom();
-  // The bar has served its purpose; leaving it full reads as unfinished work.
-  ui.track.hidden = true;
-  ui.download.disabled = false;
-  ui.copy.disabled = false;
-  ui.upload.disabled = false;
-  setToolsEnabled(true);
-
-  const manifest = chrome.runtime.getManifest();
-  ui.filename.value = captureBasename({
-    // The store title carries keywords; the short name is the product. Filenames
-    // follow the short name so a listing rewrite never lengthens them.
-    product: manifest.short_name || manifest.name,
-    url: pageUrl,
-  });
-  ui.filename.disabled = false;
-  format = OUTPUT_FORMATS[settings.format] ? settings.format : 'png';
-  setQuality(settings.quality ?? 92);
-  showExtension();
+  openEditor();
 
   const modeNote =
     plan.mode === 'visible' ? 'Visible area. ' : plan.mode === 'element' ? 'Selected element. ' : '';
@@ -423,6 +387,88 @@ async function finish() {
   await maybeNudge(plan, settings);
 
   if (settings.directDownload) await saveWithoutEditing();
+}
+
+/**
+ * Everything that turns a filled `base` canvas into a working editor.
+ *
+ * Shared by the two ways a picture gets here: a capture that streamed in
+ * screenful by screenful, and a file the reader opened. Nothing below this line
+ * knows which it was, which is exactly why opening an image was cheap: the
+ * editor was already a base plus shapes and never asked where the base
+ * came from.
+ *
+ * @param {{basename?: string, url?: string}} [source] what to call the file on
+ *   the way out. A capture names itself after the page; an opened image keeps
+ *   the name it arrived with.
+ */
+function openEditor(source = {}) {
+  editor = createEditor({
+    base,
+    canvas: ui.canvas,
+    initial: settings,
+    onChange(state) {
+      edited = state.edited;
+      ui.undo.disabled = !state.canUndo;
+      ui.redo.disabled = !state.canRedo;
+      ui.revert.disabled = false;
+      ui.revert.title = resetLabel(state.edited);
+      // selectedCount, not selected: `selected` is the ONE selected shape and
+      // is deliberately null for a set, so reading it here would disable Delete
+      // exactly when several things are selected.
+      ui.delete.disabled = state.selectedCount === 0;
+      // The canvas menu is open while the reader looks at it, so its items have
+      // to answer to the document underneath rather than to whatever was true
+      // when it was opened.
+      showMenuState(state);
+      // Every measured file size describes an image that no longer exists.
+      forgetSizes(state);
+      ui.dimensions.textContent = `${state.crop.w} × ${state.crop.h} pixels`;
+      // A crop changes the picture, so it changes what a percentage of it comes
+      // to. Without this the readout goes on describing the size before the cut.
+      setExportScale(Math.round(exportScale * 100));
+      markPressed('[data-tool]', (b) => b.dataset.tool === state.tool);
+      showStyle(state.style, state.tool);
+      showCropBar(state.pendingCrop);
+      // A crop changes how big the picture is, so a fit has to be worked out
+      // again. Safe to call from here because applyZoom only redraws when the
+      // width it wants is not the width already set, so this settles in one
+      // pass rather than notifying its way round in a circle. D58.
+      applyZoom();
+    },
+  });
+
+  editor.render();
+  applyHiddenButtons(settings.hiddenButtons ?? []);
+  applyHiddenShapes(settings.hiddenShapes ?? []);
+
+  ui.canvas.hidden = false;
+  // Fit the width, which is what the old max-width rule did on its own, so a
+  // capture opens exactly where it always has.
+  applyZoom();
+  // The bar has served its purpose; leaving it full reads as unfinished work.
+  ui.track.hidden = true;
+  ui.download.disabled = false;
+  ui.copy.disabled = false;
+  ui.upload.disabled = false;
+  setToolsEnabled(true);
+
+  const manifest = chrome.runtime.getManifest();
+  ui.filename.value =
+    source.basename ??
+    captureBasename({
+      // The store title carries keywords; the short name is the product.
+      // Filenames follow the short name so a listing rewrite never lengthens
+      // them.
+      product: manifest.short_name || manifest.name,
+      url: source.url ?? pageUrl,
+    });
+  ui.filename.disabled = false;
+  format = OUTPUT_FORMATS[settings.format] ? settings.format : 'png';
+  setQuality(settings.quality ?? 92);
+  setExportScale((settings.exportScale ?? 1) * 100);
+  showExtension();
+
 }
 
 // STRAIGHT TO A FILE
@@ -1786,6 +1832,9 @@ document.addEventListener('keydown', (event) => {
     // the pair with the accelerator above stays in one place.
     event.preventDefault();
     editor.reorder(ORDER_KEYS[event.key]);
+  } else if (key === 'o' && (event.metaKey || event.ctrlKey)) {
+    event.preventDefault();
+    askForFile();
   } else if (TOOL_KEYS[key]) {
     event.preventDefault();
     selectTool(TOOL_KEYS[key]);
@@ -1805,7 +1854,7 @@ document.addEventListener('keyup', (event) => {
  * is just encoding it. What you see is exactly what you get.
  */
 async function encode(format, { quiet = false } = {}) {
-  const canvas = editor.flatten();
+  const canvas = scaleForExport(editor.flatten());
   const spec = OUTPUT_FORMATS[format] ?? OUTPUT_FORMATS.png;
   // `quiet` is for measuring a size rather than saving a file: the PDF path
   // narrates its pages on the status line, and a measurement narrating itself
@@ -1816,6 +1865,38 @@ async function encode(format, { quiet = false } = {}) {
   // something untrue about what PNG does.
   const blob = await encodeOrThrow(canvas, spec.mime, spec.quality ? quality / 100 : undefined);
   return { blob, extension: spec.extension };
+}
+
+/**
+ * The export size, applied to the flattened picture on its way to an encoder.
+ *
+ * Here rather than in the three callers, because `encode` is the only function
+ * that turns the document into pixels and it serves Copy, Download and the size
+ * readout alike. One place means those three can never disagree about how big
+ * the image is, and it means the bytes shown in the menu are the bytes of the
+ * file that will actually be written, which is the whole point of the readout.
+ *
+ * Never part of the document. Resizing is not an edit: it changes the file that
+ * comes out, not the thing being edited, so it is not undoable and leaves no
+ * step on the history stack.
+ */
+function scaleForExport(canvas) {
+  const { w, h, scale } = exportSize(canvas.width, canvas.height, exportScale);
+  if (scale >= 1 || (w === canvas.width && h === canvas.height)) return canvas;
+
+  const out = document.createElement('canvas');
+  out.width = w;
+  out.height = h;
+  const g = out.getContext('2d', { alpha: false });
+  // A screenshot shrunk with the default nearest-ish sampling turns text into
+  // gravel. This is the one place in the product where the image is resampled,
+  // so it is the one place that has to ask for the good filter.
+  g.imageSmoothingEnabled = true;
+  g.imageSmoothingQuality = 'high';
+  g.fillStyle = '#ffffff';
+  g.fillRect(0, 0, w, h);
+  g.drawImage(canvas, 0, 0, w, h);
+  return out;
 }
 
 /**
@@ -2005,8 +2086,17 @@ let measuring = false;
 // Cheapest first. The two the slider moves are also the two worth having first.
 const SIZE_ORDER = ['jpeg', 'webp', 'png', 'pdf'];
 
-/** Lossless formats measure once; the lossy ones measure once per quality. */
-const sizeKey = (name) => `${name}:${OUTPUT_FORMATS[name].quality ? quality : 0}`;
+/**
+ * What a measured size describes.
+ *
+ * Quality only moves the lossy formats, so it is in the key for those alone.
+ * The export scale moves every one of them, including PNG and PDF: half the
+ * pixels is half the picture whatever the encoder does with it. Leaving the
+ * scale out is the bug where the menu keeps serving the size of an image that
+ * is no longer the one about to be written.
+ */
+const sizeKey = (name) =>
+  `${name}:${OUTPUT_FORMATS[name].quality ? quality : 0}:${Math.round(exportScale * 1000)}`;
 
 function showSizes() {
   for (const name of DOWNLOAD_FORMATS) {
@@ -2093,18 +2183,282 @@ ui.quality.addEventListener('input', () => {
   measureSizes();
 });
 
+/**
+ * Set the export size and say what it produces.
+ *
+ * The dimensions are shown rather than made editable: they are a consequence of
+ * the scale, and a field that shows a consequence invites the reader to type
+ * into it, at which point there are two numbers claiming to be the answer.
+ */
+function setExportScale(percent) {
+  const asked = Math.min(100, Math.max(10, Math.round(percent) || 100));
+  exportScale = asked / 100;
+  ui.exportScale.value = String(asked);
+  ui.exportScaleOut.textContent = `${asked}%`;
+
+  if (!editor) {
+    ui.exportDims.textContent = 'Full size.';
+    return;
+  }
+  const crop = effectiveCrop(editor.document);
+  const { w, h } = exportSize(crop.w, crop.h, exportScale);
+  ui.exportDims.textContent =
+    asked === 100 ? `Full size, ${w} by ${h} pixels.` : `${w} by ${h} pixels.`;
+}
+
+ui.exportScale.addEventListener('input', () => {
+  setExportScale(Number(ui.exportScale.value));
+  showSizes();
+  measureSizes();
+});
+
+// Saved on release rather than per pixel of travel, exactly as the quality is.
+ui.exportScale.addEventListener('change', () => saveSettings({ exportScale }));
+ui.exportScale.addEventListener('keydown', (event) => event.stopPropagation());
+
 // Saved on release rather than on every step of the drag: `input` fires per
 // pixel of travel and each one would be a write to storage.
 ui.quality.addEventListener('change', () => saveSettings({ quality }));
 ui.quality.addEventListener('keydown', (event) => event.stopPropagation());
 
+// OPENING AN IMAGE
+//
+// The editor is a base canvas plus a list of shapes, and it has never asked
+// where the base came from. So a file the reader opens is the same product with
+// a different first step, and all of this is about the step, not the product.
+//
+// Three ways in, and no fourth. The extension icon captures on a single click
+// with no menu, which is a release check in its own right, so there is nowhere
+// on it to put an Open entry without putting a menu in front of every capture.
+// A context menu would need `contextMenus`, granted at install, which the
+// project's fourth rule forbids.
+//
+// Paste is the `paste` event and its `clipboardData`, deliberately, and never
+// the asynchronous clipboard API. That API's read method needs a fourth
+// install-time permission; the event needs none at all, because the reader's own
+// paste is the authorisation. The same feature, one permission apart, which is
+// why the scanner in test/lib/scan.js bans the other road rather than trusting
+// anyone to remember this comment.
+
+/** Is there already a picture in this tab, captured or opened? */
+const hasPicture = () => Boolean(editor);
+
+/**
+ * Put the landing surface up, which is what an empty tab is for.
+ *
+ * This used to be one grey sentence telling the reader to go somewhere else. It
+ * was the only screen that could do what they wanted and it was a dead end.
+ */
+function showLanding() {
+  ui.landing.hidden = false;
+  ui.track.hidden = true;
+}
+
+/**
+ * Draw a decoded image onto the base and hand it to the editor.
+ *
+ * @param {CanvasImageSource} source a decoded image, already the right way up
+ * @param {number} width
+ * @param {number} height
+ * @param {string} name the reader's own name for it
+ */
+function adoptImage(source, width, height, name) {
+  base.width = width;
+  base.height = height;
+
+  ctx = base.getContext('2d', { alpha: false });
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  // An image with transparency is flattened onto white rather than left
+  // showing whatever is behind the canvas, which is the same choice the capture
+  // makes for a page that declares no background.
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, width, height);
+  ctx.drawImage(source, 0, 0);
+
+  // Nothing was shrunk to fit, because nothing was planned. The two scales that
+  // describe a capture are equal for an image that simply is the size it is.
+  captureScale = 1;
+  outputScale = 1;
+
+  ui.landing.hidden = true;
+  ui.track.hidden = true;
+  openEditor({ basename: importBasename(name) });
+  say(`${width} × ${height}. This image never leaves your computer.`);
+}
+
+/**
+ * Open a file the reader chose, pasted or dropped.
+ *
+ * Refuses before it decodes wherever it can, because the cheapest refusal is
+ * the one that never allocates anything, and a 20000 pixel image costs a
+ * gigabyte to find out about the hard way.
+ */
+async function importFile(file) {
+  // Not an image is not an error. Pasting text into this tab is a thing people
+  // do by accident all day and it should do exactly nothing.
+  if (!file) return;
+
+  const refusal = refuseFile(file);
+  if (refusal) {
+    say(refusal, true);
+    return;
+  }
+
+  // There is already a picture here and opening over it would destroy it,
+  // annotations and all. The unload guard cannot help: the tab never unloads.
+  if (hasPicture()) {
+    openInNewTab(file);
+    return;
+  }
+
+  say('Reading that image…');
+
+  let bitmap;
+  try {
+    // `from-image` is the whole reason a photograph taken on a phone arrives
+    // the right way up. Without it the EXIF rotation is ignored, nothing throws,
+    // and the reader annotates a sideways picture.
+    bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  } catch {
+    say('That image could not be read. It may be damaged, or in a format this build cannot decode.', true);
+    return;
+  }
+
+  const { width, height } = bitmap;
+  const tooBig = refuseDimensions(width, height);
+  if (tooBig) {
+    bitmap.close();
+    say(tooBig, true);
+    return;
+  }
+
+  adoptImage(bitmap, width, height, file.name);
+  bitmap.close();
+}
+
+/**
+ * Hand a file to a new tab rather than opening it over the picture in this one.
+ *
+ * The handoff is an object URL, which both tabs can read because they are the
+ * same extension origin, and which this tab keeps alive by not revoking it
+ * until it goes away itself.
+ */
+function openInNewTab(file) {
+  const handle = URL.createObjectURL(file);
+  const target =
+    `${chrome.runtime.getURL('src/ui/result.html')}#open=${encodeURIComponent(handle)}` +
+    `&name=${encodeURIComponent(file.name ?? '')}`;
+  window.open(target, '_blank');
+  say('Opened that image in a new tab, so this one keeps what you have drawn.');
+}
+
+/**
+ * The other end of the handoff.
+ *
+ * Loaded through an `<img>` rather than fetched: the content security policy
+ * says `connect-src 'none'`, so there is no fetch and no XHR in this product at
+ * all, for anything, including a blob it made itself. `img-src` allows `blob:`,
+ * which is the door that is actually open.
+ */
+async function openHandedOver(handle, name) {
+  say('Reading that image…');
+
+  const image = new Image();
+  try {
+    await new Promise((resolve, reject) => {
+      image.onload = resolve;
+      image.onerror = () => reject(new Error('that image could not be read'));
+      image.src = handle;
+    });
+  } catch {
+    showLanding();
+    say('That image could not be read. The tab it came from may have been closed.', true);
+    return;
+  }
+
+  const width = image.naturalWidth;
+  const height = image.naturalHeight;
+  const tooBig = refuseDimensions(width, height);
+  if (tooBig) {
+    showLanding();
+    say(tooBig, true);
+    return;
+  }
+
+  adoptImage(image, width, height, name);
+}
+
+/** The file dialog, shared by the toolbar button and the landing surface. */
+function askForFile() {
+  ui.openFile.value = '';
+  ui.openFile.click();
+}
+
+ui.openFile.accept = IMPORT_ACCEPT;
+ui.openFile.addEventListener('change', () => {
+  const [file] = ui.openFile.files ?? [];
+  if (file) importFile(file);
+});
+ui.open.addEventListener('click', askForFile);
+ui.landingOpen.addEventListener('click', askForFile);
+
+document.addEventListener('paste', (event) => {
+  // Typing into the filename box and pasting a name there is not an attempt to
+  // open an image, and taking it as one would be infuriating.
+  if (event.target instanceof HTMLInputElement) return;
+  const [file] = [...(event.clipboardData?.files ?? [])];
+  if (!file) return;
+  event.preventDefault();
+  importFile(file);
+});
+
+// The drop target is the whole window rather than the canvas or the card: a
+// near miss is the common case, and there is nothing else in this tab that a
+// dropped file could sensibly mean.
+const landingCard = () => ui.landing.querySelector('.landing-card');
+let dragDepth = 0;
+
+window.addEventListener('dragenter', (event) => {
+  if (![...(event.dataTransfer?.types ?? [])].includes('Files')) return;
+  dragDepth += 1;
+  landingCard()?.classList.add('over');
+});
+window.addEventListener('dragleave', () => {
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (dragDepth === 0) landingCard()?.classList.remove('over');
+});
+window.addEventListener('dragover', (event) => {
+  if (![...(event.dataTransfer?.types ?? [])].includes('Files')) return;
+  // Without this the browser navigates the tab to the file, which throws the
+  // capture away without asking anybody.
+  event.preventDefault();
+  event.dataTransfer.dropEffect = 'copy';
+});
+window.addEventListener('drop', (event) => {
+  const [file] = [...(event.dataTransfer?.files ?? [])];
+  event.preventDefault();
+  dragDepth = 0;
+  landingCard()?.classList.remove('over');
+  if (file) importFile(file);
+});
+
 // THE CONNECTION
 
-const captureId = location.hash.slice(1);
+// The hash carries one of two things: the id of a capture streaming in, or a
+// handoff from another tab that had a picture already. A bare id is the older
+// form and stays exactly as it was.
+const rawHash = location.hash.slice(1);
+const handedOver = rawHash.startsWith('open=') ? new URLSearchParams(rawHash) : null;
+const captureId = handedOver ? '' : rawHash;
 
-if (!captureId) {
-  // Opened directly rather than by a capture.
-  say('No capture in progress. Click the OpenFullPage button on the page you want.');
+if (handedOver) {
+  openHandedOver(handedOver.get('open'), handedOver.get('name') ?? '');
+} else if (!captureId) {
+  // Opened directly rather than by a capture. Not a dead end any more: this is
+  // the one screen that can open an image, so it offers to.
+  showLanding();
+  say('Open an image to edit, or capture a page from its own tab.');
 } else {
   const port = chrome.runtime.connect({ name: `capture:${captureId}` });
   // Said once. A mismatch is true of every message that follows, and repeating

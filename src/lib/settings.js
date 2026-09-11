@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Palaniappan
+
+import { MIN_EXPORT_SCALE } from './plan.js';
 //
 // User settings.
 //
@@ -26,7 +28,7 @@ export { SHAPE_GROUPS, SHAPE_TOOLS, TOOLS };
 // way the shape lists are. The list itself is derived from the format table.
 export { DOWNLOAD_FORMATS };
 
-export const CAPTURE_MODES = ['full', 'visible', 'element'];
+export const CAPTURE_MODES = ['full', 'visible', 'element', 'remove'];
 
 
 /**
@@ -64,6 +66,7 @@ export const TOOLBAR_GROUPS = [
     counter: 'Numbered step',
     pixelate: 'Redact',
     crop: 'Crop',
+    eraser: 'Eraser',
   }],
   ['Style', {
     style: 'Stroke style',
@@ -78,6 +81,10 @@ export const TOOLBAR_GROUPS = [
   }],
   ['Output', {
     copy: 'Copy image',
+    // Sits with the output controls because that is where the maintainer put
+    // it, immediately left of Download. It is the one way *in* among three ways
+    // out, and being next to Download is what makes it findable.
+    open: 'Open an image',
     download: 'Download',
     upload: 'Upload',
   }],
@@ -165,6 +172,11 @@ export const DEFAULTS = {
   // STYLE_KEYS: Reset puts the drawing tools back, and how a file is written out
   // is not a drawing tool, the same reasoning that keeps `format` out of it.
   quality: 92,
+  // How big the exported file is, as a fraction of the picture. An export
+  // setting, deliberately not part of the document: it changes the file that
+  // comes out, never the thing being edited, so it is not undoable and does not
+  // belong on the history stack.
+  exportScale: 1,
   // F3, the rating nudge. Counters rather than a date: a time based trigger
   // rates patience rather than usefulness. Deliberately outside STYLE_KEYS,
   // because Reset puts the drawing tools back and how often someone has been
@@ -306,6 +318,9 @@ export function sanitise(raw) {
       : null;
   if (Number.isFinite(raw.textFrameWidth)) {
     clean.textFrameWidth = Math.min(64, Math.max(1, Math.round(raw.textFrameWidth)));
+  }
+  if (Number.isFinite(raw.exportScale)) {
+    clean.exportScale = Math.min(1, Math.max(MIN_EXPORT_SCALE, raw.exportScale));
   }
   if (Number.isFinite(raw.quality)) {
     // The floor is 40 rather than 0: below it a screenshot is unreadable, and a

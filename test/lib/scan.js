@@ -60,6 +60,14 @@ export const BANNED = [
   // waiting for someone to re-read the manifest.
   ['remote subresource: src assignment', /\.(?:src|srcset)\s*=\s*['"`][^'"`]*https?:\/\//],
   ['remote subresource: CSS url()', /url\(\s*['"]?https?:\/\//],
+  // The fourth rule, in the one place it is easy to break by accident. Reading
+  // the clipboard asynchronously needs `clipboardRead`, granted at install; the
+  // `paste` event and its `clipboardData` need nothing at all, because the
+  // reader pressing paste is the authorisation. The two look interchangeable in
+  // a diff and are one permission apart, so the wrong one fails the suite.
+  // Writing is not on this list: `navigator.clipboard.write` needs no permission
+  // and the Copy button uses it.
+  ['permission creep: asynchronous clipboard read', /navigator\.clipboard\.read/],
 ];
 
 /**

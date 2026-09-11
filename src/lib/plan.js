@@ -25,6 +25,44 @@ export const LIMITS = {
 export const MIN_OUTPUT_SCALE = 0.5;
 
 /**
+ * How small an export may be asked to be, as a fraction of the picture.
+ *
+ * A tenth of a 1265 pixel capture is 127 pixels, which is a thumbnail. Below
+ * that nothing in the image can be read and the file size stops falling
+ * usefully, so the slider would be offering a setting nobody would keep.
+ */
+export const MIN_EXPORT_SCALE = 0.1;
+
+/**
+ * The size an export will actually be at a given scale.
+ *
+ * Rounded once, here, rather than in the encoder and again in the readout: two
+ * roundings of the same number is how a menu ends up promising 633 pixels and
+ * writing 632. Never upscales, because enlarging a screenshot invents detail
+ * that was never captured, and clamps to a side of at least one pixel so a
+ * scale that would round an edge away produces a picture rather than an error.
+ *
+ * @param {number} width the width of the picture as it stands
+ * @param {number} height
+ * @param {number} scale 0.1 to 1
+ * @returns {{w:number, h:number, scale:number}} the size, and the scale that
+ *   actually produced it, which is what the readout should show
+ */
+export function exportSize(width, height, scale) {
+  const w0 = Math.max(1, Math.round(Number(width) || 1));
+  const h0 = Math.max(1, Math.round(Number(height) || 1));
+
+  const wanted = Number(scale);
+  const safe = Number.isFinite(wanted)
+    ? Math.min(1, Math.max(MIN_EXPORT_SCALE, wanted))
+    : 1;
+
+  const w = Math.max(1, Math.round(w0 * safe));
+  const h = Math.max(1, Math.round(h0 * safe));
+  return { w, h, scale: safe };
+}
+
+/**
  * The largest output scale, no greater than the captured scale, at which the
  * whole region fits within both canvas limits.
  */

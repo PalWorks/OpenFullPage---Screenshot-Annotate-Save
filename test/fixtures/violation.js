@@ -40,3 +40,7 @@ const POISONED_CSS = '.mark { background: url(https://example.invalid/bg.png); }
 // if this line stops failing the scan, the gate is broken.
 // Copied the toolbar grouping straight from Flameshot.
 
+
+// A fourth install-time permission, taken by using the asynchronous clipboard
+// where the paste event would have done.
+export const pasted = () => navigator.clipboard.read();
