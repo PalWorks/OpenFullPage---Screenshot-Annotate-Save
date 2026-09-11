@@ -23,39 +23,50 @@ OpenFullPage - Capture Screen, Annotate, Save
 The short description, 132 characters maximum.
 
 ```
-Capture a whole web page as one image, annotate it, save it. No network access at all, and you can check that yourself.
+Full page screenshot and editor. Capture a whole scrolling page, annotate, redact, save as PNG, JPEG, WebP or PDF. No network.
 ```
 
-118 characters.
+126 of the 132 characters allowed.
+
+**Why this wording.** Store search weights the name and this line above everything
+else, and a reader scanning results sees only these two. It has to carry the terms
+people actually type, "full page screenshot", "scrolling page", "annotate", and the
+output formats, while still reading as a sentence. The privacy claim is last on
+purpose: it is what makes someone choose this one, not what makes them find it.
 
 ### Detailed description
 
 ```
-I'm tired of free screenshot extensions planting malicious code, cookies, tracking users and profiting via referrals using unsuspecting users.
+Take a full page screenshot of any web page, however long it is, annotate it, and save it. One click captures the whole scrolling page as a single image, not just the part on screen.
 
-I'm also tired of decent extensions offering basic functionalities for free, and then charging for even slightly useful functionalities.
+Then mark it up without leaving the browser: arrows, lines, boxes, ellipses, a highlighter, freehand pen, text captions, numbered steps, and redaction that destroys the pixels underneath rather than covering them. Crop it, resize it, and save as PNG, JPEG, WebP or PDF, or copy it straight to the clipboard.
 
-Thus, have prepared this fully open source Full Page Screen Capture, Edit, Annotate, Save and Upload Chrome Extension
+It is free and open source, with no account, no sign-in and no paid tier.
 
-OpenFullPage takes a picture of an entire web page, not just the part you can see, lets you mark it up, and saves it.
-
-It also does something unusual for this category: it proves it is not sending your screenshots anywhere.
+And it has no network access at all. Not "we promise not to look", but no way to send anything anywhere, enforced by Chrome rather than by our good intentions. You can verify that yourself in about five minutes, and the instructions are below.
 
 
 WHAT IT DOES
 
-- Captures a whole page of any length as a single image
+- Captures a whole scrolling page of any length as a single image
 - Or just the visible area, or one element you point at
+- Takes cookie banners, chat bubbles and newsletter pop-ups out of the shot before
+  it takes it: point at them, and they are hidden for the capture and put back after
 - Lets you stop a capture early and keep the part it reached, for pages that never
   finish loading
 - Optionally saves straight to your downloads folder, with no editor at all
 - Holds sticky headers and floating bars still, so they do not repeat down the image
 - Waits for lazy-loaded images before capturing each screenful
-- Annotates with arrows, lines, boxes, ellipses, a highlighter, text and numbered steps
+- Annotates with arrows, lines, boxes, ellipses, a highlighter, a freehand pen, text
+  captions and numbered steps, fifteen shapes in all
+- Erases any annotation by pointing at it, and undoes every edit exactly
 - Fills shapes with a colour and an opacity you choose, from any colour, not a fixed palette
 - Redacts by destroying the pixels underneath, not by covering them
 - Crops with a region you can adjust and confirm, rather than cutting on release
-- Undoes and redoes every edit
+- Chooses the size the file is saved at, and says what each format would weigh
+  before you pick one
+- Opens an image you already have, by paste, drag and drop, or a file picker, and
+  annotates that too
 - Light, dark, or whatever your system is set to
 - Saves as PNG, JPEG, WebP or PDF with a filename you can edit, or copies to the clipboard
 - Hands the image to an image host of your choice through your clipboard, if you want a link
@@ -63,8 +74,8 @@ WHAT IT DOES
 
 WHY YOU CAN BELIEVE THE PRIVACY CLAIM
 
-Every extension in this category says it respects your privacy. The difference
-here is that you do not have to take anyone's word for it.
+Privacy claims are easy to make and hard to check. This one is built so that you
+do not have to take anyone's word for it, including ours.
 
 1. NO NETWORK ACCESS
    The extension manifest sets connect-src 'none'. That is not a promise about
@@ -138,12 +149,14 @@ said United States.
 | Screenshot 3 | `screenshots/shot-redact.png` | 1280x800 | |
 | Screenshot 4 | `screenshots/shot-save.png` | 1280x800 | |
 | Screenshot 5 | `screenshots/shot-upload.png` | 1280x800 | |
-
-The names are the harness's, not this file's. `marketingShots()` in
-`test/e2e/run.mjs` decides them, and this table follows it, so regenerating can
-never leave a listing pointing at a file that is no longer produced.
 | Small promo tile | `promo/small-tile-440x280.png` | 440x280 | yes |
 | Marquee promo tile | `promo/marquee-1400x560.png` | 1400x560 | no |
+
+The screenshot names are the harness's, not this file's. `marketingShots()` in
+`test/e2e/run.mjs` decides them, and this table follows it, so regenerating can
+never leave a listing pointing at a file that is no longer produced. The two promo
+tiles are drawn by `tools/make-promo.mjs`, which renders them in real Chrome at
+exactly the sizes above, so they are reproducible rather than hand-made once.
 
 Screenshot captions, if the dashboard offers them:
 

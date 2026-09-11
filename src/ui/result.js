@@ -29,7 +29,7 @@ import { DOWNLOAD_FORMATS, OUTPUT_FORMATS, encodeOrThrow, extensionOf } from '..
 import { PROTOCOL_MISMATCH, speaksOurProtocol } from '../lib/protocol.js';
 import { captureWasClean, reviewsUrl, shouldNudge } from '../lib/nudge.js';
 import { createEditor } from './editor.js';
-import { defaultStyle, saveSettings } from '../lib/settings.js';
+import { defaultStyle, loadSettings, saveSettings } from '../lib/settings.js';
 import { IMPORT_ACCEPT, importBasename, refuseDimensions, refuseFile } from '../lib/open.js';
 import { THEME_STATE, cycleTheme, startTheme, themeLabel } from '../lib/theme.js';
 
@@ -37,6 +37,7 @@ const el = (id) => document.getElementById(id);
 const ui = {
   dimensions: el('dimensions'),
   filename: el('filename'),
+  exportSize: el('export-size'),
   ext: el('ext'),
   formats: el('formats'),
   settings: el('settings'),
@@ -67,6 +68,7 @@ const ui = {
   textCombo: el('text-combo'),
   styleGlyph: el('style-glyph'),
   strokePx: el('stroke-px'),
+  counterPx: el('counter-px'),
   borderGlyph: el('border-glyph'),
   borderSlash: el('border-slash'),
   fillGlyph: el('fill-glyph'),
@@ -467,6 +469,10 @@ function openEditor(source = {}) {
   format = OUTPUT_FORMATS[settings.format] ? settings.format : 'png';
   setQuality(settings.quality ?? 92);
   setExportScale((settings.exportScale ?? 1) * 100);
+  // Opt in, from the options page. Two sliders over one output file is the
+  // question "which of these changes the size" asked twice, and quality is the
+  // one that answers it for most pictures.
+  ui.exportSize.hidden = settings.exportSizeControl !== true;
   showExtension();
 
 }
@@ -917,6 +923,14 @@ function showStyle(style, tool) {
 
   ui.styleGlyph.style.height = `${Math.min(12, Math.max(1, style.width))}px`;
   ui.strokePx.value = String(style.width);
+  // Enabled when a numbered step is what the next drag makes, or what is
+  // selected. Disabled rather than hidden, like the corner row, so the popover
+  // keeps its height as the tool changes.
+  const stepInPlay = tool === 'counter' || style.selectedKind === 'counter';
+  ui.counterPx.disabled = !stepInPlay;
+  if (!document.activeElement || document.activeElement !== ui.counterPx) {
+    ui.counterPx.value = String(Math.round(style.counterSize ?? 96));
+  }
   markPressed('[data-width]', (b) => Number(b.dataset.width) === style.width);
   markPressed('[data-dash]', (b) => b.dataset.dash === style.dash);
   markPressed('[data-ends]', (b) => b.dataset.ends === style.ends);
@@ -1126,6 +1140,12 @@ ui.strokePx.addEventListener('change', () => {
   const px = Math.min(64, Math.max(1, Math.round(Number(ui.strokePx.value) || 1)));
   ui.strokePx.value = String(px);
   setWidth(px);
+});
+
+ui.counterPx.addEventListener('change', () => {
+  const px = Math.min(800, Math.max(16, Math.round(Number(ui.counterPx.value) || 96)));
+  ui.counterPx.value = String(px);
+  editor?.setCounterSize(px);
 });
 
 for (const button of ui.toolbar.querySelectorAll('[data-dash]')) {
@@ -1722,6 +1742,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
   if (changes.hiddenButtons) applyHiddenButtons(changes.hiddenButtons.newValue ?? []);
   if (changes.hiddenShapes) applyHiddenShapes(changes.hiddenShapes.newValue ?? []);
+  if (changes.exportSizeControl) ui.exportSize.hidden = changes.exportSizeControl.newValue !== true;
 });
 
 ui.undo.addEventListener('click', () => editor?.undo());
@@ -2308,7 +2329,7 @@ async function importFile(file) {
   // There is already a picture here and opening over it would destroy it,
   // annotations and all. The unload guard cannot help: the tab never unloads.
   if (hasPicture()) {
-    openInNewTab(file);
+    await openInNewTab(file);
     return;
   }
 
@@ -2343,13 +2364,25 @@ async function importFile(file) {
  * The handoff is an object URL, which both tabs can read because they are the
  * same extension origin, and which this tab keeps alive by not revoking it
  * until it goes away itself.
+ *
+ * `chrome.tabs.create`, not `window.open`. The file dialog is the common way in
+ * here, and Chrome blocks a popup opened while a file chooser is active: the
+ * call returned null, nothing opened, and this function said it had anyway. The
+ * extensions API has no popup blocker in front of it and needs no permission to
+ * open a tab. The message now waits for the tab to exist before claiming it.
  */
-function openInNewTab(file) {
+async function openInNewTab(file) {
   const handle = URL.createObjectURL(file);
   const target =
     `${chrome.runtime.getURL('src/ui/result.html')}#open=${encodeURIComponent(handle)}` +
     `&name=${encodeURIComponent(file.name ?? '')}`;
-  window.open(target, '_blank');
+  try {
+    await chrome.tabs.create({ url: target, active: true });
+  } catch {
+    URL.revokeObjectURL(handle);
+    say('That image could not be opened in a new tab, so nothing here has changed.', true);
+    return;
+  }
   say('Opened that image in a new tab, so this one keeps what you have drawn.');
 }
 
@@ -2450,15 +2483,35 @@ window.addEventListener('drop', (event) => {
 // form and stays exactly as it was.
 const rawHash = location.hash.slice(1);
 const handedOver = rawHash.startsWith('open=') ? new URLSearchParams(rawHash) : null;
-const captureId = handedOver ? '' : rawHash;
+// A page Chrome closes to every extension sends the reader here instead of
+// failing a capture at them. The reason is the background's own words.
+const refused = rawHash.startsWith('why=') ? new URLSearchParams(rawHash).get('why') : null;
+const captureId = handedOver || refused ? '' : rawHash;
 
 if (handedOver) {
   openHandedOver(handedOver.get('open'), handedOver.get('name') ?? '');
+} else if (refused) {
+  showLanding();
+  say(`${refused} You can still open an image here.`);
 } else if (!captureId) {
   // Opened directly rather than by a capture. Not a dead end any more: this is
   // the one screen that can open an image, so it offers to.
   showLanding();
   say('Open an image to edit, or capture a page from its own tab.');
+}
+
+// A capture delivers the reader's settings in its opening message. A tab that
+// opens an image instead has no such message, and used to run on the defaults:
+// a hidden toolbar button came back, the remembered format was ignored, and the
+// export size control could not appear at all. Load them here for every path
+// that is not a capture, before a picture can be adopted.
+if (!captureId) {
+  loadSettings().then((loaded) => {
+    settings = { ...loaded, ...settings };
+    applyHiddenButtons(settings.hiddenButtons ?? []);
+    applyHiddenShapes(settings.hiddenShapes ?? []);
+    ui.exportSize.hidden = settings.exportSizeControl !== true;
+  }).catch(() => {});
 } else {
   const port = chrome.runtime.connect({ name: `capture:${captureId}` });
   // Said once. A mismatch is true of every message that follows, and repeating

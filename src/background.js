@@ -42,7 +42,7 @@ import {
 import { DEEP_FRAMES, loadSettings } from './lib/settings.js';
 import { clearProgress, showFailure, showProgress } from './lib/badge.js';
 import { sealed, speaksOurProtocol } from './lib/protocol.js';
-import { planCapture } from './lib/plan.js';
+import { planCapture, refuseCapture } from './lib/plan.js';
 import { measurePage } from './content/measure.js';
 import { pickElement, pickForRemoval } from './content/pick.js';
 
@@ -591,6 +591,23 @@ async function runCapture(tab, mode, settings) {
 }
 
 /**
+ * Open the editor with nothing in it, and say why.
+ *
+ * The landing surface was built for a result tab opened by hand (F45). A page
+ * Chrome will not let us photograph is the other way to arrive at it, and the
+ * reader who clicked the button on their new tab page wanted to work on an
+ * image, which is exactly what this screen offers.
+ */
+async function openLanding(sourceTab, reason) {
+  const url = `${chrome.runtime.getURL('src/ui/result.html')}#why=${encodeURIComponent(reason)}`;
+  await withTimeout(
+    chrome.tabs.create({ url, active: true, windowId: sourceTab.windowId, index: sourceTab.index + 1 }),
+    STEP_TIMEOUT_MS,
+    'opening the editor',
+  ).catch(() => chrome.tabs.create({ url, active: true }).catch(() => {}));
+}
+
+/**
  * Begin a capture. The toolbar click omits `tabId` and gets the active tab;
  * passing one explicitly targets a specific tab, which is how the end-to-end
  * harness drives a capture without a click. Only extension pages can reach
@@ -603,6 +620,17 @@ export async function start({ tabId, mode } = {}) {
     ? await chrome.tabs.get(tabId)
     : (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
   if (!tab) return { started: false, reason: 'No active tab.' };
+
+  // Chrome closes some pages to every extension, and the new tab page is one of
+  // them. Attempting the capture anyway opened the progress panel, sat at 0%,
+  // and finished several seconds later as an error badge with no explanation.
+  // Refusing up front costs nothing and can say why, and the editor is still
+  // useful from there: it is the one screen that can open an image from disk.
+  const closed = refuseCapture(tab.url);
+  if (closed) {
+    await openLanding(tab, closed);
+    return { started: false, reason: closed };
+  }
 
   const settings = await loadSettings();
   // Extra modes are opt-in: with them off, everything captures the full page.

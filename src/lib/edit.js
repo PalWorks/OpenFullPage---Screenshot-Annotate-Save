@@ -117,6 +117,8 @@ export const PATH_TOOLS = ['pen'];
 
 /** The smallest a numbered step may be dragged. Below this it is not a number. */
 export const MIN_COUNTER_RADIUS = 8;
+/** The largest, so a typed number cannot produce a disc bigger than the picture. */
+export const MAX_COUNTER_RADIUS = 400;
 /** Tools that place something at a single point. */
 export const POINT_TOOLS = ['text', 'counter'];
 
@@ -793,8 +795,9 @@ export const EDGE_HANDLES = ['n', 'e', 's', 'w'];
  *
  * Text keeps its four corners only. Dragging a corner scales the type, and an
  * edge handle would have to stretch the glyphs, which type editors never do.
- * A numbered step is a fixed radius circle, so a handle would have nothing to
- * change.
+ * A numbered step keeps its four corners too, and they grow it about its centre:
+ * it was the one shape with no handles at all, which made its size final at the
+ * moment it was placed.
  */
 export function handlesFor(shape, minEdge) {
   if (LINE_TOOLS.includes(shape.kind)) {

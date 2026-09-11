@@ -625,6 +625,31 @@ const clickButton = (cdp, session, selector) =>
  * written.
  */
 async function exerciseExportSize(cdp, session, check) {
+  // The slider is opt in as of 1.10.0: two sliders over one output file asked
+  // the reader which one changed the size, so the second is a setting. Switch it
+  // on here, and check it actually appeared, because a block that silently drove
+  // a hidden control would pass by reading the values it set itself.
+  // Written the way the options page writes it, and written again on each poll.
+  // A single raw set of one key loses a race it cannot see: settings are saved by
+  // read, modify, write over the whole object (L34), so a save already in flight
+  // from the paste above finishes afterwards and puts the old value back. The
+  // options page goes through the queue in src/lib/settings.js and does not have
+  // this problem; a test reaching straight into storage does.
+  const switchOn = () => evaluate(cdp, session,
+    `new Promise((r) => chrome.storage.local.set({ exportSizeControl: true }, () => r(1)))`)
+    .catch(() => 0);
+  await switchOn();
+  const shown = await until('the export size row to appear', async () => {
+    const hidden = await evaluate(cdp, session,
+      'document.getElementById("export-size")?.hidden ?? true').catch(() => true);
+    if (hidden === false) return true;
+    await switchOn();
+    return null;
+  }, { timeoutMs: 8000, everyMs: 250 }).catch(() => false);
+  check(shown,
+    'switching on the export size control left the row hidden, so the setting does nothing',
+    'the export size row appears when the setting is switched on');
+
   const read = () => evaluate(cdp, session, `JSON.stringify({
     dims: document.getElementById('export-dims').textContent,
     out: document.getElementById('export-scale-out').textContent,
@@ -855,8 +880,11 @@ async function exerciseImport(cdp, session, check) {
     const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
     dt.items.add(new File([blob], ${JSON.stringify(name)}, { type: 'image/png' }));`;
 
-  // A window.open that records rather than opens, so the "do not destroy the
-  // picture already here" branch can be checked without a second real tab.
+  // A recorder, not a stand-in. This used to replace window.open and return null,
+  // which is exactly what Chrome returns when it refuses to open a popup, so the
+  // check passed against a build where the second image went nowhere at all. The
+  // hand-off is a real tab now and is looked for as one; this only proves that
+  // window.open is not how it gets there, because a file chooser blocks it.
   await evaluate(cdp, session, `(() => { window.__opened = []; window.open = (u) => { window.__opened.push(u); return null; }; })()`);
 
   const idle = await state();
@@ -924,9 +952,95 @@ async function exerciseImport(cdp, session, check) {
   check(afterSecond.w === 600 && afterSecond.h === 400,
     `pasting over an open picture replaced it (${afterSecond.w}x${afterSecond.h}), destroying whatever was drawn on it`,
     'pasting while a picture is open leaves that picture exactly as it was');
-  check(afterSecond.opened === 1 && afterSecond.openedUrl.includes('#open='),
-    `the second image did not go to a new tab (opened ${afterSecond.opened}, url "${afterSecond.openedUrl}")`,
-    'the second image is handed to a new tab, so the first one keeps its edits');
+  const handoff = await until('the hand-off tab to open', async () => {
+    const { targetInfos } = await cdp.send('Target.getTargets');
+    return targetInfos.find((t) => t.type === 'page' && t.url.includes('#open=')) ?? null;
+  }, { timeoutMs: 8000, everyMs: 200 }).catch(() => null);
+  check(Boolean(handoff),
+    'the second image did not reach a new tab: no tab is showing a hand-off url',
+    'the second image really opened in a new tab, not just in a message');
+  check(afterSecond.opened === 0,
+    `the hand-off went through window.open (${afterSecond.opened} calls), which Chrome blocks while a file chooser is open`,
+    'the hand-off does not use window.open, so the file dialog cannot block it');
+  if (handoff) await cdp.send('Target.closeTarget', { targetId: handoff.targetId });
+}
+
+/**
+ * The size of a numbered step, as a number rather than as a drag.
+ *
+ * A step was sized from the stroke width and nothing else, so the only way to
+ * get a bigger one was to draw thicker lines, and once placed it was final. The
+ * check that earns its place is the last one: the disc actually drawn has to be
+ * the size that was typed, because a control that sets a value the renderer
+ * ignores is worse than no control.
+ */
+async function exerciseCounterSize(cdp, session, check) {
+  const enabled = () => evaluate(cdp, session,
+    'document.getElementById("counter-px").disabled === false');
+
+  await clickButton(cdp, session, '[data-tool="select"]');
+  await sleep(120);
+  check(!(await enabled()),
+    'the step size control is live under the selection tool, where it means nothing',
+    'the step size control is off when no numbered step is in play');
+
+  await clickButton(cdp, session, '[data-tool="counter"]');
+  await sleep(120);
+  check(await enabled(),
+    'choosing the numbered step tool left the step size control disabled',
+    'choosing the numbered step tool turns its size control on');
+
+  // Typed, not dragged, and then drawn. 160 across is well clear of the default,
+  // which follows the stroke width and lands near 96.
+  await evaluate(cdp, session, `(() => {
+    const box = document.getElementById('counter-px');
+    box.value = '160';
+    box.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await sleep(120);
+
+  // Real viewport coordinates, from the canvas box. Fractions here place the
+  // step at the top left corner, where the scan below never looks, and the check
+  // then reports a step 0 pixels across without saying that nothing was drawn.
+  const box = await evaluate(cdp, session, `(() => {
+    const b = document.getElementById('canvas').getBoundingClientRect();
+    return JSON.stringify({ x: b.x, y: b.y, width: b.width, height: b.height });
+  })()`).then(JSON.parse);
+  const middle = {
+    x: Math.round(box.x + box.width / 2),
+    y: Math.round(box.y + box.height / 2),
+  };
+  await dragOn(cdp, session, middle, middle, 1);
+  await sleep(250);
+
+  // The disc is the only dark thing on a flat blue picture, so a scan through
+  // its middle measures it. Counting pixels rather than reading the model: the
+  // suite checks what was drawn, never what the editor believes.
+  const across = await evaluate(cdp, session, `(() => {
+    const c = document.getElementById('canvas');
+    const g = c.getContext('2d');
+    const row = g.getImageData(0, Math.round(c.height / 2), c.width, 1).data;
+    let widest = 0;
+    let run = 0;
+    for (let x = 0; x < c.width; x += 1) {
+      const r = row[x * 4];
+      const b = row[x * 4 + 2];
+      // The blue the picture is made of has a low red channel and a high blue
+      // one. Anything else on this row belongs to the step.
+      const isPicture = r < 90 && b > 180;
+      run = isPicture ? 0 : run + 1;
+      if (run > widest) widest = run;
+    }
+    return widest;
+  })()`);
+
+  check(Math.abs(across - 160) <= 24,
+    `a step typed as 160px across was drawn ${across}px across`,
+    `a numbered step is drawn the size that was typed (${across}px for 160)`);
+
+  await clickButton(cdp, session, '[data-tool="select"]');
+  await evaluate(cdp, session,
+    `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
 }
 
 /**
@@ -4517,6 +4631,8 @@ async function main() {
       // The export size, on the same opened image: a known 600 by 400 means the
       // arithmetic can be checked rather than merely watched to change.
       await exerciseExportSize(cdp, driver, check);
+      // The numbered step's size control, on the same opened image.
+      await exerciseCounterSize(cdp, driver, check);
       for (const problem of problems) console.log(`  FAIL ${problem}`);
       if (problems.length) process.exitCode = 1;
     }

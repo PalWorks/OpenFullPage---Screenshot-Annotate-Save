@@ -1043,6 +1043,7 @@
      second selector reaches shapes inside a glyph, not only whole glyphs. */
   #toolbar svg[hidden], #toolbar svg [hidden] { display: none; }
   .note { padding: 0 20px 12px; margin: 0; color: var(--muted); font-size: 12px; }
+  #export-size[hidden] { display: none; }
 </style>
 
 <div id="toolbar">
@@ -1260,6 +1261,22 @@
         <input id="stroke-px" type="number" min="1" max="64" step="1" value="4" aria-label="Stroke width in pixels">
         <span class="unit">px</span>
       </div>
+      <!-- THE SIZE OF A NUMBERED STEP
+           A step was sized from the stroke width and nothing else, so the only
+           way to get a bigger number was to draw thicker lines, and once placed
+           its size was final. It has corner handles now, and this is the same
+           number for a reader who wants two steps exactly the same size rather
+           than roughly. It lives here, with the exact stroke width, because this
+           popover is already where a size is typed; a control of its own would
+           have meant a new button on a toolbar that is not to be rearranged.
+           Disabled rather than hidden when no step is in play, which is what the
+           corner row above does, so the popover never changes height. -->
+      <div class="numrow">
+        <label for="counter-px">Step size</label>
+        <input id="counter-px" type="number" min="16" max="800" step="2" value="96"
+               aria-label="Numbered step size in pixels">
+        <span class="unit">px</span>
+      </div>
     </div>
   </span>
 
@@ -1379,13 +1396,15 @@
            shown beside it as a fact rather than as another field.
            The sizes above already re-measure when this moves, because they are
            measured through the same encode the download uses. -->
-      <div class="qrow">
-        <label for="export-scale">Size</label>
-        <input id="export-scale" type="range" min="10" max="100" step="1" value="100"
-               aria-label="Export size, as a percentage of the picture">
-        <output id="export-scale-out" for="export-scale">100%</output>
+      <div id="export-size" hidden>
+        <div class="qrow">
+          <label for="export-scale">Size</label>
+          <input id="export-scale" type="range" min="10" max="100" step="1" value="100"
+                 aria-label="Export size, as a percentage of the picture">
+          <output id="export-scale-out" for="export-scale">100%</output>
+        </div>
+        <p class="qnote" id="export-dims">Full size.</p>
       </div>
-      <p class="qnote" id="export-dims">Full size.</p>
     </div>
   </span>
 

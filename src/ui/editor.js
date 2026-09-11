@@ -26,6 +26,8 @@ import {
   FILLABLE_TOOLS,
   MAX_STROKE,
   MAX_TEXT_SIZE,
+  MAX_COUNTER_RADIUS,
+  MIN_COUNTER_RADIUS,
   MIN_STROKE,
   MIN_TEXT_SIZE,
   PATH_TOOLS,
@@ -169,7 +171,14 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
   // The shape under the pointer, outlined so a click is never a guess about what
   // it will land on. Held as an id rather than a shape so a stale object cannot
   // be drawn after an edit replaced it.
+  // The size of the next numbered step, in image pixels. Null means "follow the
+  // stroke width", which is how every step was sized before this could be set,
+  // so a reader who never touches the control sees exactly what they always saw.
+  let counterRadius = null;
   let hoverId = null;
+  // Where the eraser is, in image pixels, so its reach can be drawn. Null when
+  // the pointer is off the canvas, which is when the ring must not be drawn.
+  let eraserAt = null;
 
   /**
    * A crop that has been drawn but not applied.
@@ -683,6 +692,34 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
     ctx.restore();
   }
 
+  /**
+   * The eraser's reach, drawn where the pointer is.
+   *
+   * An eraser with no visible edge is a tool you aim by guessing. The radius is
+   * `pickTolerance()`, the same number the erase actually uses, so the circle is
+   * the tool rather than a decoration near it: if the two ever disagree, the
+   * drawing is wrong in a way you can see rather than the behaviour being wrong
+   * in a way you cannot.
+   *
+   * Two strokes, dark over light, because this sits on a photograph of an
+   * arbitrary page and a single colour disappears against something.
+   */
+  function drawEraserRing(point, crop) {
+    if (hideChrome) return;
+    const scale = screenScale();
+    const r = pickTolerance();
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(point.x - crop.x, point.y - crop.y, r, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.lineWidth = 3 * scale;
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(17, 24, 39, 0.85)';
+    ctx.lineWidth = 1.25 * scale;
+    ctx.stroke();
+    ctx.restore();
+  }
+
   function drawSelection(shape, crop, withHandles) {
     // Belt and braces: `flatten()` also nulls the selection, so this is
     // unreachable today. It stays because "the selection is empty" and "chrome is
@@ -844,6 +881,8 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
       if (under) drawHover(under, crop);
     }
 
+    if (tool === 'eraser' && eraserAt && !preview) drawEraserRing(eraserAt, crop);
+
     notify();
   }
 
@@ -923,7 +962,14 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
     // Leaving the selection tool drops the selection: the handles belong to it,
     // and leaving them drawn under a drawing tool invites clicking them.
     if (next !== 'select') doc = amend(doc, { ...doc.present, selection: [] });
-    canvas.style.cursor = next === 'select' ? 'default' : next === 'text' ? 'text' : 'crosshair';
+    // The eraser draws its own reach as a ring, so the pointer itself gets out of
+    // the way: a crosshair inside the circle is two aiming marks for one tool.
+    if (next !== 'eraser') eraserAt = null;
+    canvas.style.cursor =
+      next === 'select' ? 'default'
+        : next === 'text' ? 'text'
+          : next === 'eraser' ? 'none'
+            : 'crosshair';
     render();
   }
 
@@ -982,7 +1028,7 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
         id: newId(),
         kind: 'counter',
         at,
-        radius: Math.max(12, width * 4),
+        radius: counterRadius ?? Math.max(12, width * 4),
         number: nextCounterNumber(doc.present.shapes),
         colour,
         width,
@@ -1067,7 +1113,15 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
 
   // A pointer that leaves the canvas has nothing under it, and an outline left
   // behind would claim otherwise.
-  canvas.addEventListener('pointerleave', () => setHover(null));
+  canvas.addEventListener('pointerleave', () => {
+    setHover(null);
+    // The ring is where the pointer is, so with the pointer gone there is
+    // nowhere for it to be. Left behind it reads as a shape on the picture.
+    if (eraserAt) {
+      eraserAt = null;
+      render();
+    }
+  });
 
   canvas.addEventListener('pointerdown', (event) => {
     if (event.button !== 0 || editing) return;
@@ -1220,6 +1274,10 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
   }
 
   canvas.addEventListener('pointermove', (event) => {
+    if (tool === 'eraser') {
+      eraserAt = toImage(event);
+      if (!drag) render();
+    }
     if (!drag) {
       hover(event);
       return;
@@ -1681,6 +1739,11 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
     return seen ? found : undefined;
   }
 
+  /** The diameter the next numbered step will be drawn at, in image pixels. */
+  function counterSize() {
+    return (counterRadius ?? Math.max(12, width * 4)) * 2;
+  }
+
   function currentStyle() {
     const chosen = selectedShape(doc);
     if (!chosen) {
@@ -1707,6 +1770,8 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
         fillOpacity: agreed(many, (sh) => sh.fillOpacity) ?? fillOpacity,
         strokeOpacity: agreed(many, (sh) => sh.strokeOpacity) ?? strokeOpacity,
         selectedKind: agreed(many, (sh) => sh.kind) ?? null,
+        counterSize: (agreed(many, (sh) => (sh.kind === 'counter' ? sh.radius : undefined)) ?? 0) * 2
+          || counterSize(),
         text: { ...text },
       };
     }
@@ -1719,6 +1784,7 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
       // Which kind is selected, so the toolbar can grey out a control that
       // means nothing for it without reaching into the document.
       selectedKind: chosen.kind,
+      counterSize: chosen.kind === 'counter' ? chosen.radius * 2 : counterSize(),
       fill: fillOf(chosen),
       fillOpacity: fillOf(chosen) ? fillAlphaOf(chosen) : fillOpacity,
       strokeOpacity: strokeAlphaOf(chosen),
@@ -1783,6 +1849,24 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
     setWidth(next) {
       width = clamp(Math.round(next), MIN_STROKE, MAX_STROKE);
       restyleSelection({ width });
+      notify();
+    },
+    /**
+     * The size of a numbered step, as a diameter in image pixels.
+     *
+     * A step was sized from the stroke width and nothing else, so it could only
+     * be made bigger by drawing thicker lines, and once placed it could not be
+     * changed at all. Corner handles came first; this is the number, for the
+     * reader who wants the same size twice rather than the same size roughly.
+     *
+     * Applies to every selected step and becomes the size of the next one, which
+     * is the rule every other control in this toolbar follows.
+     */
+    setCounterSize(next) {
+      const radius = clamp(Math.round(next / 2), MIN_COUNTER_RADIUS, MAX_COUNTER_RADIUS);
+      counterRadius = radius;
+      restyleSelection({ radius }, (shape) => shape.kind === 'counter');
+      render();
       notify();
     },
     setDash(next) {

@@ -8,10 +8,92 @@ deterministic, no timestamps, no host details, so this hash is reproducible from
 a clean checkout with `./tools/pack.sh`, not merely checkable against one download. See
 [docs/VERIFYING-YOUR-INSTALL.md](docs/VERIFYING-YOUR-INSTALL.md).
 
-## [Unreleased]
+## [1.10.0]: 2026-09-11
 
-Everything below is on `main` and not yet packaged. It covers the toolbar rework
-and the capture reliability work of 2026-09-08 to 2026-09-11.
+The largest release so far: 29 commits over four days. It carries everything the
+roadmap had planned as 1.7.0 repairs, 1.7.0 wins, 1.8.0 toolbar and 1.10.0, plus
+PDF export and the rating nudge, which were built ahead of the releases that were
+to hold them. Two things found in the field are fixed here, a screenful the
+browser handed back twice and an element that only turns fixed once you scroll.
+
+`openfullpage-1.10.0.zip`. SHA-256 `8fb460c193d471879834e325d5736f9dd5516f971d205f671abca52bc31d7de1`
+
+### Fixed: opening a second image said it opened a tab that never opened
+The hand-off used `window.open`, called from the file dialog's own change event,
+and Chrome blocks a popup while a file chooser is active. It returned null,
+nothing opened, and the tab said "Opened that image in a new tab" anyway. It uses
+`chrome.tabs.create` now, which has no popup blocker in front of it and needs no
+permission, and the message waits for the tab to exist before claiming it.
+
+The end to end check had replaced `window.open` with a recorder that returned
+null, which is exactly what Chrome returns when it refuses, so the check modelled
+the success path while handing back the failure value and passed against a build
+where nothing opened. It looks for a real tab now.
+
+### Fixed: the toolbar button on a new tab page started a capture that could not work
+Chrome closes its own pages to every extension, and the new tab page is where a
+browser sits when it is showing nothing, so it is the likeliest page to be on when
+the button is pressed. The capture opened a progress panel, sat at 0%, and ended
+several seconds later as an error badge. `refuseCapture()` names those pages
+before anything starts, and the editor opens on its landing surface instead,
+saying why, which is useful rather than merely honest: it is the one screen that
+can open an image from disk.
+
+### Fixed: an image opened by hand ignored every setting
+A capture delivers the reader's settings in its opening message. A tab that opens
+an image has no such message and ran on the defaults, so a hidden toolbar button
+came back, the remembered format was ignored, and the export size control could
+not appear at all. Those tabs load settings for themselves now.
+
+### Changed: the export size slider is opt in
+Two sliders over one output file asked the reader which of them changed the size.
+Quality answers that for most pictures, so the second is a setting, off by
+default, on the options page.
+
+### Added: a numbered step has a size you can type
+It was sized from the stroke width and nothing else, so the only way to get a
+bigger number was to draw thicker lines, and once placed its size was final. It
+has corner handles, and now a step size in the stroke popover, beside the exact
+stroke width. No new button: the toolbar is unchanged.
+
+### Changed: the eraser shows what it will reach
+A ring, drawn at the radius the erase actually uses, following the pointer, with
+the system cursor hidden under it. It erases whole annotations, not pixels: the
+base capture is immutable (D5), which is what makes undo exact, and rubbing pixels
+out of it would end that. See [LIMITATIONS.md](docs/LIMITATIONS.md) L16.
+
+### Changed: the documents describe conventions, never whose they are
+D34 banned naming other products in the shipped surface and the prose, and the
+scanner enforced it against a list of names. One name was left off that list on
+purpose, because it is also an ordinary English word this codebase uses constantly
+for render previews, and a rule that cannot be obeyed is worse than none.
+
+The exemption turned out to be load bearing in the wrong direction. The toolbar
+decision, five entries in the task list, two changelog entries and an architecture
+note all said in writing that the design had been modelled on screenshots of that
+named application, timestamps included, and every one of them passed the scanner.
+
+All of it now describes the convention instead: chevron popovers, a glyph that shows
+its own state, grouping by concept. That is both safer and more accurate, because
+those conventions are shared across the category and belong to nobody. A second
+scanner list, `PRODUCT_PHRASES`, catches the shapes the ordinary word never takes, a
+capitalised possessive and the full application name, so "the preview pane" stays
+legal and the phrasing that slipped through does not. D68.
+
+The table that characterised three unnamed extensions by manifest, dependency list
+and install size went with it. The claim this product makes rests on its own
+manifest, which anyone can read, and it is stronger without a column of other
+people's.
+
+### Changed: the store tiles have a source now
+The small promo tile shipped with its footer line cut in half by the bottom edge,
+and there was no way to fix it except to redraw the whole tile, because the tile was
+the source. `tools/make-promo.mjs` lays both tiles out as HTML, renders them in real
+Chrome at exactly 1400x560 and 440x280, and refuses to write a file when anything in
+it sits outside the padded box. The first thing it caught was a bug of its own: a
+font stack containing a quoted family name, interpolated into a `style` attribute,
+ends that attribute early and silently drops every declaration after it, which had
+left the marquee's footer painting in the default colour on a dark ground. D69.
 
 ### Added: open an image to edit, not only one you captured
 The editor was always a base picture plus a list of shapes, and nothing in it ever
@@ -842,7 +924,7 @@ than shipped with a set of claims the project had already decided not to make. D
 `Screenful` is the word the code and the docs use for one `captureVisibleTab`
 call, and it stays. It was never a word to put in front of a reader.
 
-### Changed: the toolbar is grouped the way Preview groups its own
+### Changed: the toolbar is grouped the way annotation toolbars group theirs
 Tools, style, history and output, with a chevron on the groups that hold a set.
 Shapes and Text are split buttons: the left half picks the tool, the right half
 opens the inspector, so choosing Text no longer covers the canvas you are about to
@@ -964,9 +1046,9 @@ Renamed to OpenFullPage. One toolbar row, and the filename is yours to edit.
 `openfullpage-1.5.0.zip`. SHA-256 `d00a17c1f566facfda9c2690ba9bfb0a47c533796bdc63d92748ea10602f4d6d`
 
 ### Changed: the extension is called OpenFullPage
-Scrollshot was already taken by at least two extensions in this exact category,
-so a user searching for it would have found a competitor. The previous name, Full
-Page Capture, is also occupied. OpenFullPage says the thing that actually
+Scrollshot was already taken by at least two extensions in this category, so a
+user searching for it would have landed somewhere else. The previous name was
+occupied too. OpenFullPage says the thing that actually
 distinguishes this one: the source is published and the build is reproducible.
 
 The download filename follows the manifest name, so it renamed itself. Released
@@ -1118,8 +1200,8 @@ then** the tab opens with the finished image.
 
 ### Added: the editor, rebuilt around live objects
 Shapes are no longer committed strokes. Select one and you can drag it, drag its
-handles to resize it, restyle it, or delete it, the model annotation tools and
-Preview share. History is a stack of whole snapshots, so undo covers moves and
+handles to resize it, restyle it, or delete it, the model annotation tools
+share. History is a stack of whole snapshots, so undo covers moves and
 resizes as uniformly as it covers drawing.
 
 - Tools: **Select, Arrow, Line, Box, Ellipse, Highlight, Redact, Text, Step, Crop**,

@@ -34,6 +34,7 @@ const extraModes = el('extraModes');
 const defaultMode = el('defaultMode');
 const captureDelay = el('captureDelay');
 const progressPopup = el('progressPopup');
+const exportSizeControl = el('exportSizeControl');
 const directDownload = el('directDownload');
 const themeChoice = el('theme');
 const saved = el('saved');
@@ -147,6 +148,7 @@ async function refresh() {
   defaultMode.disabled = !settings.extraModes;
   captureDelay.value = String(settings.captureDelay);
   progressPopup.checked = settings.progressPopup;
+  exportSizeControl.checked = settings.exportSizeControl;
   themeChoice.value = settings.theme;
   // Storage says the user asked for it; the permission says it can actually
   // happen. Both have to be true, and Chrome is the one that decides the second.
@@ -228,6 +230,13 @@ themeChoice.addEventListener('change', async () => {
 
 startTheme((theme) => {
   themeChoice.value = theme;
+});
+
+exportSizeControl.addEventListener('change', async () => {
+  await saveSettings({ exportSizeControl: exportSizeControl.checked });
+  note(exportSizeControl.checked
+    ? 'The download menu will offer an export size.'
+    : 'The download menu shows quality only.');
 });
 
 progressPopup.addEventListener('change', async () => {

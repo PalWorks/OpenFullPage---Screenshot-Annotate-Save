@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import {
+import { refuseCapture,
   LIMITS,
   MIN_EXPORT_SCALE,
   MIN_OUTPUT_SCALE,
@@ -281,4 +281,28 @@ test('the scale reported back is the one that was used, not the one asked for', 
 test('a size of nothing is treated as one pixel rather than dividing by it', () => {
   assert.deepEqual(exportSize(0, 0, 1), { w: 1, h: 1, scale: 1 });
   assert.deepEqual(exportSize(NaN, NaN, 1), { w: 1, h: 1, scale: 1 });
+});
+
+test('the pages Chrome closes to every extension are refused by name', () => {
+  // Each of these fails several seconds into a capture if it is attempted, after
+  // the progress panel has opened, which is the failure this check replaces.
+  assert.match(refuseCapture('chrome://newtab/'), /new tab page/);
+  assert.match(refuseCapture('chrome://settings/'), /chrome:\/\//);
+  assert.match(refuseCapture('chrome-extension://abc/page.html'), /chrome-extension:\/\//);
+  assert.match(refuseCapture('devtools://devtools/bundled/x.html'), /devtools:\/\//);
+  assert.match(refuseCapture('view-source:https://example.com'), /view-source:\/\//);
+  assert.match(refuseCapture('about:blank'), /about:\/\//);
+  assert.match(refuseCapture('https://chromewebstore.google.com/detail/x'), /Web Store/);
+  assert.match(refuseCapture(undefined), /did not say/);
+  assert.match(refuseCapture(''), /did not say/);
+});
+
+test('an ordinary page is not refused', () => {
+  // The check runs before every capture, so a false positive here would take the
+  // product away from the pages it exists for.
+  assert.equal(refuseCapture('https://example.com/a/long/page'), null);
+  assert.equal(refuseCapture('http://127.0.0.1:8787/index.html'), null);
+  assert.equal(refuseCapture('file:///Users/someone/page.html'), null);
+  // A site that merely mentions the closed scheme in its path is a real page.
+  assert.equal(refuseCapture('https://example.com/blog/chrome://tricks'), null);
 });

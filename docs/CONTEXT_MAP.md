@@ -31,7 +31,7 @@ fifteen.
 | Why does hit testing refuse to guess a tolerance? | DECISIONS D44, and D19 for the reason behind it |
 | How is a PDF written with no dependencies? | [`../src/lib/pdf.js`](../src/lib/pdf.js), and D31 |
 | Why is "system" not just light? | [`../src/lib/theme.js`](../src/lib/theme.js), and D32 |
-| May I name another product, in code or in a document? | No. [DECISIONS.md](DECISIONS.md) D34, enforced by `scanBrands` over `src/`, `docs/`, `store/`, `tools/` and the root Markdown |
+| May I name another product, in code or in a document? | No. [DECISIONS.md](DECISIONS.md) D34 and D68, enforced by `scanBrands` over `src/`, `docs/`, `store/`, `tools/` and the root Markdown. Describe the convention, never whose it is |
 | Why did my review document fail the test suite? | It expired. [reviews/README.md](reviews/README.md) |
 | Why does git history start at one commit? | [DECISIONS.md](DECISIONS.md) D35 |
 | Why is the page behind the capture not white? | [DECISIONS.md](DECISIONS.md) D36 |
@@ -67,6 +67,7 @@ fifteen.
 | `test/invariants.test.js` | The security invariants. The heart of the project | AGENTS |
 | `test/lib/scan.js` | The banned pattern scanner and manifest checks | AGENTS |
 | `tools/pack.mjs` | Deterministic zip packaging | AGENTS |
+| `tools/make-promo.mjs` | Draws the two store promo tiles in real Chrome, and refuses to write one whose content leaves the padded box | DECISIONS D69 |
 | `tools/verify-crx/` | Go binary that compares an installed extension to this tree | VERIFYING-YOUR-INSTALL |
 
 ## Reading order for a cold start

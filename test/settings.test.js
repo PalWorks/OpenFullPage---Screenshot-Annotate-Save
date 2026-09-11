@@ -138,7 +138,7 @@ test('every key sanitise knows about is one DEFAULTS declares', () => {
   const sample = {
     defaultMode: 'visible', extraModes: true, tool: 'rect', colour: '#123456',
     strokeWidth: 8, captureDelay: 3, progressPopup: false, directDownload: true,
-    theme: 'dark', format: 'jpeg', quality: 78, exportScale: 0.5,
+    theme: 'dark', format: 'jpeg', quality: 78, exportScale: 0.5, exportSizeControl: true,
     dash: 'dashed', lineEnds: 'none', corner: 12, fill: '#abcdef', fillOpacity: 0.5,
     strokeOpacity: 0.7,
     textSize: 40, textFamily: 'serif', textBold: false, textItalic: true,
@@ -369,6 +369,17 @@ test('the export size is clamped to a range worth dragging through', () => {
   assert.equal(sanitise({ exportScale: 0 }).exportScale, MIN_EXPORT_SCALE);
   assert.equal(sanitise({ exportScale: -1 }).exportScale, MIN_EXPORT_SCALE);
   assert.equal(sanitise({ exportScale: 0.5 }).exportScale, 0.5);
+});
+
+// The slider the export scale drives is opt in, so the flag has to survive the
+// round trip as surely as the value does: a control that forgets it was switched
+// on reads as the setting doing nothing.
+test('the export size control is off unless it was switched on', () => {
+  assert.equal(sanitise({}).exportSizeControl, false);
+  assert.equal(sanitise({ exportSizeControl: true }).exportSizeControl, true);
+  for (const junk of ['yes', 1, null, undefined, {}]) {
+    assert.equal(sanitise({ exportSizeControl: junk }).exportSizeControl, false, String(junk));
+  }
   // Rubbish falls back to the default rather than to NaN, which would make
   // every measured size read "too large".
   assert.equal(sanitise({ exportScale: 'half' }).exportScale, DEFAULTS.exportScale);

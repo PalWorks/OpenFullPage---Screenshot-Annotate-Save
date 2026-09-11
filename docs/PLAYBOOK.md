@@ -23,6 +23,7 @@ Operational procedures. Follow step by step.
 | `node tools/preview-icons.mjs` | Contact sheet of the icon at 128, 48, 32 and 16, on both Chrome toolbars |
 | `node tools/make-icons.mjs --check` | Fails if the PNG icons no longer match their design source |
 | `node tools/make-icons.mjs` | Regenerate the icons from source |
+| `node tools/make-promo.mjs` | Redraw the two store promo tiles at 1400x560 and 440x280. Refuses to write a tile whose content sits outside its padded box |
 | `./tools/pack.sh` | Deterministic zip into `dist/openfullpage-<version>.zip` |
 | `cd tools/verify-crx && go build -o verify-crx .` | Build the install verifier |
 | `./verify-crx compare <installed dir> <repo root>` | Hash every file and exit non zero on any mismatch |

@@ -210,6 +210,11 @@ export const DEFAULTS = {
   directDownload: false,
   // The download format last used, so the next capture opens on it.
   format: 'png',
+  // Show the export size slider in the download menu. Off by default: the menu
+  // already has a quality slider, and two sliders over one output file is the
+  // question "which of these changes the size" asked twice. Quality is the one
+  // that answers it for most people, so the second is opt in.
+  exportSizeControl: false,
 };
 
 export async function loadSettings() {
@@ -251,6 +256,7 @@ export function sanitise(raw) {
   clean.progressPopup = raw.progressPopup !== false;
   if (THEMES.includes(raw.theme)) clean.theme = raw.theme;
   clean.directDownload = raw.directDownload === true;
+  clean.exportSizeControl = raw.exportSizeControl === true;
   if (DOWNLOAD_FORMATS.includes(raw.format)) clean.format = raw.format;
 
   // Against the actual list, not against a pattern that describes it. The

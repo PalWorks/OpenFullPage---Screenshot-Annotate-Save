@@ -209,3 +209,54 @@ export function applyFilename(name, extension) {
 
   return `${cleaned || 'capture'}.${ext}`;
 }
+
+/**
+ * Schemes and hosts Chrome will not let any extension touch.
+ *
+ * `activeTab` grants nothing on these, so `chrome.scripting.executeScript`
+ * refuses and the capture fails several seconds in, after the progress panel has
+ * already opened and sat at 0%. Chrome is right to refuse: an extension that
+ * could script `chrome://settings` or the store page that installs extensions
+ * would be able to change its own permissions, or yours.
+ *
+ * The new tab page is the one a reader is most likely to be on when they click
+ * the toolbar button, because it is where a browser sits when it is not showing
+ * anything. That made the worst first impression the product had: a capture that
+ * starts, says nothing, and ends in an error badge.
+ */
+const CLOSED_SCHEMES = [
+  'chrome:', 'chrome-untrusted:', 'chrome-extension:', 'moz-extension:',
+  'edge:', 'about:', 'devtools:', 'view-source:', 'data:',
+];
+
+const CLOSED_HOSTS = [
+  'chromewebstore.google.com',
+  'chrome.google.com/webstore',
+];
+
+/**
+ * Why this page cannot be captured, or null when it can.
+ *
+ * Pure, and takes the URL rather than a tab, so the reason can be tested without
+ * a browser and stated in the reader's own words rather than surfaced as the
+ * scripting API's error.
+ *
+ * @param {string|undefined} url
+ * @returns {string|null}
+ */
+export function refuseCapture(url) {
+  const text = String(url ?? '').trim();
+  if (!text) return 'Chrome did not say what this tab is showing, so it cannot be captured.';
+
+  const scheme = text.slice(0, text.indexOf(':') + 1).toLowerCase();
+  if (scheme === 'chrome:' && /^chrome:\/\/newtab\/?$/i.test(text)) {
+    return 'The new tab page belongs to Chrome, so no extension can photograph it.';
+  }
+  if (CLOSED_SCHEMES.includes(scheme)) {
+    return `Chrome does not let any extension read ${scheme}// pages, so this one cannot be captured.`;
+  }
+  if (CLOSED_HOSTS.some((host) => text.toLowerCase().includes(host))) {
+    return 'Chrome does not let any extension read the Web Store, so this page cannot be captured.';
+  }
+  return null;
+}

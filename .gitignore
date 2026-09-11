@@ -5,3 +5,6 @@ tools/verify-crx/verify-crx
 
 # Local working notes dropped into the repo root. Never published.
 Prompt - *.md
+
+# Knowledge graph built from the repository. A derived artefact, never shipped.
+graphify-out/
