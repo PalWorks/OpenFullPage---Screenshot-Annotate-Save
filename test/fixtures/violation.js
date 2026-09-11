@@ -44,3 +44,9 @@ const POISONED_CSS = '.mark { background: url(https://example.invalid/bg.png); }
 // A fourth install-time permission, taken by using the asynchronous clipboard
 // where the paste event would have done.
 export const pasted = () => navigator.clipboard.read();
+
+
+// Naming the application a design was taken from, in the two shapes the ordinary
+// word never takes. macOS Preview's markup toolbar is the phrasing that passed
+// the brand scanner for two weeks.
+export const modelled = 'on Preview’s markup toolbar';

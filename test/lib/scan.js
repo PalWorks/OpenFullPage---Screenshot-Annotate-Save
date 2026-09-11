@@ -82,12 +82,36 @@ export const BANNED = [
  * convention in annotation tools" says the same thing and is also more accurate,
  * because the convention is nobody's property.
  *
- * "Preview" is deliberately absent. It is an ordinary English word this codebase
- * uses for render previews, and a rule that cannot be obeyed is worse than none.
+ * Words that are ordinary English on their own are not on this list, because it
+ * lowercases and matches substrings: "preview" here would fail on every render
+ * preview in the repository, and a rule that cannot be obeyed is worse than none.
+ * Those are handled by `PRODUCT_PHRASES` below instead.
  */
 export const OTHER_PRODUCTS = [
   'gofullpage', 'fireshot', 'flameshot', 'lightshot', 'snagit', 'greenshot',
   'sharex', 'ksnip', 'awesome screenshot', 'nimbus screenshot', 'figma',
+];
+
+/**
+ * Phrases that name a product even where the bare word is ordinary English.
+ *
+ * Matched case sensitively against the original text, and only in the shapes the
+ * ordinary word never takes: a capitalised possessive, or the full name of the
+ * application. "the preview pane" and "a render preview" stay legal, which is
+ * what makes this rule obeyable where a bare name on `OTHER_PRODUCTS` would not
+ * be.
+ *
+ * This exists because the hole was real. The toolbar decisions, the task list and
+ * the changelog all stated in writing that the design had been modelled on
+ * screenshots of a named application, and every one of those lines passed the
+ * brand scanner, because the only word that would have caught them had been
+ * excused as ordinary English. A design convention can always be described
+ * without saying whose it is, and describing it that way is also more accurate:
+ * the convention belongs to nobody.
+ */
+export const PRODUCT_PHRASES = [
+  ["a named application, by possessive", /\bPreview['’]s\b/],
+  ['a named application, in full', /\b(?:macOS|Apple) Preview\b/],
 ];
 
 /** @returns {string[]} findings, empty when nothing in `files` names anybody */
@@ -97,9 +121,13 @@ export function scanBrands(files) {
   for (const file of files) {
     if (BRAND_EXEMPT.includes(file)) continue;
     if (!extensions.some((ext) => file.endsWith(ext))) continue;
-    const text = readFileSync(join(REPO_ROOT, file), 'utf8').toLowerCase();
+    const source = readFileSync(join(REPO_ROOT, file), 'utf8');
+    const text = source.toLowerCase();
     for (const product of OTHER_PRODUCTS) {
       if (text.includes(product)) problems.push(`${file}: names another product, "${product}"`);
+    }
+    for (const [name, pattern] of PRODUCT_PHRASES) {
+      if (pattern.test(source)) problems.push(`${file}: ${name}, ${pattern}`);
     }
   }
   return problems;

@@ -12,69 +12,89 @@ could be adapted at all, and none of it has been.
 
 ## Everything, on one page
 
-**Read this table first.** One row per item, in the order the phases run. Every row
-links to nothing: the detail is in the section of this file that carries the same
-number, and the acceptance criteria are in [../TASKS.md](../TASKS.md).
+**Read this table first.** Open work is at the top, in phase order, so the next
+thing to pick up is the first row you see. Everything already shipped is in the
+second table below it. Every row links to nothing: the detail is in the section of
+this file that carries the same number, and the acceptance criteria are in
+[../TASKS.md](../TASKS.md).
 
-Status is one of **shipped** with the date it landed, **next** for the work that is
-already scoped and ready to start, or **planned** with the effort in the form
-*human team / Claude Code with gstack*.
+**Phase** is which phase of the plan the item belongs to, and **#** is the item's
+own permanent number. The two are separate on purpose: an item keeps its F or T
+number for life, and that number is what [../CHANGELOG.md](../CHANGELOG.md),
+[DECISIONS.md](DECISIONS.md) and [../TASKS.md](../TASKS.md) all cite, so it never
+moves when the phase around it is reorganised.
 
-| Bucket | # | Work | Status | Notes |
+Status for open work is **planned** with the effort in the form *human team /
+Claude Code with gstack*. Shipped work carries the date it landed.
+
+### Open
+
+| Phase | # | Work | Status | Notes |
 |---|---|---|---|---|
-| Core capture | | Full page, sticky and fixed headers, lazy loading, retina and zoom | shipped 1.0.0 to 1.3.1 | The thing the product is for. Verified against a fixture on every run |
-| Core capture | | Visible area and pick-an-element modes, capture delay, frames | shipped 1.2.0 to 1.3.0 | Cross-origin frames sit behind an optional permission never granted at install |
-| Core editing | | Live-object editor: select, move, resize, restyle, delete, undo | shipped 1.3.0 | Shapes are objects, not committed strokes, which is what makes undo exact |
-| Core output | | PNG, JPEG, copy to clipboard, URL-based filenames | shipped 1.3.0 to 1.6.1 | Copy needs no permission |
-| 1.7.0 repairs | T19 | Harden the content security policy | shipped | D15. `connect-src 'none'` plus a closed `img-src` |
-| 1.7.0 repairs | T3 | Round-trip test for every settings key | shipped | A key in `DEFAULTS` but not in `sanitise()` now fails the build |
-| 1.7.0 repairs | T10 | Warn before losing unsaved edits | shipped | D14. All of what survived the apply/discard request |
-| 1.7.0 repairs | T20 | Selection handles hold their size on screen | shipped | D19. A defect: nine canvas pixels is one screen pixel on a 14,000px capture |
-| 1.7.0 repairs | T1 | Fix the false storage claim in the README | shipped 2026-09-08 | |
-| 1.7.0 repairs | T2 | `encodeOrThrow`, so a null blob cannot fail silently | shipped 2026-09-10 | D52. A null blob was a download of nothing with no error anywhere |
-| 1.7.0 repairs | T11 | Version the port protocol | shipped 2026-09-10 | D53. Unblocks F10. Exercised by `--stale` |
-| 1.7.0 repairs | T31 | What is fixed is asked again as the page is walked | shipped 2026-09-10 | D63. **Found in the field.** A header and a floating card that only turn fixed once you scroll were tagged before the walk, so they rode every screenful |
-| 1.7.0 repairs | T30 | A screenful Chrome had already presented is photographed again | shipped 2026-09-10 | D56, L39. **Found in the field**, not by a test. A repeated screenful, and a lost one. Exercised by `--frozen` |
-| 1.7.0 wins | F1 | WebP export | shipped 2026-09-10 | D52. Output formats are described once now, not in three lists |
-| 1.7.0 wins | F21 | Export quality, and what each format costs | shipped 2026-09-10 | D54. The size readout is the feature; the slider is how you move it |
-| 1.7.0 wins | F2 | Pause playing media during the capture | shipped 2026-09-10 | L27, L28. Only what was playing, resumed first in the tidy-up |
-| 1.7.0 wins | F26 | Unmissable confirmation on copy and save | shipped 2026-09-10 | D55. The button answers, at the width it already had. No new permission |
-| 1.8.0 toolbar | F24 | Toolbar regrouped, and configurable | shipped | D17, D18, D20, D21. 26 flat controls became grouped buttons carrying 68 |
-| 1.8.0 toolbar | F25 | Upload, as a hand-off | shipped | D16. The extension never uploads. It copies and opens the host |
-| 1.8.0 toolbar | F35 | PDF export, ahead of its release | shipped 2026-09-09 | D31. Hand written, around 200 lines, no library |
-| 1.8.0 toolbar | F29 | More shapes behind the Shapes chevron | shipped 2026-09-10 | D43, D47, D51. Twelve shapes, then Rounded box and Stadium as presets |
-| 1.8.0 toolbar | F41 | Hover cursors, hover outline, Escape cancels a drag | shipped | D42 |
-| 1.8.0 toolbar | F27 | The editor says what is under the pointer | shipped 2026-09-10 | D42, D44, D49. Finished by the paint order menu and a key in every tooltip |
-| 1.8.0 toolbar | F40 | Text is a shape, with a frame and a plate | shipped 2026-09-10 | D46, D50. The Frame block replaced the hint that stood in for it |
-| 1.8.0 toolbar | F4 | Freehand pen and object eraser | shipped 2026-09-11 | D65. The first shape whose payload is a list, so it is thinned and never edited in place. Numbered steps gained resize handles in the same work. No pixel eraser |
-| 1.8.0 toolbar | F6 | Navigate a large capture: zoom and an overview pane | shipped 2026-09-10 | D58. Zoom is a width, not a scroll container, so L17 closed rather than fired. The pane is the progress popup's page with a marker on it |
-| 1.8.0 toolbar | F44 | Opacity in every colour popover, and the frame switches removed | shipped 2026-09-10 | D57, D62. Five hand-written colour panels became one built from `PAINTS`. A redaction still cannot take an opacity |
-| 1.8.0 toolbar | F43 | A caption wraps inside a width you set | shipped 2026-09-10 | D60, L41. Two side handles set the width, the height follows the words. A word that exactly fits and a word that cannot fit are the two tests |
-| 1.8.0 toolbar | F45 | Open an image to edit, not only one you captured | shipped 2026-09-11 | Three ways in: paste, drop, and an Open button. The icon cannot carry a fourth without putting a menu in front of every capture. Paste is the `paste` event, never `navigator.clipboard.read`, which would need a permission |
-| 1.9.0 long pages | F10 | Multi-part export for very long pages | planned, 5d / 2h | **The known defect.** Must stream part by part or Chrome kills the worker |
-| 1.9.0 long pages | F13 | Runtime seam verification | planned, 5d / 2h | We verify seams in tests. This verifies them in the field |
-| 1.9.5 region | F28 | Select a region of the canvas | planned, 2d / 45m | A marquee other operations take as an argument. Rectangle only |
-| 1.10.0 capture | F15 | Remove an element before capturing | shipped 2026-09-11 | D66. The manual picker only. The automatic half was dropped: `HIDE_FIXED_CSS` is indiscriminate and would take real headers out too, L46 |
-| 1.11.0 output | F5 | Presentation frame | planned, 3d / 1h | Padding, a background, an optional window frame. Pure canvas |
-| 1.12.0 thanks | F3 | Rating nudge | shipped 2026-09-10 | D59. No review gating: one ask, and the feedback link beside it rather than behind it. Exercised by `--nudge` |
-| 1.12.0 thanks | F42 | Donations | shipped 2026-09-10 | D48. The GOVERNANCE.md amendment landed in the same commit. Ships with an empty list, so the section stays hidden until there is somewhere to send money |
-| Phase 2 in | F8 | Snip a region on the live page | planned, 3d / 1h | The editor stays in the result tab, where it can never be photographed |
-| Phase 2 in | F17 | Repeat the last capture | planned, 1d / 25m | Turns a five step loop into one keystroke |
-| Phase 2 out | F16 | Before and after | planned, 0.5d / 15m | Nearly free: the pristine capture is already on its own canvas |
-| Phase 2 out | F23 | Text watermark | planned, 1d / 20m | Typed text only, never an image loaded from a URL |
-| Phase 3 | F20 | Presentation finish and image adjustments | planned, 4d / 1.5h | All `ctx.filter` and compositing, no library |
-| Phase 3 | F30 | Adjust size on export | shipped 2026-09-11 | D67. One scale, not three fields. It lives in `encode()`, the only function that makes pixels, so Copy, Download and the readout cannot disagree |
-| Phase 4 | F11 | Capture library | planned, 8d / 3h | **The only feature that changes the trust posture.** Off by default, IndexedDB |
-| Phase 4 | F18 | Command palette | planned, 2d / 40m | The cheapest real progress on L14, the editor without a pointer |
-| Phase 4 | F22 | Remappable editor shortcuts | planned, 2d / 40m | In-editor keys only |
-| Phase 4 | F19 | Style presets | planned, 1d / 20m | |
-| Phase 5 | F14 | Locales | planned, 10d / 4h | Verify `getManifest()` returns a localised `short_name` first: it feeds every filename |
+| P1 | F10 | Multi-part export for very long pages | planned, 5d / 2h | **The known defect.** Must stream part by part or Chrome kills the worker |
+| P1 | F13 | Runtime seam verification | planned, 5d / 2h | We verify seams in tests. This verifies them in the field |
+| P1 | F28 | Select a region of the canvas | planned, 2d / 45m | A marquee other operations take as an argument. Rectangle only |
+| P1 | F5 | Presentation frame | planned, 3d / 1h | Padding, a background, an optional window frame. Pure canvas |
+| P2 | F8 | Snip a region on the live page | planned, 3d / 1h | The editor stays in the result tab, where it can never be photographed |
+| P2 | F17 | Repeat the last capture | planned, 1d / 25m | Turns a five step loop into one keystroke |
+| P2 | F16 | Before and after | planned, 0.5d / 15m | Nearly free: the pristine capture is already on its own canvas |
+| P2 | F23 | Text watermark | planned, 1d / 20m | Typed text only, never an image loaded from a URL |
+| P3 | F20 | Presentation finish and image adjustments | planned, 4d / 1.5h | All `ctx.filter` and compositing, no library |
+| P4 | F11 | Capture library | planned, 8d / 3h | **The only feature that changes the trust posture.** Off by default, IndexedDB |
+| P4 | F18 | Command palette | planned, 2d / 40m | The cheapest real progress on L14, the editor without a pointer |
+| P4 | F22 | Remappable editor shortcuts | planned, 2d / 40m | In-editor keys only |
+| P4 | F19 | Style presets | planned, 1d / 20m |  |
+| P5 | F14 | Locales | planned, 10d / 4h | Verify `getManifest()` returns a localised `short_name` first: it feeds every filename |
 | Debt | T14 | Split `src/ui/result.js` into stitch, export and wiring | planned, P1 | Before F5. F6 and F27 both added to this file again |
 | Debt | T8 | Extract the duplicated `:root` token blocks | planned, P2 | Before F11 adds a third page |
 | Debt | T5 | Test that the GOVERNANCE.md canary is not stale | planned, P2 | It has already drifted, L19 |
-| Debt | T13 | Use the exported `HISTORY_LIMIT` instead of a second hardcoded 60 | planned, P3 | |
+| Debt | T13 | Use the exported `HISTORY_LIMIT` instead of a second hardcoded 60 | planned, P3 |  |
 
-**Release 1.7.0 is complete.** Every repair and every free win in it has shipped.
+### Shipped
+
+| Phase | # | Work | Status | Notes |
+|---|---|---|---|---|
+| Core |  | Full page, sticky and fixed headers, lazy loading, retina and zoom | shipped 1.0.0 to 1.3.1 | The thing the product is for. Verified against a fixture on every run |
+| Core |  | Visible area and pick-an-element modes, capture delay, frames | shipped 1.2.0 to 1.3.0 | Cross-origin frames sit behind an optional permission never granted at install |
+| Core |  | Live-object editor: select, move, resize, restyle, delete, undo | shipped 1.3.0 | Shapes are objects, not committed strokes, which is what makes undo exact |
+| Core |  | PNG, JPEG, copy to clipboard, URL-based filenames | shipped 1.3.0 to 1.6.1 | Copy needs no permission |
+| P1 | T19 | Harden the content security policy | shipped | D15. `connect-src 'none'` plus a closed `img-src` |
+| P1 | T3 | Round-trip test for every settings key | shipped | A key in `DEFAULTS` but not in `sanitise()` now fails the build |
+| P1 | T10 | Warn before losing unsaved edits | shipped | D14. All of what survived the apply/discard request |
+| P1 | T20 | Selection handles hold their size on screen | shipped | D19. A defect: nine canvas pixels is one screen pixel on a 14,000px capture |
+| P1 | T1 | Fix the false storage claim in the README | shipped 2026-09-08 |  |
+| P1 | T2 | `encodeOrThrow`, so a null blob cannot fail silently | shipped 2026-09-10 | D52. A null blob was a download of nothing with no error anywhere |
+| P1 | T11 | Version the port protocol | shipped 2026-09-10 | D53. Unblocks F10. Exercised by `--stale` |
+| P1 | T31 | What is fixed is asked again as the page is walked | shipped 2026-09-10 | D63. **Found in the field.** A header and a floating card that only turn fixed once you scroll were tagged before the walk, so they rode every screenful |
+| P1 | T30 | A screenful Chrome had already presented is photographed again | shipped 2026-09-10 | D56, L39. **Found in the field**, not by a test. A repeated screenful, and a lost one. Exercised by `--frozen` |
+| P1 | F1 | WebP export | shipped 2026-09-10 | D52. Output formats are described once now, not in three lists |
+| P1 | F21 | Export quality, and what each format costs | shipped 2026-09-10 | D54. The size readout is the feature; the slider is how you move it |
+| P1 | F2 | Pause playing media during the capture | shipped 2026-09-10 | L27, L28. Only what was playing, resumed first in the tidy-up |
+| P1 | F26 | Unmissable confirmation on copy and save | shipped 2026-09-10 | D55. The button answers, at the width it already had. No new permission |
+| P1 | F24 | Toolbar regrouped, and configurable | shipped | D17, D18, D20, D21. 26 flat controls became grouped buttons carrying 68 |
+| P1 | F25 | Upload, as a hand-off | shipped | D16. The extension never uploads. It copies and opens the host |
+| P1 | F35 | PDF export, ahead of its release | shipped 2026-09-09 | D31. Hand written, around 200 lines, no library |
+| P1 | F29 | More shapes behind the Shapes chevron | shipped 2026-09-10 | D43, D47, D51. Twelve shapes, then Rounded box and Stadium as presets |
+| P1 | F41 | Hover cursors, hover outline, Escape cancels a drag | shipped | D42 |
+| P1 | F27 | The editor says what is under the pointer | shipped 2026-09-10 | D42, D44, D49. Finished by the paint order menu and a key in every tooltip |
+| P1 | F40 | Text is a shape, with a frame and a plate | shipped 2026-09-10 | D46, D50. The Frame block replaced the hint that stood in for it |
+| P1 | F4 | Freehand pen and object eraser | shipped 2026-09-11 | D65. The first shape whose payload is a list, so it is thinned and never edited in place. Numbered steps gained resize handles in the same work. No pixel eraser |
+| P1 | F6 | Navigate a large capture: zoom and an overview pane | shipped 2026-09-10 | D58. Zoom is a width, not a scroll container, so L17 closed rather than fired. The pane is the progress popup's page with a marker on it |
+| P1 | F44 | Opacity in every colour popover, and the frame switches removed | shipped 2026-09-10 | D57, D62. Five hand-written colour panels became one built from `PAINTS`. A redaction still cannot take an opacity |
+| P1 | F43 | A caption wraps inside a width you set | shipped 2026-09-10 | D60, L41. Two side handles set the width, the height follows the words. A word that exactly fits and a word that cannot fit are the two tests |
+| P1 | F45 | Open an image to edit, not only one you captured | shipped 2026-09-11 | Three ways in: paste, drop, and an Open button. The icon cannot carry a fourth without putting a menu in front of every capture. Paste is the `paste` event, never `navigator.clipboard.read`, which would need a permission |
+| P1 | F15 | Remove an element before capturing | shipped 2026-09-11 | D66. The manual picker only. The automatic half was dropped: `HIDE_FIXED_CSS` is indiscriminate and would take real headers out too, L46 |
+| P1 | F3 | Rating nudge | shipped 2026-09-10 | D59. No review gating: one ask, and the feedback link beside it rather than behind it. Exercised by `--nudge` |
+| P1 | F42 | Donations | shipped 2026-09-10 | D48. The GOVERNANCE.md amendment landed in the same commit. Ships with an empty list, so the section stays hidden until there is somewhere to send money |
+| P3 | F30 | Adjust size on export | shipped 2026-09-11 | D67. One scale, not three fields. It lives in `encode()`, the only function that makes pixels, so Copy, Download and the readout cannot disagree |
+
+**Released as 1.10.0 on 2026-09-11.** Everything this file had planned as 1.7.0
+repairs, 1.7.0 wins, 1.8.0 toolbar and 1.10.0 shipped in one package, along with
+F35 and F3, which were built ahead of the releases meant to hold them. The
+headings below keep their original release numbers because the changelog, the
+decisions and the task list all cite them; they are groupings of work, not
+versions that were ever published separately. The next published version will be
+the one that carries F10.
 
 **What to pick up next: F10**, multi-part export for very long pages. It is the only
 item on this page that fixes something a user has actually hit, T11 has unblocked it,
@@ -87,9 +107,9 @@ captures long pages. After it, F13 verifies the same seams in the field.
 **`test/invariants.test.js` must still pass when the feature ships.** No network,
 no remote code, no required host permissions, no `update_url`, no build step, no
 dependencies. If a feature cannot be built inside that boundary, it does not get
-built. **The boundary is the product**, and every competitor studied so far has
-traded it away: two of them require access to every site you visit at install, one
-of them declares a server push channel, and one ships a 2.8MB WebAssembly binary.
+built. **The boundary is the product.** It is also the thing most easily traded
+away one convenience at a time, which is why it is written down as a rule and
+enforced by a test rather than left to judgement.
 
 Two traps that catch tools like this one:
 
@@ -97,8 +117,9 @@ Two traps that catch tools like this one:
   is an inline SVG path or a system font, and that is why the UI uses `system-ui`.
   See [DECISIONS.md](DECISIONS.md) D13.
 - **Image libraries.** jsPDF, Fabric.js, Konva, Cropper.js: each is a build step and
-  a supply chain. Canvas 2D already does everything in Phases 1 to 3. The nearest
-  competitor pays 740KB for jQuery, anime.js and jsPDF; we pay nothing.
+  a supply chain. Canvas 2D already does everything in Phases 1 to 3, and the PDF
+  writer in `src/lib/pdf.js` is around 200 lines, so the library would buy nothing
+  this repository does not already have.
 
 
 ## How to read the phases
@@ -189,7 +210,7 @@ appear**. See [DECISIONS.md](DECISIONS.md) D17.
 
 | # | Item | Effort | Notes |
 |---|---|---|---|
-| F24 | **Toolbar regrouped, and configurable** | **shipped**, D17, D18, D20, D21 | Two halves. **Grouping, following macOS Preview** ([DECISIONS.md](DECISIONS.md) D18): each button carries a chevron that opens the related set, and the button's glyph shows the current value. Shapes collapse behind one button; five weights, two dash patterns and four arrow endings behind Stroke style; and colour splits into **Border** and **Fill**, Preview's own two glyphs, each ending in a custom spectrum with a hex field. Text opens an inspector: family, size, bold, italic and underline. Colour is taken from Border colour rather than duplicated, and alignment was held back until text entry is multi-line, both recorded as D21. Nineteen buttons then carry sixty eight controls against today's twenty six. This is a capability change as much as a layout one: **there is no fill and no arbitrary colour in the product today**. **Configuration** ([DECISIONS.md](DECISIONS.md) D17): every button has an on/off switch on the options page, a curated default set on, "Show everything" and "Reset to defaults" present. Keyboard shortcuts stay bound to individual tools, so grouping costs a click and never a keystroke. **Must land before F4 and F6 add controls**
+| F24 | **Toolbar regrouped, and configurable** | **shipped**, D17, D18, D20, D21 | Two halves. **Grouping, following the annotation toolbar convention** ([DECISIONS.md](DECISIONS.md) D18): each button carries a chevron that opens the related set, and the button's glyph shows the current value. Shapes collapse behind one button; five weights, two dash patterns and four arrow endings behind Stroke style; and colour splits into **Border** and **Fill**, the two glyphs the convention uses, each ending in a custom spectrum with a hex field. Text opens an inspector: family, size, bold, italic and underline. Colour is taken from Border colour rather than duplicated, and alignment was held back until text entry is multi-line, both recorded as D21. Nineteen buttons then carry sixty eight controls against today's twenty six. This is a capability change as much as a layout one: **there is no fill and no arbitrary colour in the product today**. **Configuration** ([DECISIONS.md](DECISIONS.md) D17): every button has an on/off switch on the options page, a curated default set on, "Show everything" and "Reset to defaults" present. Keyboard shortcuts stay bound to individual tools, so grouping costs a click and never a keystroke. **Must land before F4 and F6 add controls**
 | F6 | **Navigate a large capture** | **shipped** 2026-09-10, D58 | Zoom is **one magnifier button**, sitting with the controls that act on the picture rather than out at the far right; its popover holds a slider, a percentage that is a field and not only a readout, and Fit width and Fit height as icons. Alongside it, an **overview pane in the top right**. The pane is a **schematic of a page and not a picture of the capture**: the same sheet the progress popup draws while capturing, with a marker on it, which is what the maintainer asked for after turning down a minimap as too much. It answers the only question it is asked, costs no drawing at all, and hides itself when the whole capture already fits on screen. Zoom sets the canvas's CSS width and leaves the page doing the scrolling, so [LIMITATIONS.md](LIMITATIONS.md) L17 was **closed rather than fired** |
 | F43 | **A caption wraps inside a width you set** | **shipped** 2026-09-10, D60 | Full design below |
 | F45 | **Open an image to edit** | 2d / 45m | The editor is a base plus shapes, and nothing in it knows the base came from a capture, so an image opened from disk is the same product with a different first step. **Four ways in, in order of what they cost.** *Paste*: Cmd+V in the result tab, which is how a screenshot taken by the operating system gets annotated, and it is a `paste` event and nothing else. *Drop*: drag a file onto the canvas. *A button*: an Open control in the toolbar, an `<input type="file">`, which is the only one that is discoverable. *The extension icon*: an "Open an image" entry beside Capture, which is the only one that works when there is no result tab yet, and the only one that needs a new surface. **A context menu on an image in a page is the one to refuse**: `contextMenus` is granted at install and rule 4 says no. **Constraints already met**: `img-src` is `'self' data: blob:`, so a local file loads with no manifest change and no network. **Constraints to settle**: raster only, since an SVG base is a document rather than a picture; the same 16,384 pixel ceiling the capture has; the filename comes from the file rather than from a URL; and an import opens a tab of its own rather than replacing a capture somebody has already drawn on |
@@ -223,7 +244,7 @@ The defect a real user hit on a live blog. This is a repair, not a feature.
 | # | Item | Effort | Notes |
 |---|---|---|---|
 | F9 | **PDF export** | **shipped 2026-09-09 as F35**, ahead of this release. Hand-written in `src/lib/pdf.js`, around 200 lines with the comments. It shipped in one shape rather than two: pages at the capture's own width, no scaling and no margins, with the height divided evenly so the last page is never a sliver. Standard page sizes (A4, Letter, Legal) were **not** built, because a screenshot fitted to A4 is either letterboxed or shrunk, and neither is what the reader asked for. Revisit only if someone asks. See [DECISIONS.md](DECISIONS.md) D31 |
-| F5 | **Presentation frame** | 3d / 1h | Padding, a background, and an optional browser window frame carrying the real page title and URL. The nearest competitor offers five chrome styles (macOS, Windows, Chrome, Firefox, Edge) with editable tab name and URL, which is the level to match. Pure canvas, no fonts beyond the system stack. The rest of the treatment is Phase 3 |
+| F5 | **Presentation frame** | 3d / 1h | Padding, a background, and an optional browser window frame carrying the real page title and URL. Five window styles (macOS, Windows, Chrome, Firefox, Edge) with an editable tab name and URL is the level this has to reach to be worth shipping. Pure canvas, no fonts beyond the system stack. The rest of the treatment is Phase 3 |
 
 ## Release 1.12.0: ask for the rating, and offer a way to say thanks
 
@@ -322,7 +343,7 @@ said the same thing first.
 | # | Item | Effort | Notes |
 |---|---|---|---|
 | F16 | **Before and after** | 0.5d / 15m | Hold to compare the edited image against the original. Nearly free, because the pristine capture is already kept on its own canvas and is never drawn into |
-| F23 | **Text watermark** | 1d / 20m | Typed text, positioned, with opacity. **Never an image loaded from a URL**, which is how the nearest competitor does it and is exactly the hole T19 closes |
+| F23 | **Text watermark** | 1d / 20m | Typed text, positioned, with opacity. **Never an image loaded from a URL**: a remote subresource is the one network path `connect-src 'none'` never covered, and T19 closed it |
 | F25 | **Upload and share, by handing off** | 3d / 1h | The extension never uploads. It puts the image on the clipboard and opens the host you chose, so the request is made by that site, in a tab you can see, and `connect-src 'none'` stays literally true. Hosts, the alternatives, and the reason a direct API upload is refused: [DECISIONS.md](DECISIONS.md) D16 |
 
 
@@ -330,8 +351,8 @@ said the same thing first.
 
 | # | Item | Effort | Notes |
 |---|---|---|---|
-| F20 | **Presentation finish and image adjustments** | 4d / 1.5h | Drop shadow, rounded corners, border, and a date stamp, plus brightness, contrast, saturation, grayscale and invert. All of it is `ctx.filter` and canvas compositing, no library. Merges the "image adjustments" and "effects" requests, which are the same feature seen from two products, and completes the treatment F5 starts |
-| F30 | **Adjust size on export** | 1.5d / 30m | Preview's Image Dimensions dialog: fit into a preset or a custom size, width and height in pixels, per cent, cm or inches, resolution in pixels per inch, scale proportionally, and a live "resulting size, 844 KB (was 844 KB)" readout. The readout is the part that earns it: a full page capture is often too large to attach to a ticket, and today the only answer is to save it and resize it somewhere else. Judgement call still open on whether it belongs here or in release 1.11.0 next to the other output work |
+| F20 | **Presentation finish and image adjustments** | 4d / 1.5h | Drop shadow, rounded corners, border, and a date stamp, plus brightness, contrast, saturation, grayscale and invert. All of it is `ctx.filter` and canvas compositing, no library. Merges the "image adjustments" and "effects" requests, which are one feature described two ways, and completes the treatment F5 starts |
+| F30 | **Adjust size on export** | shipped 2026-09-11 | D67. The scale control and the live size readout shipped; the target-size search (type a width, or a file size to fit) was dropped as more machinery than the readout earns |
 
 # Phase 4: power user
 
@@ -347,7 +368,7 @@ said the same thing first.
 
 | # | Item | Effort | Notes |
 |---|---|---|---|
-| F14 | **Locales** | 10d / 4h | `_locales` plus `chrome.i18n`, no build step required. The three competitors ship 54, 54 and 42 locales; we ship one. **Verify first** that `chrome.runtime.getManifest()` returns the localised `short_name`, because `captureBasename` slugs it into every filename, then land it alone |
+| F14 | **Locales** | 10d / 4h | `_locales` plus `chrome.i18n`, no build step required. Extensions in this category are commonly translated into forty or more languages; we ship one, which is a real gap for a tool used worldwide. **Verify first** that `chrome.runtime.getManifest()` returns the localised `short_name`, because `captureBasename` slugs it into every filename, then land it alone |
 
 
 ## The iframe question, settled by measurement
@@ -380,9 +401,9 @@ table. See [ADVANCED-ACCESS.md](ADVANCED-ACCESS.md).
 |---|---|
 | **Direct API upload to an image host** | Chrome's extension CSP is static in the manifest. There is no way to make a `connect-src` allowance conditional on a setting, so shipping it would weaken the CSP permanently, for every user, including everyone who never uploads. See [DECISIONS.md](DECISIONS.md) D16 |
 | Cloud accounts, sync, premium tiers | Monetisation is what pulls a tool like this across the network boundary, in a predictable order: a paid tier needs accounts, accounts need authentication, authentication needs a server. The boundary is the product, so the boundary wins |
-| OCR, and PII auto-redaction built on it | Both competitors that offer it bundle a 2.8MB Tesseract WebAssembly binary and relax their CSP with `wasm-unsafe-eval` to run it. A model is either a network call or a large opaque binary, and both break verifiability |
+| OCR, and PII auto-redaction built on it | Text recognition in an extension is either a network call or a multi-megabyte WebAssembly binary that needs `wasm-unsafe-eval` in the CSP to run. Both break verifiability, which is the one thing this product sells |
 | Plugins downloaded at runtime | Desktop capture tools do this for OCR and it is entirely reasonable for an application the user installed deliberately. For us, downloading a plugin **is** remote code. This is the clearest "reasonable elsewhere, banned here" case in the project |
-| Custom script uploaders, FTP, imgur API keys embedded in the repo | Network, plus a public credential in an open-source repository is a credential we have to answer for |
+| Custom script uploaders, FTP, an image host API key embedded in the repo | Network, plus a public credential in an open-source repository is a credential we have to answer for |
 | Telemetry, even anonymous | There is no such thing as a little network access |
 | Auto-update from outside the Web Store | `update_url` is banned by the invariants |
 | Stickers, custom sticker packs | Built-in ones are bloat, custom ones mean loading arbitrary files |
@@ -392,21 +413,24 @@ table. See [ADVANCED-ACCESS.md](ADVANCED-ACCESS.md).
 | Firefox or Safari ports | A different manifest and a different verification story |
 
 
-## What the competitors hold that we refuse to
+## What this extension does not take
 
-Kept here because it is the clearest statement of what this product is, and because
-it is the store listing's strongest argument.
+The clearest statement of what this product is, and the store listing's strongest
+argument. It is written as a list of what is refused here, with no column
+comparing it against anybody else: a table of other people's manifests is a
+document this project does not need to own, and the claim stands on its own
+without one. See [DECISIONS.md](DECISIONS.md) D34.
 
-| | OpenFullPage | Competitor A | Competitor B | Competitor C |
-|---|---|---|---|---|
-| Site access at install | **none** | `<all_urls>` | `<all_urls>` | `*://*/*` |
-| Content script on every page | **no** | no | **yes** | no |
-| Can send data anywhere | **no, CSP-enforced** | yes | yes | yes, by design |
-| Server push channel | **no** | no | **`gcm`** | no |
-| Reads your cookies | **no** | no | no | **yes** |
-| Dependencies | **zero** | jsPDF | jQuery, anime.js, jsPDF, Tesseract WASM | jQuery, colpick |
-| Install size | **~100KB** | ~1MB | 6.4MB | 1.6MB |
-| Shipped build matches the source | **byte for byte** | no | no | no |
+| | OpenFullPage | How to check |
+|---|---|---|
+| Site access at install | **none**, `activeTab` only | `manifest.json`, `permissions` |
+| Content script on every page | **no**, injected on demand | absence of `content_scripts` |
+| Can send data anywhere | **no**, CSP-enforced | `connect-src 'none'` in the manifest CSP |
+| Server push channel | **no** | absence of `gcm` and of a `background` host |
+| Reads your cookies | **no** | `cookies` is not in `permissions` |
+| Dependencies | **zero** | no lockfile, no `node_modules`, nothing vendored |
+| Install size | **~180KB** | the published zip |
+| Shipped build matches the source | **byte for byte** | `tools/verify-crx`, and `test/invariants.test.js` |
 
 ### F43, a caption that wraps, in detail
 
@@ -417,7 +441,7 @@ off across the picture instead of forming a paragraph. The corner handles scale
 the point size, because scaling is the only thing a box with no width of its own
 can do. This is [LIMITATIONS.md](LIMITATIONS.md) L41.
 
-**What it should do**, which is what Preview does. A text box carries a width.
+**What it should do**, and what the convention does. A text box carries a width.
 Two handles, at the midpoints of the left and right edges, are the only handles
 that change it. Dragging one re-wraps the words inside the new width and the
 height follows from how many lines that takes. The top and bottom edges are not

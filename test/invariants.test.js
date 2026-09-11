@@ -14,6 +14,7 @@ import { TOOLBAR_BUTTONS } from '../src/lib/settings.js';
 import { makeZip } from '../tools/lib/zip.mjs';
 import {
   BANNED,
+  PRODUCT_PHRASES,
   REPO_ROOT,
   checkManifest,
   checkPackedZip,
@@ -80,6 +81,20 @@ test('the documents name no other product', () => {
 test('the brand scanner fires on a name it is meant to catch', () => {
   const found = scanBrands(['test/fixtures/violation.js']);
   assert.ok(found.length > 0, 'the fixture no longer trips the brand scanner');
+});
+
+/**
+ * The phrase rules are the half that nearly did not exist. A bare product name is
+ * easy to scan for; a product whose name is also an ordinary English word was
+ * excused from the list entirely, and the documents then spent two weeks saying
+ * the toolbar had been modelled on screenshots of it. Each pattern is proven to
+ * fire here, so deleting one fails the suite rather than quietly reopening that.
+ */
+test('every product phrase fires on the poisoned fixture', () => {
+  const found = scanBrands(['test/fixtures/violation.js']).join('\n');
+  for (const [name] of PRODUCT_PHRASES) {
+    assert.ok(found.includes(name), `phrase rule "${name}" did not fire on the fixture`);
+  }
 });
 
 test('broad access is offered, never granted at install', () => {

@@ -19,10 +19,11 @@ governance answer to it is in [../GOVERNANCE.md](../GOVERNANCE.md).
 ## What the comparison work established, as of 2026-09-08
 
 Several extensions in this category were compared in September 2026, by installing
-them and by reading the parts anyone can read: the manifest, the locale strings,
-the file listing, the marketing site. **No competitor's JavaScript was read**, and
-none may be. What that produced is the anonymised table at the end of
-[ROADMAP.md](ROADMAP.md), which is the only form these findings take here.
+them and using them as a user does, and by reading the material anyone can read:
+the store listing and the marketing site. **No other extension's source was read,
+copied or adapted**, and none may be. Nothing about any individual product is
+recorded here; what survived the comparison is the set of conventions the whole
+category shares, which belong to nobody.
 
 Two conclusions worth keeping:
 

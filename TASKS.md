@@ -254,8 +254,8 @@ the toolbar becoming unusable. See [docs/DECISIONS.md](docs/DECISIONS.md) D17.
 **Goal.** Two problems, one release. The toolbar cannot absorb the backlog at 26
 flat controls, and different people want different tools.
 
-**Reference.** macOS Preview's markup toolbar, four screenshots reviewed 2026-09-09.
-It exposes roughly sixty controls through thirteen buttons. See
+**Reference.** The grouping convention desktop annotation toolbars have converged
+on, reviewed 2026-09-09: roughly sixty controls behind thirteen buttons. See
 [docs/DECISIONS.md](docs/DECISIONS.md) D18 for the pattern and D17 for why
 configuration sits alongside it rather than instead of it.
 
@@ -283,7 +283,7 @@ configuration sits alongside it rather than instead of it.
 
 **Acceptance, part one b: the Stroke style popover.**
 
-Modelled on Preview's, screenshot 2026-09-09 01.22.17.
+Follows the usual stroke style popover, reviewed 2026-09-09.
 - Five stroke weights as full width rules of increasing thickness, drawn to scale, so
   the list is the preview.
 - A rule, then **dashed** and **dotted**, both implemented with `setLineDash`.
@@ -298,8 +298,8 @@ Modelled on Preview's, screenshot 2026-09-09 01.22.17.
 
 **Acceptance, part one c: the two colour popovers.**
 
-One component, one `kind` flag, rendered twice. Preview's border and fill split,
-screenshot 2026-09-09 01.22.25.
+One component, one `kind` flag, rendered twice. The usual border and fill split,
+reviewed 2026-09-09.
 - **Border colour**: a row of ten quick colours (the six shipped today among them),
   then a sixty step tint and shade grid, then a custom swatch.
 - **Fill colour**: **No fill** as its own control and the default, the same palette,
@@ -316,7 +316,7 @@ screenshot 2026-09-09 01.22.25.
 
 **Acceptance, part one d: the Text inspector.**
 
-Modelled on Preview's, screenshot 2026-09-09 01.22.31.
+Follows the usual text inspector, reviewed 2026-09-09.
 - Family (a short list of stacks that resolve without a network request, since a
   webfont is banned by D13), size in points with a stepper and a typed value, colour,
   bold, italic, underline, and four alignments.
@@ -371,8 +371,8 @@ document. Putting the canvas in its own scrolling container breaks it.
 
 **Goal.** A text shape has no width, so editing a caption widens its box instead
 of wrapping into it, and the corner handles scale the point size because that is
-all a box with no width can do. Preview gives a text box two side handles, sets
-the width from those, and lets the height follow the words. [LIMITATIONS.md](docs/LIMITATIONS.md) L41.
+all a box with no width can do. The convention gives a text box two side handles,
+sets the width from those, and lets the height follow the words. [LIMITATIONS.md](docs/LIMITATIONS.md) L41.
 
 **Acceptance.**
 
@@ -438,14 +438,14 @@ handlers that already exist.
 
 ### F28 (P1) Select a region of the canvas
 
-**Goal.** Pick out part of the image and act on just that part. Preview offers
-rectangular, elliptical, lasso and smart lasso selection; this is the rectangular
-one, which is the one a screenshot is actually cut along.
+**Goal.** Pick out part of the image and act on just that part. Image editors
+offer rectangular, elliptical and lasso selection; this is the rectangular one,
+which is the one a screenshot is actually cut along.
 
 **Constraints, and they shape the whole feature.** The base capture is immutable
 (D5): every frame re-renders from it, which is what makes undo exact. So a
-selection here cannot be Photoshop's, where the selected pixels are lifted and
-moved. It is a **region that operations take as an argument**, which is the honest
+selection here cannot be the image-editor kind, where the selected pixels are
+lifted and moved. It is a **region that operations take as an argument**, which is the honest
 version of the idea in this model and is what people actually want on a screenshot.
 
 **Acceptance.**
@@ -466,8 +466,8 @@ version of the idea in this model and is what people actually want on a screensh
 
 ### F29 (P2) More shapes behind the Shapes chevron
 
-**Goal.** Preview's shapes popover holds line, arrow, rectangle, rounded
-rectangle, ellipse, speech bubble, star, polygon, plus a mask and a loupe. The
+**Goal.** A full shapes popover holds line, arrow, rectangle, rounded rectangle,
+ellipse, speech bubble, star and polygon, plus a mask and a loupe. The
 Shapes chevron F24 built is where more shapes would go, at no cost to the toolbar.
 
 **The judgement.** Not all of them earn a place in a screenshot annotator:

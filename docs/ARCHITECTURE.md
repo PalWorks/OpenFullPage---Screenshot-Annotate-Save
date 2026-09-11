@@ -268,7 +268,7 @@ is a `.grp` containing a trigger with `data-pop` and a `.pop` panel:
   </span>
 ```
 
-Three rules, all borrowed from Preview's markup toolbar:
+Three rules, all following the annotation toolbar convention:
 
 - **The glyph is the state.** The Border button is a square stroked in the current
   colour; the Fill button is filled, and slashed in red when there is no fill.

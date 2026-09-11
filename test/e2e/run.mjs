@@ -1229,7 +1229,7 @@ async function canvasSignature(cdp, session) {
 /**
  * The grouped style controls: popovers, the two colour buttons, the hex field
  * and the fill. Every assertion is against real pixels or the real attribute on
- * the glyph, because the whole point of the Preview pattern is that the button
+ * the glyph, because the whole point of the pattern is that the button
  * shows the state, and a button that lies about it is the failure to catch.
  */
 async function exerciseStyleToolbar(cdp, session, check, p) {
