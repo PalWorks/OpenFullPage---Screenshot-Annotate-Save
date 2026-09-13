@@ -51,15 +51,15 @@ is no `node_modules`, no lockfile, and no bundled library.
 
 The settings gear in the editor toolbar is redrawn from
 [gear-setting-settings](https://www.svgrepo.com/svg/422526/gear-setting-settings)
-on SVG Repo, from their Editable-line collection. SVG Repo's
-[licensing page](https://www.svgrepo.com/page/licensing/) states that collection
-is CC0, which requires no attribution; it is credited here anyway, and the
-original file is kept at `public/gear-setting-settings-svgrepo-com.svg` as
-provenance. `public/` is not part of the shipped package.
+on SVG Repo. The icon's own page, checked on 2026-09-13, reads "LICENSE: CC0
+License", with SVG Repo as the uploader and the collection given as SVG Vector.
+CC0 requires no attribution; it is credited here anyway, and the original file is
+kept at `public/gear-setting-settings-svgrepo-com.svg` as provenance. `public/` is
+not part of the shipped package.
 
-**Confirm this before the store listing goes live.** The specific icon page could
-not be loaded at the time of writing (HTTP 429), so the CC0 status comes from the
-collection and the site's general licensing page rather than from the icon's own
-page. Everything else in the interface, including the extension icon, is drawn
-from geometry in `tools/icon-design.mjs`.
+An earlier draft of this notice took the CC0 status from SVG Repo's general
+[licensing page](https://www.svgrepo.com/page/licensing/), because the icon page
+itself answered HTTP 429 at the time. It has since been read directly. Everything
+else in the interface, including the extension icon, is drawn from geometry in
+`tools/icon-design.mjs`.
 

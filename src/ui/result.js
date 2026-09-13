@@ -69,6 +69,7 @@ const ui = {
   styleGlyph: el('style-glyph'),
   strokePx: el('stroke-px'),
   counterPx: el('counter-px'),
+  counterSize: el('counter-size'),
   borderGlyph: el('border-glyph'),
   borderSlash: el('border-slash'),
   fillGlyph: el('fill-glyph'),
@@ -923,14 +924,14 @@ function showStyle(style, tool) {
 
   ui.styleGlyph.style.height = `${Math.min(12, Math.max(1, style.width))}px`;
   ui.strokePx.value = String(style.width);
-  // Enabled when a numbered step is what the next drag makes, or what is
-  // selected. Disabled rather than hidden, like the corner row, so the popover
-  // keeps its height as the tool changes.
-  const stepInPlay = tool === 'counter' || style.selectedKind === 'counter';
-  ui.counterPx.disabled = !stepInPlay;
-  if (!document.activeElement || document.activeElement !== ui.counterPx) {
-    ui.counterPx.value = String(Math.round(style.counterSize ?? 96));
-  }
+  // Always live. It hangs off the step's own button, so opening it is already
+  // the reader saying which shape they mean, and with no step selected it sets
+  // the size of the next one. Neither half is rewritten while it is in use, so a
+  // drag or a half typed number is never snatched back mid gesture.
+  const stepPx = String(Math.round(style.counterSize ?? 96));
+  ui.counterPx.dataset.shown = stepPx;
+  if (document.activeElement !== ui.counterPx) ui.counterPx.value = stepPx;
+  if (document.activeElement !== ui.counterSize) ui.counterSize.value = stepPx;
   markPressed('[data-width]', (b) => Number(b.dataset.width) === style.width);
   markPressed('[data-dash]', (b) => b.dataset.dash === style.dash);
   markPressed('[data-ends]', (b) => b.dataset.ends === style.ends);
@@ -1142,11 +1143,65 @@ ui.strokePx.addEventListener('change', () => {
   setWidth(px);
 });
 
-ui.counterPx.addEventListener('change', () => {
-  const px = Math.min(800, Math.max(16, Math.round(Number(ui.counterPx.value) || 96)));
-  ui.counterPx.value = String(px);
-  editor?.setCounterSize(px);
+/**
+ * The step size, from either half of its popover.
+ *
+ * Both halves preview live and commit once, so a gesture is one undo step
+ * whichever half it came through. The slider commits on release, and a key held
+ * on it commits when the key comes up: Chrome fires `change` on every arrow
+ * press, and committing each one would fill the history.
+ *
+ * The field previews as a number is typed and commits on `change`. It has to
+ * preview on `input`: clicking another step on the canvas moves the selection
+ * before the field's `change` arrives, so a field that only acted on `change`
+ * put the typed size on whichever step was clicked next.
+ */
+function setStepSize(px, live) {
+  const next = Math.min(800, Math.max(16, Math.round(px)));
+  editor?.setCounterSize(next, { live });
+  return next;
+}
+
+let stepKeyHeld = false;
+
+function commitStepKey() {
+  if (!stepKeyHeld) return;
+  stepKeyHeld = false;
+  setStepSize(Number(ui.counterSize.value), false);
+}
+
+ui.counterSize.addEventListener('input', () => {
+  ui.counterPx.value = ui.counterSize.value;
+  setStepSize(Number(ui.counterSize.value), true);
 });
+ui.counterSize.addEventListener('change', () => {
+  if (!stepKeyHeld) setStepSize(Number(ui.counterSize.value), false);
+});
+ui.counterSize.addEventListener('keydown', (event) => {
+  event.stopPropagation();
+  stepKeyHeld = true;
+});
+ui.counterSize.addEventListener('keyup', commitStepKey);
+ui.counterSize.addEventListener('blur', commitStepKey);
+
+ui.counterPx.addEventListener('input', () => {
+  const typed = Number(ui.counterPx.value);
+  // Below the smallest step is a number still being typed, "1" on the way to
+  // "160", and previewing it would shrink the step to nothing and back.
+  if (!Number.isFinite(typed) || typed < 16) return;
+  ui.counterSize.value = String(setStepSize(typed, true));
+});
+ui.counterPx.addEventListener('change', () => {
+  const typed = Number(ui.counterPx.value);
+  // An emptied field puts back the size it was showing rather than inventing one.
+  const wanted = ui.counterPx.value === '' || !Number.isFinite(typed)
+    ? Number(ui.counterPx.dataset.shown ?? 96)
+    : typed;
+  const px = setStepSize(wanted, false);
+  ui.counterPx.value = String(px);
+  ui.counterSize.value = String(px);
+});
+ui.counterPx.addEventListener('keydown', (event) => event.stopPropagation());
 
 for (const button of ui.toolbar.querySelectorAll('[data-dash]')) {
   button.addEventListener('click', () => {

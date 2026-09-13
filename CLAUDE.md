@@ -57,7 +57,7 @@ wrong, not the rule. Say so and stop.
 ## Commands
 
 ```bash
-node --test 'test/**/*.test.js'     # 264 unit tests plus the security invariants
+node --test 'test/**/*.test.js'     # 267 unit tests plus the security invariants
 node test/e2e/run.mjs               # real Chrome, drives a capture over CDP
 node tools/make-icons.mjs --check   # icons still match their design source
 ./tools/pack.sh                     # build dist/openfullpage-<version>.zip
@@ -82,6 +82,7 @@ by the end to end suite in `test/e2e/`. See [docs/TESTING.md](docs/TESTING.md).
 | Wondering why something is the way it is | [docs/DECISIONS.md](docs/DECISIONS.md) |
 | Picking up work | [TASKS.md](TASKS.md), then [docs/ROADMAP.md](docs/ROADMAP.md) |
 | About to hit a known edge | [docs/LIMITATIONS.md](docs/LIMITATIONS.md) |
+| Making a screenshot or a promo tile | [docs/RENDERING-METHOD.md](docs/RENDERING-METHOD.md) |
 | Releasing | [docs/PLAYBOOK.md](docs/PLAYBOOK.md) |
 
 ## Skill routing

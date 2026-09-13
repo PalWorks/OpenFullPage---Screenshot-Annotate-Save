@@ -96,6 +96,10 @@ decisions and the task list all cite them; they are groupings of work, not
 versions that were ever published separately. The next published version will be
 the one that carries F10.
 
+**1.10.1 on 2026-09-13** is a patch between the two: the numbered step's size moved
+under its own chevron (D70), and the store listing was redone. It carries no
+roadmap item, so F10 still opens the next minor version.
+
 **What to pick up next: F10**, multi-part export for very long pages. It is the only
 item on this page that fixes something a user has actually hit, T11 has unblocked it,
 and it is the last thing standing between the product and an honest claim that it

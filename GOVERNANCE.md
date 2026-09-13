@@ -31,7 +31,7 @@ If the current maintainer can no longer maintain it, the extension will be
 The line below is re-signed at every release. **If it is missing, stale by more
 than one release, or removed, treat this extension as compromised and uninstall it.**
 
-> As of **2026-09-11**, the maintainer has sole control of the publisher account,
+> As of **2026-09-13**, the maintainer has sole control of the publisher account,
 > has received no acquisition offer that was accepted, and has not been compelled
 > by any party to alter this extension.
 

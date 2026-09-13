@@ -2085,3 +2085,43 @@ design has a source and that the clipping defect cannot come back, not that the 
 is a constant. The tiles are not shipped in the extension, so nothing about the
 `diff -r` audit changes.
 
+## D70: The numbered step owns its size control
+
+**Date.** 2026-09-13.
+
+**Context.** A step's size became settable in 1.10.0 as a typed field at the bottom
+of the Stroke style popover. It went there because that popover is where the exact
+stroke width is typed, and a control of its own meant a change to the toolbar. The
+placement was defensible and undiscoverable: the size of a numbered badge is not a
+property anyone expects under the style of a line.
+
+**Decision.** The Numbered step button becomes a split button, the same pattern as
+Text (D38): the glyph half picks the tool, the chevron opens a Step size popover
+holding a slider and the exact value. The row leaves Stroke style rather than being
+kept in both places, because two controls writing one value from two panels is the
+duplication D50 only accepted where discovery could not be solved any other way,
+and here the new home solves it.
+
+Approved from a before and after preview rendered from the real markup, per the
+working agreement on toolbar changes.
+
+**Details.**
+
+- The slider spans 16 to 400 pixels across. The model allows up to 800
+  (`MAX_COUNTER_RADIUS` is 400), and a linear slider that wide put the default 96
+  at a tenth of its travel. The field still accepts the full range.
+- The popover is always enabled. It hangs off the step's own button, so opening it
+  already says which shape is meant, and with nothing selected it sets the next
+  step. The disabled state the Stroke style row needed is gone with the row.
+- A slider drag is one undo step. `setCounterSize(px, { live: true })` amends the
+  present and remembers the document it started from; the release commits once
+  against that. A drag that ends at the starting size commits nothing (D39). The
+  remembered base is dropped if anything else has written history in between.
+- `.pop.counter` sets `display: flex` without the `#toolbar` prefix. With it, the
+  rule ties `#toolbar .pop[hidden]` on specificity and, coming later, wins, so the
+  popover never hides. The first preview render showed exactly that.
+
+**Consequences.** Every control right of the button moves 16 pixels. None is
+reordered. The e2e suite checks the placement, that picking the tool does not open
+the popover, that the slider and field agree, that the drawn disc matches, and that
+one undo reverses a whole drag.

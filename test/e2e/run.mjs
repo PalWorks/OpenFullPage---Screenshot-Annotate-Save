@@ -42,6 +42,11 @@ const CHROME =
   ].find((p) => existsSync(p));
 const PORT = 8787;
 const CROSS_ORIGIN_PORT = 8788; // a genuinely different origin, with no network
+// The store demo page, served from store/demo/ rather than test/e2e/fixture/.
+// --market photographs a page that will be published, and the fixture is built to
+// be measured rather than looked at: grey bands and a bar that says STICKY HEADER.
+// Keeping them apart means neither has to compromise for the other.
+const DEMO_PORT = 8789;
 const DEBUG_PORT = 9333;
 const VIEWPORT = { width: 1280, height: 800 };
 
@@ -323,11 +328,11 @@ async function watchToolbarPopup(cdp, extensionId, ok) {
   return problems;
 }
 
-function serveFixture(port, indexName = 'index.html') {
+function serveFixture(port, indexName = 'index.html', root = join(HERE, 'fixture')) {
   const server = createServer((req, res) => {
     const name = req.url === '/' ? `/${indexName}` : req.url.split('?')[0];
     try {
-      const body = readFileSync(join(HERE, 'fixture', name.replace(/\.\./g, '')));
+      const body = readFileSync(join(root, name.replace(/\.\./g, '')));
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       res.end(body);
     } catch {
@@ -970,33 +975,80 @@ async function exerciseImport(cdp, session, check) {
  *
  * A step was sized from the stroke width and nothing else, so the only way to
  * get a bigger one was to draw thicker lines, and once placed it was final. The
- * check that earns its place is the last one: the disc actually drawn has to be
- * the size that was typed, because a control that sets a value the renderer
- * ignores is worse than no control.
+ * checks that earn their place are the drawn ones: the disc on the canvas has to
+ * be the size that was set, because a control that sets a value the renderer
+ * ignores is worse than no control, and a slider drag has to undo as one step.
  */
 async function exerciseCounterSize(cdp, session, check) {
-  const enabled = () => evaluate(cdp, session,
-    'document.getElementById("counter-px").disabled === false');
+  const closeAll = () => evaluate(cdp, session, `(() => {
+    for (const p of document.querySelectorAll('.pop')) p.hidden = true;
+    for (const b of document.querySelectorAll('[data-pop]')) b.setAttribute('aria-expanded', 'false');
+  })()`);
 
-  await clickButton(cdp, session, '[data-tool="select"]');
-  await sleep(120);
-  check(!(await enabled()),
-    'the step size control is live under the selection tool, where it means nothing',
-    'the step size control is off when no numbered step is in play');
+  // It lives under the step's own chevron now, and nowhere else (D70). A second
+  // copy left behind in Stroke style would be two controls for one value.
+  const placement = await evaluate(cdp, session, `JSON.stringify({
+    inStroke: !!document.querySelector('#pop-style #counter-px, #pop-style #counter-size'),
+    inOwn: !!document.querySelector('#pop-counter #counter-px')
+      && !!document.querySelector('#pop-counter #counter-size'),
+  })`).then(JSON.parse);
+  check(placement.inOwn && !placement.inStroke,
+    `the step size is in the wrong popover: ${JSON.stringify(placement)}`,
+    'the step size lives under the numbered step chevron, and not in Stroke style');
 
   await clickButton(cdp, session, '[data-tool="counter"]');
   await sleep(120);
-  check(await enabled(),
-    'choosing the numbered step tool left the step size control disabled',
-    'choosing the numbered step tool turns its size control on');
+  const opened = await evaluate(cdp, session,
+    '!document.getElementById("pop-counter").hidden');
+  check(!opened,
+    'picking the numbered step tool also opened its size popover, over the canvas',
+    'picking the numbered step tool leaves its size popover closed');
 
-  // Typed, not dragged, and then drawn. 160 across is well clear of the default,
-  // which follows the stroke width and lands near 96.
-  await evaluate(cdp, session, `(() => {
-    const box = document.getElementById('counter-px');
-    box.value = '160';
-    box.dispatchEvent(new Event('change', { bubbles: true }));
+  await clickButton(cdp, session, '[data-pop="pop-counter"]');
+  await sleep(120);
+  const shown = await evaluate(cdp, session, `(() => {
+    const p = document.getElementById('pop-counter');
+    return getComputedStyle(p).display !== 'none' && p.getClientRects().length > 0;
   })()`);
+  check(shown,
+    'the numbered step chevron did not show its size popover',
+    'the numbered step chevron opens its size popover');
+
+  // Dragged, then drawn. The slider's input keeps the field in step, and 160
+  // across is well clear of the default, which follows the stroke width.
+  const paired = await evaluate(cdp, session, `(() => {
+    const range = document.getElementById('counter-size');
+    range.value = '160';
+    range.dispatchEvent(new Event('input', { bubbles: true }));
+    range.dispatchEvent(new Event('change', { bubbles: true }));
+    return document.getElementById('counter-px').value;
+  })()`);
+  check(paired === '160',
+    `the slider moved to 160 and the field says ${paired}`,
+    'moving the step size slider updates the exact field');
+
+  // The two ends of the field. Past the largest step it clamps and the slider
+  // sits at its own end; emptied, it puts back what it showed instead of a
+  // default. Both left at 160 afterwards for the drawing below.
+  const edges = await evaluate(cdp, session, `(() => {
+    const field = document.getElementById('counter-px');
+    const range = document.getElementById('counter-size');
+    field.value = '900';
+    field.dispatchEvent(new Event('change', { bubbles: true }));
+    const high = { field: field.value, range: range.value };
+    field.value = '160';
+    field.dispatchEvent(new Event('change', { bubbles: true }));
+    field.value = '';
+    field.dispatchEvent(new Event('change', { bubbles: true }));
+    return JSON.stringify({ high, emptied: field.value });
+  })()`).then(JSON.parse);
+  check(edges.high.field === '800' && edges.high.range === '400',
+    `900 typed gave field ${edges.high.field} and slider ${edges.high.range}, not 800 and 400`,
+    'a size past the largest clamps to 800, with the slider at its end');
+  check(edges.emptied === '160',
+    `an emptied field became ${edges.emptied} rather than putting back 160`,
+    'an emptied size field puts back the size it showed');
+  await closeAll();
   await sleep(120);
 
   // Real viewport coordinates, from the canvas box. Fractions here place the
@@ -1015,28 +1067,129 @@ async function exerciseCounterSize(cdp, session, check) {
 
   // The disc is the only dark thing on a flat blue picture, so a scan through
   // its middle measures it. Counting pixels rather than reading the model: the
-  // suite checks what was drawn, never what the editor believes.
-  const across = await evaluate(cdp, session, `(() => {
+  // suite checks what was drawn, never what the editor believes. The blue the
+  // picture is made of has a low red channel and a high blue one; anything else
+  // on the row belongs to a step. `from` and `to` are fractions of the width, so
+  // two steps on the same row can be measured apart.
+  const measure = (from = 0, to = 1) => evaluate(cdp, session, `(() => {
     const c = document.getElementById('canvas');
-    const g = c.getContext('2d');
-    const row = g.getImageData(0, Math.round(c.height / 2), c.width, 1).data;
+    const row = c.getContext('2d').getImageData(0, Math.round(c.height / 2), c.width, 1).data;
     let widest = 0;
     let run = 0;
-    for (let x = 0; x < c.width; x += 1) {
-      const r = row[x * 4];
-      const b = row[x * 4 + 2];
-      // The blue the picture is made of has a low red channel and a high blue
-      // one. Anything else on this row belongs to the step.
-      const isPicture = r < 90 && b > 180;
-      run = isPicture ? 0 : run + 1;
+    for (let x = Math.round(c.width * ${from}); x < Math.round(c.width * ${to}); x += 1) {
+      run = row[x * 4] < 90 && row[x * 4 + 2] > 180 ? 0 : run + 1;
       if (run > widest) widest = run;
     }
     return widest;
   })()`);
+  const escape = () => evaluate(cdp, session,
+    `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
 
+  const across = await measure();
   check(Math.abs(across - 160) <= 24,
-    `a step typed as 160px across was drawn ${across}px across`,
-    `a numbered step is drawn the size that was typed (${across}px for 160)`);
+    `a step set to 160px across was drawn ${across}px across`,
+    `a numbered step is drawn the size that was set (${across}px for 160)`);
+
+  // A slider dragged over a selected step is one undo step, not one per pixel.
+  // Three live positions and a release, then a single undo has to put the step
+  // back to 160, with the selection dropped first so its outline is not counted
+  // as part of the disc.
+
+  await clickButton(cdp, session, '[data-tool="select"]');
+  await dragOn(cdp, session, middle, middle, 1);
+  await sleep(120);
+  await evaluate(cdp, session, `(() => {
+    const range = document.getElementById('counter-size');
+    for (const v of ['200', '240', '280']) {
+      range.value = v;
+      range.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    range.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await escape();
+  await sleep(200);
+  const dragged = await measure();
+  check(Math.abs(dragged - 280) <= 24,
+    `a selected step dragged to 280px was drawn ${dragged}px across`,
+    `the slider resizes a selected step (${dragged}px for 280)`);
+
+  await evaluate(cdp, session,
+    `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true }))`);
+  await escape();
+  await sleep(200);
+  const undone = await measure();
+  check(Math.abs(undone - 160) <= 24,
+    `one undo after a slider drag left the step ${undone}px across, not back at 160`,
+    `a whole slider drag is undone in one step (${undone}px, back to 160)`);
+
+  // A key held on the slider. Chrome fires change on every arrow press, auto
+  // repeat included, so without the key-up rule each press was its own undo
+  // step. Real key events through CDP, since a synthetic one does not move a
+  // range. Page Up moves it a tenth of its travel, which is easy to see.
+  await clickButton(cdp, session, '[data-tool="select"]');
+  await dragOn(cdp, session, middle, middle, 1);
+  await sleep(120);
+  await clickButton(cdp, session, '[data-pop="pop-counter"]');
+  await sleep(120);
+  await evaluate(cdp, session, 'document.getElementById("counter-size").focus()');
+  const pageUp = { key: 'PageUp', code: 'PageUp', windowsVirtualKeyCode: 33 };
+  await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...pageUp }, session);
+  for (let i = 0; i < 2; i += 1) {
+    await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', autoRepeat: true, ...pageUp }, session);
+  }
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', ...pageUp }, session);
+  await sleep(120);
+  const held = Number(await evaluate(cdp, session, 'document.getElementById("counter-size").value'));
+  await closeAll();
+  await escape();
+  await evaluate(cdp, session,
+    `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true }))`);
+  await escape();
+  await sleep(200);
+  const afterHeld = await measure();
+  check(held > 160 && Math.abs(afterHeld - 160) <= 24,
+    `a held key took the slider to ${held}, and one undo left the step ${afterHeld}px across`,
+    `a key held on the slider is one undo step (${held} held, ${afterHeld}px after one undo)`);
+
+  // Typed, then a click on a different step before the field was left. The
+  // canvas moves the selection before the field's change arrives, and the size
+  // used to land on the step clicked. A small second step at the left edge, the
+  // centre one selected and sized by typing, then the left one clicked.
+  await clickButton(cdp, session, '[data-pop="pop-counter"]');
+  await sleep(120);
+  await evaluate(cdp, session, `(() => {
+    const range = document.getElementById('counter-size');
+    range.value = '40';
+    range.dispatchEvent(new Event('input', { bubbles: true }));
+    range.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await closeAll();
+  await clickButton(cdp, session, '[data-tool="counter"]');
+  const edge = { x: Math.round(box.x + box.width * 0.1), y: middle.y };
+  await dragOn(cdp, session, edge, edge, 1);
+  await sleep(150);
+  await clickButton(cdp, session, '[data-tool="select"]');
+  await dragOn(cdp, session, middle, middle, 1);
+  await sleep(120);
+  await clickButton(cdp, session, '[data-pop="pop-counter"]');
+  await sleep(120);
+  await evaluate(cdp, session, `(() => {
+    const field = document.getElementById('counter-px');
+    field.focus();
+    field.select();
+  })()`);
+  await cdp.send('Input.insertText', { text: '220' }, session);
+  await sleep(120);
+  await dragOn(cdp, session, edge, edge, 1);
+  await sleep(150);
+  await closeAll();
+  await escape();
+  await sleep(200);
+  const centre = await measure(0.25, 1);
+  const left = await measure(0, 0.25);
+  check(Math.abs(centre - 220) <= 24 && Math.abs(left - 40) <= 12,
+    `typed 220 then clicked another step: the centre one is ${centre}px and the clicked one ${left}px`,
+    `a typed size stays on the step being edited when another is clicked (${centre}px, ${left}px)`);
 
   await clickButton(cdp, session, '[data-tool="select"]');
   await evaluate(cdp, session,
@@ -1044,66 +1197,172 @@ async function exerciseCounterSize(cdp, session, check) {
 }
 
 /**
- * Purpose made screenshots of the real product, for the site and the store.
+ * Purpose made screenshots of the real product, for the store and the site.
  *
  * Deliberately not the same pass as exerciseEditor: that one ends cropped and
  * covered in test marks. These are what a person would actually see, drawn on
  * purpose, at the 1280x800 the Chrome Web Store asks for.
+ *
+ * Every position here is a capture pixel aimed at a feature of
+ * store/demo/report.html: the one spike on the revenue chart, the first figure
+ * on the page, the email column of the accounts table. That page is captured at
+ * scale 1, so a capture pixel is a CSS pixel of it and the numbers were read off
+ * it with getBoundingClientRect rather than guessed. The pass this replaced
+ * placed everything at fractions of the canvas, and a fraction points somewhere
+ * else the moment the page behind it changes length.
  */
-async function marketingShots(cdp, session, dir, p) {
+async function marketingShots(cdp, session, dir) {
   // The Chrome Web Store takes 1280x800 or 640x400 and nothing else. The window
   // is 1280x800 but browser chrome eats 87 of those pixels, so the page viewport
   // is overridden to the exact size the store wants.
   await cdp.send('Emulation.setDeviceMetricsOverride',
     { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false }, session);
-  await sleep(300);
+  await sleep(350);
+
+  // Put the overview pane away, through the same switch the options page uses.
+  // It is a navigator for a long capture and it is faded until the pointer
+  // arrives, so in a still photograph it reads as an empty white box sitting on
+  // the picture rather than as a control. Setting `hidden` here would not hold:
+  // the pane owns that attribute and takes itself back whenever the zoom or the
+  // scroll changes, which is why this sets the switch instead.
+  await evaluate(cdp, session, `(() => {
+    const pane = document.getElementById('overview');
+    pane.dataset.off = 'yes';
+    pane.hidden = true;
+  })()`);
+
+  /** Where a given point of the capture is on screen, at whatever the zoom is. */
+  const at = async (ix, iy) => JSON.parse(await evaluate(cdp, session, `(() => {
+    const c = document.getElementById('canvas');
+    const b = c.getBoundingClientRect();
+    const s = b.width / c.width;
+    return JSON.stringify({
+      x: Math.round(b.left + ${ix} * s),
+      y: Math.round(b.top + ${iy} * s),
+    });
+  })()`));
+
+  /** Scroll until that band of the capture sits just under the toolbar. */
+  const show = async (iy) => {
+    await evaluate(cdp, session, `(() => {
+      const c = document.getElementById('canvas');
+      const b = c.getBoundingClientRect();
+      const s = b.width / c.width;
+      window.scrollTo(0, Math.max(0, Math.round(b.top + window.scrollY + ${iy} * s - 150)));
+    })()`);
+    await sleep(280);
+  };
+
+  /**
+   * Shut every popover before a shot.
+   *
+   * Belt and braces rather than trusting a second click on the trigger to
+   * toggle: a popover left open is invisible in the run log and obvious in the
+   * published picture, and these are published.
+   */
+  const closePops = () => evaluate(cdp, session, `(() => {
+    for (const p of document.querySelectorAll('.pop')) p.hidden = true;
+    for (const b of document.querySelectorAll('[data-pop]')) b.setAttribute('aria-expanded', 'false');
+  })()`);
+
+  /** Fit the whole height, or go back to reading width. */
+  const fit = async (which) => {
+    await clickButton(cdp, session, '[data-pop="pop-zoom"]');
+    await sleep(160);
+    await clickButton(cdp, session, `#pop-zoom [data-fit="${which}"]`);
+    await sleep(220);
+    await closePops();
+    await sleep(260);
+  };
+
+  // 1. THE WHOLE PAGE, AT ONCE.
+  //
+  // Fit the height and all 4,886 pixels of the report are on screen together,
+  // which is the one thing this does that the screenshot key does not. The file
+  // bar above reads the true size, so the ribbon is not asking to be believed.
+  await fit('height');
   await evaluate(cdp, session, 'window.scrollTo(0, 0)');
-  await sleep(250);
+  await sleep(300);
   await shoot(cdp, session, join(dir, 'shot-capture.png'));
 
-  // An arrow, a filled box and a numbered step, placed rather than dragged at random.
+  await fit('width');
+  await evaluate(cdp, session, 'window.scrollTo(0, 0)');
+  await sleep(260);
+
+  // 2. ANNOTATION.
+  //
+  // A filled box around the headline figure, an arrow into the one peak on the
+  // chart, and two numbered steps setting a reading order. Every mark lands on
+  // something a person would actually want to point at.
+  await show(196);
+
   await clickButton(cdp, session, '[data-pop="pop-border"]');
   await clickButton(cdp, session, '[data-paint="border"][data-colour="#ef4444"]');
-  await clickButton(cdp, session, '[data-pop="pop-shapes"]');
-  await clickButton(cdp, session, '#pop-shapes [data-tool="rect"]');
   await clickButton(cdp, session, '[data-pop="pop-fill"]');
   await clickButton(cdp, session, '[data-paint="fill"][data-colour="#eab308"]');
-  // Around the headline rather than across it.
-  await dragOn(cdp, session, p(0.055, 0.27), p(0.53, 0.58));
+  await closePops();
+  await clickButton(cdp, session, '[data-pop="pop-shapes"]');
+  await clickButton(cdp, session, '#pop-shapes [data-tool="rect"]');
+  await closePops();
+  // The Recurring revenue card: 53,234, 278 wide, 175 tall.
+  await dragOn(cdp, session, await at(44, 226), await at(340, 418));
 
   await clickButton(cdp, session, '[data-pop="pop-shapes"]');
   await clickButton(cdp, session, '#pop-shapes [data-tool="arrow"]');
-  await dragOn(cdp, session, p(0.82, 0.72), p(0.57, 0.50));
+  await closePops();
+  // Into the peak at 687,557, from clear air below and right of it.
+  await dragOn(cdp, session, await at(1010, 772), await at(716, 580));
 
   await clickButton(cdp, session, '[data-tool="counter"]');
-  await dragOn(cdp, session, p(0.86, 0.76), p(0.86, 0.76), 1);
+  const first = await at(366, 243);
+  await dragOn(cdp, session, first, first, 1);
+  const second = await at(1044, 800);
+  await dragOn(cdp, session, second, second, 1);
 
   await clickButton(cdp, session, '[data-tool="select"]');
-  // Nothing selected, so the marching ants and handles are not in the picture.
   await evaluate(cdp, session,
     `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
-  await evaluate(cdp, session, 'window.scrollTo(0, 0)');
-  await sleep(250);
+  await closePops();
+  await sleep(240);
   await shoot(cdp, session, join(dir, 'shot-annotate.png'));
 
-  // The redaction tool, which is the one nobody expects to be destructive.
+  // 3. REDACTION.
+  //
+  // Three of the eight contact addresses in the accounts table, which leaves the
+  // five underneath readable: the picture carries its own before and after, and
+  // the claim that the pixels are gone is easier to believe beside the ones that
+  // are still there.
+  await show(1236);
   await clickButton(cdp, session, '[data-tool="pixelate"]');
-  await dragOn(cdp, session, p(0.10, 0.42), p(0.46, 0.52));
+  await dragOn(cdp, session, await at(384, 1351), await at(586, 1520));
   await clickButton(cdp, session, '[data-tool="select"]');
-  await sleep(200);
+  await evaluate(cdp, session,
+    `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+  await closePops();
+  await sleep(240);
   await shoot(cdp, session, join(dir, 'shot-redact.png'));
 
-  // Saving: the filename box and the format menu, both open.
+  // 4. SAVING.
+  //
+  // The format menu encodes the real image to fill in the sizes, so what it
+  // says PNG, JPEG, WebP and PDF would weigh is what they weigh.
+  await show(196);
   await evaluate(cdp, session, `document.getElementById('download').click()`);
-  await sleep(200);
+  await sleep(500);
   await shoot(cdp, session, join(dir, 'shot-save.png'));
   await evaluate(cdp, session, `document.getElementById('download').click()`);
+  await sleep(220);
 
-  // The upload hand-off, which is the claim made visible.
-  await clickButton(cdp, session, '#upload');
-  await sleep(200);
-  await shoot(cdp, session, join(dir, 'shot-upload.png'));
-  await clickButton(cdp, session, '#upload');
+  // 5. THE TOOLBOX.
+  //
+  // Fifteen shapes behind one chevron. The fifth shot used to be the upload hand
+  // off, which explains a policy where this shows a capability, and the policy
+  // is already the whole of the listing copy.
+  await closePops();
+  await clickButton(cdp, session, '[data-pop="pop-shapes"]');
+  await sleep(320);
+  await shoot(cdp, session, join(dir, 'shot-tools.png'));
+  await closePops();
 
   await cdp.send('Emulation.clearDeviceMetricsOverride', {}, session);
 }
@@ -3931,6 +4190,7 @@ async function main() {
   const downloadDir = mkdtempSync(join(tmpdir(), 'fpc-downloads-'));
   const server = await serveFixture(PORT);
   const crossOrigin = await serveFixture(CROSS_ORIGIN_PORT, 'cross.html');
+  const demo = await serveFixture(DEMO_PORT, 'report.html', join(REPO, 'store', 'demo'));
   const deepFrames = process.argv.includes('--deep');
   const extensionDir = stageExtension(deepFrames);
   const profileDir = stageProfile(downloadDir);
@@ -3985,6 +4245,12 @@ async function main() {
     const override = process.env.FPC_URLS;
     const targets = override
       ? override.split(',').map((u) => u.trim()).filter(Boolean)
+      // --market photographs the store demo page unless told otherwise, so
+      // regenerating the screenshots is one command with no environment to
+      // remember. store/LISTING.md quotes that command, and a listing whose
+      // own instructions need an undocumented variable drifts immediately.
+      : process.argv.includes('--market')
+      ? [`http://127.0.0.1:${DEMO_PORT}/`]
       : process.argv.includes('--stop')
       ? [`http://127.0.0.1:${PORT}/tall.html`]
       : process.argv.includes('--iframes')
@@ -4338,12 +4604,7 @@ async function main() {
 
       if (state.ready && shotsDir && process.argv.includes('--market')) {
         console.log('\n  marketing screenshots:');
-        const box = await canvasState(cdp, result);
-        const at = (fx, fy) => ({
-          x: Math.round(box.box.x + box.box.width * fx),
-          y: Math.round(box.box.y + Math.min(box.box.height, 620) * fy),
-        });
-        await marketingShots(cdp, result, shotsDir, at);
+        await marketingShots(cdp, result, shotsDir);
       }
 
       if (state.ready && process.argv.includes('--nudge')) {
@@ -4375,6 +4636,7 @@ async function main() {
             ['05-fill-colour', '[data-pop="pop-fill"]'],
             ['06-text-style', '[data-pop="pop-text"]'],
             ['07-upload', '#upload'],
+            ['07b-step-size', '[data-pop="pop-counter"]'],
           ]) {
             await openPopover(cdp, result, trigger);
             await sleep(150);
@@ -4737,6 +4999,20 @@ async function main() {
       } else {
         console.log(`  ok   it saved ${img.width}x${img.height}, trimmed to the part that was reached`);
       }
+    } else if (process.argv.includes('--market')) {
+      // The demo page, not the fixture, so there are no bands to count. What a
+      // screenshot run needs is a real capture of the whole report behind the
+      // photographs: without this branch it fell through to the fixture check
+      // and exited 1 on every successful run.
+      console.log('\nverifying the demo capture:');
+      const png = files.find((f) => f.endsWith(`-${DEMO_PORT}.png`));
+      const img = png && decodePng(readFileSync(join(downloadDir, png)));
+      if (!img || img.height < 4000) {
+        console.log(`  FAIL the demo capture is missing or short: ${png} ${img ? img.height : ''}`);
+        process.exitCode = 1;
+      } else {
+        console.log(`  ok   ${png} is the whole report, ${img.width}x${img.height}`);
+      }
     } else if (!fixturePng) {
       console.log('\nno fixture capture to verify');
       process.exitCode = 1;
@@ -4779,6 +5055,7 @@ async function main() {
     child.kill('SIGKILL');
     server.close();
     crossOrigin.close();
+    demo.close();
   }
 }
 

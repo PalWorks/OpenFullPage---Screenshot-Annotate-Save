@@ -461,7 +461,7 @@ Two layers, no framework.
 
 ```bash
 ./tools/check.sh                 # everything CI runs: pack, unit tests, icons, verifier
-node --test 'test/**/*.test.js'  # 264 unit tests, including the security invariants
+node --test 'test/**/*.test.js'  # 267 unit tests, including the security invariants
 node tools/make-icons.mjs --check
 node test/e2e/run.mjs            # real Chrome, drives a capture over CDP
 ```

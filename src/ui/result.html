@@ -644,6 +644,9 @@
     background-color: var(--surface);
   }
   #toolbar .pop.zoom { width: 214px; }
+  /* No #toolbar on the display rule. With it, this scores the same as
+     `#toolbar .pop[hidden]` and comes later, so the popover would never hide. */
+  .pop.counter { width: 214px; display: flex; flex-direction: column; gap: 6px; }
   .pop.zoom .paintrow input[type="range"] { flex: 1 1 auto; min-width: 0; accent-color: var(--indigo); }
   /* The percentage is typed as well as dragged, so it is a field and not a
      readout: the one number answers both, which is why the 100% button that used
@@ -652,7 +655,8 @@
   /* Wide enough for three digits, and the browser's own spinner suppressed: it
      is 14 pixels of the field's width and this stepper has no arrows for it to
      sit beside, so with it there "100" was drawn clipped. */
-  #toolbar .pop.zoom .zoomfield input { width: 56px; text-align: right; }
+  #toolbar .pop.zoom .zoomfield input,
+  #toolbar .pop.counter .zoomfield input { width: 56px; text-align: right; }
   .zoomfield input::-webkit-inner-spin-button,
   .zoomfield input::-webkit-outer-spin-button { -webkit-appearance: none; appearance: none; margin: 0; }
   .fits { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 8px; }
@@ -1213,7 +1217,39 @@
     </div>
   </span>
 
-  <button class="icon" type="button" data-tool="counter" data-button="counter" aria-pressed="false" aria-label="Numbered step" title="Numbered step (N)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="6.8"/><path d="M8.8 8.2 10.6 6.9v6.4"/></svg></button>
+  <!-- THE SIZE OF A NUMBERED STEP
+       A split button, like Text: the glyph half picks the tool, the chevron opens
+       its size. The size first shipped as a typed row at the bottom of Stroke
+       style, on the argument that the toolbar was not to gain a control. Nobody
+       looks for the size of a number under the style of a line, so it moved here,
+       beside the tool it belongs to, with a slider as well as the exact value.
+       The toolbar gains a chevron and nothing is reordered. D70. -->
+  <span class="grp split" data-button="counter">
+    <button class="icon combo-main" type="button" id="counter-combo" data-tool="counter"
+            aria-pressed="false" aria-label="Numbered step" title="Numbered step (N)">
+      <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="6.8"/><path d="M8.8 8.2 10.6 6.9v6.4"/></svg>
+    </button>
+    <button class="icon combo-chev" type="button" data-pop="pop-counter"
+            aria-haspopup="true" aria-expanded="false" aria-label="Step size" title="Step size">
+      <svg class="caret" viewBox="0 0 8 8" aria-hidden="true" focusable="false"><path d="M1.4 2.9 4 5.5l2.6-2.6"/></svg>
+    </button>
+    <div class="pop counter" id="pop-counter" role="group" aria-labelledby="pop-counter-title" hidden>
+      <p class="pop-title" id="pop-counter-title">Step size</p>
+      <!-- The slider stops at 400 so the sizes people actually use are not
+           squeezed into its first tenth; the field still takes up to 800, the
+           largest a step can be, and the slider sits at its end past 400. -->
+      <div class="paintrow">
+        <input id="counter-size" type="range" min="16" max="400" step="2" value="96"
+               aria-label="Numbered step size">
+        <span class="stepper zoomfield">
+          <input id="counter-px" type="number" min="16" max="800" step="2" value="96"
+                 aria-label="Numbered step size in pixels">
+          <span class="unit">px</span>
+        </span>
+      </div>
+      <p class="hint">Sets the selected steps and the next one you place.</p>
+    </div>
+  </span>
   <button class="icon" type="button" data-tool="pixelate" data-button="pixelate" aria-pressed="false" aria-label="Redact" title="Redact (P)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><g fill="currentColor" stroke="none"><rect x="2" y="2" width="4" height="4"/><rect x="6" y="2" width="4" height="4" fill-opacity="0.3"/><rect x="10" y="2" width="4" height="4" fill-opacity="0.7"/><rect x="14" y="2" width="4" height="4" fill-opacity="0.35"/><rect x="2" y="6" width="4" height="4" fill-opacity="0.3"/><rect x="6" y="6" width="4" height="4" fill-opacity="0.85"/><rect x="10" y="6" width="4" height="4" fill-opacity="0.3"/><rect x="14" y="6" width="4" height="4"/><rect x="2" y="10" width="4" height="4" fill-opacity="0.7"/><rect x="6" y="10" width="4" height="4" fill-opacity="0.3"/><rect x="10" y="10" width="4" height="4"/><rect x="14" y="10" width="4" height="4" fill-opacity="0.5"/><rect x="2" y="14" width="4" height="4" fill-opacity="0.35"/><rect x="6" y="14" width="4" height="4"/><rect x="10" y="14" width="4" height="4" fill-opacity="0.45"/><rect x="14" y="14" width="4" height="4" fill-opacity="0.3"/></g></svg></button>
   <button class="icon" type="button" data-tool="crop" data-button="crop" aria-pressed="false" aria-label="Crop" title="Crop (C)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M5.6 2v12.4H18"/><path d="M2 5.6h12.4V18"/></svg></button>
   <button class="icon" type="button" data-tool="eraser" data-button="eraser" aria-pressed="false" aria-label="Eraser" title="Eraser, delete what you drag over (E)"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M8.6 16.4 3.6 11.4a1.4 1.4 0 0 1 0-2l5.6-5.6a1.4 1.4 0 0 1 2 0l4 4a1.4 1.4 0 0 1 0 2l-6.6 6.6Z"/><path d="M16.4 16.4h-7.8"/><path d="M6.2 8.8 11.2 13.8"/></svg></button>
@@ -1259,22 +1295,6 @@
       <div class="numrow">
         <label for="stroke-px">Exact</label>
         <input id="stroke-px" type="number" min="1" max="64" step="1" value="4" aria-label="Stroke width in pixels">
-        <span class="unit">px</span>
-      </div>
-      <!-- THE SIZE OF A NUMBERED STEP
-           A step was sized from the stroke width and nothing else, so the only
-           way to get a bigger number was to draw thicker lines, and once placed
-           its size was final. It has corner handles now, and this is the same
-           number for a reader who wants two steps exactly the same size rather
-           than roughly. It lives here, with the exact stroke width, because this
-           popover is already where a size is typed; a control of its own would
-           have meant a new button on a toolbar that is not to be rearranged.
-           Disabled rather than hidden when no step is in play, which is what the
-           corner row above does, so the popover never changes height. -->
-      <div class="numrow">
-        <label for="counter-px">Step size</label>
-        <input id="counter-px" type="number" min="16" max="800" step="2" value="96"
-               aria-label="Numbered step size in pixels">
         <span class="unit">px</span>
       </div>
     </div>

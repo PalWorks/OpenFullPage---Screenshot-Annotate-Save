@@ -8,6 +8,144 @@ deterministic, no timestamps, no host details, so this hash is reproducible from
 a clean checkout with `./tools/pack.sh`, not merely checkable against one download. See
 [docs/VERIFYING-YOUR-INSTALL.md](docs/VERIFYING-YOUR-INSTALL.md).
 
+## [1.10.1]: 2026-09-13
+
+One editor change, the step size below, and the store listing redone around it:
+new screenshots of a demo page, new promo tiles, a privacy policy and a support
+page of their own. Everything after the first entry is outside `src/`.
+
+`openfullpage-1.10.1.zip`. SHA-256 `37f6dc8e6b9766196fa4406cb1f8e309b1855a12bbc860ee44835405f91f6d2f`
+
+### Changed: the numbered step carries its own size
+
+The size of a step shipped in 1.10.0 as a typed row at the bottom of Stroke style,
+placed there so the toolbar would not gain a control. It was hard to find: nobody
+looks for the size of a number under the style of a line.
+
+The Numbered step button is now a split button, like Text. The glyph half picks
+the tool; the chevron opens Step size, a slider with the exact value beside it,
+setting the selected steps and the next one placed. The slider runs from 16 to
+400 pixels so the common sizes are not crowded into its first tenth, and the field
+still takes up to 800. The row is gone from Stroke style, so there is one control
+for one value.
+
+Dragging the slider over a selected step previews live and commits once on
+release, so undo takes the whole drag back rather than one pixel of it. Controls
+right of the button move 16 pixels; none is reordered. D70.
+
+### Changed: the store screenshots photograph a demo page, not the test fixture
+
+The five screenshots were captures of `test/e2e/fixture/index.html`, which exists
+to be measured rather than looked at: a sticky bar reading STICKY HEADER, a
+cookie bar reading FIXED COOKIE BAR, and forty grey bands. As a proof that the
+capture is correct it is exactly right, and as an advertisement it is a picture
+of a test card.
+
+`store/demo/report.html` is a page worth photographing: an invented analytics
+report, seven screenfuls tall, with a sticky header, a consent card, contact
+addresses worth redacting and one chart spike worth pointing at. Every name and
+figure on it is invented, because the screenshots are published and a real
+company's page is someone else's to publish.
+
+`--market` now serves and captures that page by default, so regenerating the
+screenshots is one command with no environment variable to remember. The
+choreography aims at features by their position in the capture rather than at
+fractions of the canvas, which is why the arrow lands on the spike rather than
+near it.
+
+### Added: `tools/make-shots.mjs`, the headline over each screenshot
+
+A raw screenshot of an editor is honest and says nothing. Each store screenshot
+is now the real photograph with one sentence over it, composed the same way the
+promo tiles are: HTML, laid out by real Chrome, from a description in the
+repository. The raw photographs are committed beside the finished ones in
+`store/screenshots/raw/`, so the difference between what was photographed and
+what was published is a diff rather than a claim.
+
+### Changed: the promo tiles lead with the product
+
+Both tiles led with a DevTools network panel showing zero requests. That is the
+argument this project wins on, and it is the argument for the *listing*, which a
+tile exists to get someone to open. A tile is a thumbnail in a grid of
+thumbnails: one picture, a few words, legible at half the size.
+
+They now show the demo page running off both edges of the tile, which is what a
+capture seven screenfuls tall actually looks like, under "The whole page. One
+shot." `tools/make-promo.mjs --all <dir>` writes three designs side by side and
+`CHOSEN` decides which ships, so the next argument about a tile is settled by
+looking at them rather than by editing a PNG.
+
+### Changed: the privacy policy has a URL of its own
+
+The listing pointed the store at `#permissions` on the home page. It now points
+at a privacy policy, which is what a reviewer asked for a privacy policy should
+find. The published page also covers what `docs/PRIVACY.md` cannot, because it
+belongs to the website rather than the extension: what the host sees, and what
+the support form does with a message.
+
+### Added: the support form on the website actually delivers
+
+The website had a support form with nowhere to post to. It posts to a Cloudflare
+Worker at `support.palworks.ai` now, which turns a message into an email from
+`openfullpage.support@palworks.ai` to `support@palworks.ai` through Resend and
+keeps nothing but two counters. The Worker holds the API key, because a static page
+cannot: that is the entire reason it exists rather than the browser calling Resend
+directly.
+
+It answers on its own domain rather than on a workers.dev address. Every
+workers.dev address is `<worker>.<account subdomain>.workers.dev`, and that account
+subdomain is shared with unrelated projects, so a published store listing would
+have carried another product's name in it. workers.dev is switched off, and
+`support.palworks.ai` is the only address.
+
+The site is still static, still has no script from anyone else on it, and still
+sends nothing anywhere unless a reader fills in the form and presses the button.
+The extension is unchanged and unaffected: it has no network access at all and
+cannot reach this or anything else.
+
+### Added: the shared Resend allowance is counted and enforced
+
+The Resend account carrying that email is on the free plan, 3000 a month, shared
+by at least six projects. A support form that quietly ate the allowance in week two
+would take the other five down with it.
+
+The Worker now reads an account wide monthly counter before sending and refuses
+past the cap, telling the reader to use their own mail app instead, which always
+works. The namespace holding that counter is named for the account rather than for
+this form, so any other project can bind it and appear in the same breakdown.
+
+`tools/resend-quota.mjs` in the website repository counts the month from Resend's
+own sent log, which sees every project whether or not it knows the counter exists,
+and prints the gap against what our Workers tallied. That gap is the traffic
+nothing is tracking yet. `--sync` writes the true total back, so the cap enforces
+against the whole account rather than against one form's partial view.
+
+If the counter cannot be read the Worker sends anyway, deliberately. A support form
+that refuses a bug report because a counter was unreachable is worse than one that
+sends an email it did not count.
+
+### Changed: the website serves its own fonts
+
+Both typefaces were loaded from Google Fonts, so opening a page that argues
+nothing is sent anywhere made a request to a third party before the first
+paragraph rendered. They are served from the site now, 168 KB of woff2 under the
+SIL Open Font License, and every request a page makes goes to its own host.
+
+`tools/font-check.mjs` in the website repository proves it, in both directions: no
+page reaches off site, and Archivo's variable weight axis really is live, so text
+at 800 measures wider than text at 400. Google serves that one file four times
+over and distinguishes the weights only in the CSS, which means self-hosting can
+quietly lose every bold heading on the site if nobody measures it.
+
+### Added: `docs/RENDERING-METHOD.md`
+
+How the screenshots and the promo tiles are actually made, written to be portable
+to another project rather than specific to this one. The short version is that
+none of it uses an image model: a store screenshot, a promo tile or an OG image is
+type, shapes and data, all of which a browser renders exactly and an image model
+does not. It carries the dependency free renderer, the guard that fails a tile
+with a clipped word in it, and the failures worth knowing about in advance.
+
 ## [1.10.0]: 2026-09-11
 
 The largest release so far: 29 commits over four days. It carries everything the

@@ -60,6 +60,7 @@ implements them twice. Every one has tests.
 | **F15** | Hide things on the page, then capture without them. Its own attribute and its own `display: none` stylesheet, removed in both cleanup paths so a failed capture still puts the page back. The automatic half was dropped as mis-specified | `src/content/pick.js`, `src/content/prepare.js`, D66, L46 |
 | **F30** | Adjust size on export. One scale, in `encode()`, the only function that turns the document into pixels, so Copy, Download and the size readout cannot disagree | `src/lib/plan.js`, `src/ui/result.js`, D67 |
 | **T2** | `encodeOrThrow`. `canvas.toBlob` reports failure with a null blob rather than an exception, so every encoding failure became a download of nothing with no error anywhere | `src/lib/encode.js`, D52 |
+| | The numbered step is a split button like Text. Its chevron opens the step size as a slider and an exact field, which left Stroke style. A slider drag is one undo step | `src/ui/result.*`, `src/ui/editor.js`, D70 |
 | **F1** | WebP export, and the output formats described once instead of in three lists that could disagree | `src/lib/encode.js`, `src/ui/result.html`, D52 |
 | **T11** | The port protocol carries a version. An update replaces the worker and leaves the pages it opened running old code, and a message shape change would fail silently | `src/lib/protocol.js`, `--stale`, D53 |
 | **F2** | Anything playing is paused for the capture and started again afterwards. Only what was playing, so a video already stopped stays stopped | `src/content/prepare.js`, L27, L28 |

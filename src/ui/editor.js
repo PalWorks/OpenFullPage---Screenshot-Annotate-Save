@@ -175,6 +175,9 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
   // stroke width", which is how every step was sized before this could be set,
   // so a reader who never touches the control sees exactly what they always saw.
   let counterRadius = null;
+  // The document as it was when a step size slider drag began, so the drag can
+  // be committed as one undo step when it ends. Null when no drag is under way.
+  let sizeBase = null;
   let hoverId = null;
   // Where the eraser is, in image pixels, so its reach can be drawn. Null when
   // the pointer is off the canvas, which is when the ring must not be drawn.
@@ -1861,11 +1864,40 @@ export function createEditor({ base, canvas, onChange, initial = {} }) {
      *
      * Applies to every selected step and becomes the size of the next one, which
      * is the rule every other control in this toolbar follows.
+     *
+     * `live` is a slider mid drag. Committing every position would put a hundred
+     * undo steps between the reader and the size they started from, so a live
+     * call amends the present and remembers the document it started from, and
+     * the closing call commits once against that. A drag that ends where it
+     * began commits nothing, the same rule as a move that changed nothing (D39).
      */
-    setCounterSize(next) {
+    setCounterSize(next, { live = false } = {}) {
       const radius = clamp(Math.round(next / 2), MIN_COUNTER_RADIUS, MAX_COUNTER_RADIUS);
       counterRadius = radius;
-      restyleSelection({ radius }, (shape) => shape.kind === 'counter');
+      const isStep = (shape) => shape.kind === 'counter';
+      // A base is only trusted while nothing else has written history since it
+      // was taken; amend keeps the past array itself, and any commit replaces it.
+      // The targets are the steps selected when the gesture began, on purpose: a
+      // click on another step moves the selection before a typed size's `change`
+      // arrives, and the size belongs to the step that was being edited.
+      if (sizeBase && sizeBase.past !== doc.past) sizeBase = null;
+      const base = sizeBase ?? doc;
+      const targets = selectedShapes(base).filter(isStep);
+      if (targets.length > 0) {
+        let present = doc.present;
+        for (const shape of targets) present = replaceShape(present, { ...shape, radius });
+        if (live) {
+          sizeBase = base;
+          doc = amend(doc, present);
+        } else {
+          sizeBase = null;
+          doc = targets.every((shape) => shape.radius === radius)
+            ? amend(doc, base.present)
+            : commit(base, present);
+        }
+      } else {
+        sizeBase = null;
+      }
       render();
       notify();
     },
