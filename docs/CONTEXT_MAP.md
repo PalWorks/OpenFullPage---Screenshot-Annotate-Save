@@ -22,6 +22,7 @@ fifteen.
 | What does the optional broad permission cost? | [ADVANCED-ACCESS.md](ADVANCED-ACCESS.md) |
 | How does a user verify their install? | [VERIFYING-YOUR-INSTALL.md](VERIFYING-YOUR-INSTALL.md) |
 | What does the store listing say? | [../store/LISTING.md](../store/LISTING.md) |
+| How are the screenshots and promo tiles made? | [RENDERING-METHOD.md](RENDERING-METHOD.md). Written to be portable to other projects |
 | Why is the icon the way it is? | [`../tools/icon-design.mjs`](../tools/icon-design.mjs), and [DECISIONS.md](DECISIONS.md) D22 |
 | How do I check an interface actually renders correctly? | [`../test/e2e/page-audit.js`](../test/e2e/page-audit.js), and D23 |
 | Why did my CSS rule not apply? | Specificity. [../AGENTS.md](../AGENTS.md), coding conventions |

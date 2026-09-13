@@ -4,9 +4,20 @@ Everything the Developer Dashboard asks for, written out so it can be pasted in
 rather than improvised at submission time. Every claim here is one the code
 actually supports; if a feature moves, this file moves with it.
 
-Assets live beside this file. Screenshots are real captures of the product taken
-by `node test/e2e/run.mjs --market --shots <dir>`, which drives the real extension
-in real Chrome, so they cannot drift from what the extension does.
+Assets live beside this file, and all of them are generated. Nothing here is a
+hand made PNG that only one person can edit.
+
+The screenshots are real captures of the product: `node test/e2e/run.mjs --market`
+drives the real extension in real Chrome over a real capture of
+[`demo/report.html`](demo/report.html) and writes what it photographed to
+`screenshots/raw/`. `node tools/make-shots.mjs` then puts a headline over each one
+and writes the five the store shows. The pixels of the product are photographed,
+never redrawn, so they cannot drift from what the extension does; the sentence
+over them is the only part a person writes.
+
+The demo page is captured rather than the end to end fixture because the fixture
+is built to be measured and looks like it: grey bands, a bar that says STICKY
+HEADER. Five screenshots of that went out in an earlier draft of this listing.
 
 ## Store listing tab
 
@@ -148,7 +159,7 @@ said United States.
 | Screenshot 2 | `screenshots/shot-annotate.png` | 1280x800 | |
 | Screenshot 3 | `screenshots/shot-redact.png` | 1280x800 | |
 | Screenshot 4 | `screenshots/shot-save.png` | 1280x800 | |
-| Screenshot 5 | `screenshots/shot-upload.png` | 1280x800 | |
+| Screenshot 5 | `screenshots/shot-tools.png` | 1280x800 | |
 | Small promo tile | `promo/small-tile-440x280.png` | 440x280 | yes |
 | Marquee promo tile | `promo/marquee-1400x560.png` | 1400x560 | no |
 
@@ -158,13 +169,37 @@ never leave a listing pointing at a file that is no longer produced. The two pro
 tiles are drawn by `tools/make-promo.mjs`, which renders them in real Chrome at
 exactly the sizes above, so they are reproducible rather than hand-made once.
 
+The headline on each screenshot is in `SHEET` in `tools/make-shots.mjs`, and the
+captions below repeat it, because the Developer Dashboard asks for captions
+separately and two sources for one sentence drift.
+
 Screenshot captions, if the dashboard offers them:
 
-1. One image of the whole page, however long it is
-2. Arrows, boxes, highlights and numbered steps
-3. Redaction that removes the pixels, not just covers them
-4. Save as PNG, JPEG, WebP or PDF, with a filename you choose
-5. Send it to an image host through your clipboard. The extension never uploads
+1. The whole page, in one image
+2. Mark up what matters
+3. Redaction that removes the pixels
+4. PNG, JPEG, WebP or PDF
+5. Fifteen shapes, one chevron
+
+### Regenerating them
+
+```bash
+node test/e2e/run.mjs --market --shots store/screenshots/raw   # photograph the product
+node tools/make-shots.mjs                                      # add the headlines
+node tools/make-promo.mjs                                      # redraw both tiles
+node tools/make-promo.mjs --all /tmp/tiles                     # every tile design, to compare
+```
+
+`--market` captures `store/demo/report.html` on a local port and needs no network
+and no arguments. The raw photographs are committed beside the finished ones in
+`screenshots/raw/`, so anyone can see what was added to them.
+
+The promo tile that ships is whichever design `CHOSEN` names in
+`tools/make-promo.mjs`. Three are written: `ribbon` is a page running off both
+edges of the tile, `figure` leads on the height of the capture as a number, and
+`band` puts the words on a bar across the picture. A tile is a thumbnail in a grid
+of thumbnails, so it carries one picture and a handful of words; the five
+screenshots are where the product is actually explained.
 
 ## Privacy practices tab
 
@@ -269,12 +304,35 @@ permission, used solely by the opt-in cross-origin frame setting above.
 ### Privacy policy URL
 
 ```
-https://palworks.github.io/openfullpage-site/#permissions
+https://palworks.github.io/openfullpage-site/privacy.html
 ```
 
-The wording of that policy lives in [`docs/PRIVACY.md`](../docs/PRIVACY.md), which
-is the source of truth. The URL above is where it is published; keep the two in
-step, and if the repository becomes public the raw file is an equally valid URL.
+A page of its own, rather than the anchor on the home page this used to point at.
+A reviewer asked for a privacy policy should land on a privacy policy, not on a
+section of a sales page, and the store keeps this URL on file for as long as the
+listing exists.
+
+The wording lives in [`docs/PRIVACY.md`](../docs/PRIVACY.md), which is the source
+of truth. The published page covers two things that file does not, because they
+are the website's rather than the extension's: what the host sees, and what the
+support form does with a message.
+
+### Support URL
+
+```
+https://palworks.github.io/openfullpage-site/support.html
+```
+
+The dashboard asks for a support site separately from the privacy policy. It is a
+form that composes an email to `support@palworks.ai`, plus the address itself for
+anyone who would rather not use a form.
+
+The form posts to a small Cloudflare Worker at `support.palworks.ai`, which is the
+only way a static site can take a form: it holds the Resend API key, which a page
+cannot. It relays the message and stores nothing but two counters, an hourly one
+against a hashed address and a monthly tally of emails sent. The Worker's source,
+and what it does with a message, are in `worker/` in the website repository. None
+of it touches the extension, which has no network access at all.
 
 ## Testing instructions for reviewers
 
@@ -334,12 +392,13 @@ extension in this category can show. Only the second half is ours.
 
 Listing:
 
-- [ ] Confirm the SVG Repo icon licence on its own page, see [`NOTICE.md`](../NOTICE.md)
+- [x] Confirm the SVG Repo icon licence on its own page, see [`NOTICE.md`](../NOTICE.md). CC0, read 2026-09-13
 - [x] Set a support email that is not a personal address. `SUPPORT_EMAIL` in `src/ui/options.js` is `support@palworks.ai`
 - [ ] Re-read the detailed description against the code, since it is the one claim
       a reviewer can check in five minutes and the whole product rests on it
 - [ ] Regenerate the screenshots if any interface has moved:
-      `node test/e2e/run.mjs --market --shots store/screenshots`
+      `node test/e2e/run.mjs --market --shots store/screenshots/raw` then
+      `node tools/make-shots.mjs`
 
 Release, from [`docs/PLAYBOOK.md`](../docs/PLAYBOOK.md):
 

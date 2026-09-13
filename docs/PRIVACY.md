@@ -71,4 +71,14 @@ to sell or transfer this extension, and the canary that lets you check it.
 
 ## Contact
 
-Open an issue on the project's repository.
+Email <support@palworks.ai>, or use the form at
+<https://palworks.github.io/openfullpage-site/support.html>, or open an issue on
+the project's repository.
+
+The published version of this policy is
+<https://palworks.github.io/openfullpage-site/privacy.html>, which is the URL the
+Chrome Web Store listing carries. It says everything this file says, and adds two
+things that belong to the website rather than to the extension: what the host can
+see when you open a page there, and what the support form does with a message.
+Neither applies to the extension, which makes no requests at all. Keep the two in
+step.

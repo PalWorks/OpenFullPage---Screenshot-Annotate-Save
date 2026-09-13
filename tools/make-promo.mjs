@@ -10,6 +10,30 @@
 // out by real Chrome at exactly the sizes the store wants, screenshotted over
 // the DevTools protocol, and written to store/promo/.
 //
+// WHAT A TILE IS FOR
+//
+// It is not a summary of the product. The five screenshots do that, and they are
+// on the listing page, which nobody reaches by accident. A tile is what a person
+// sees in a grid of tiles while scanning for something else, and its only job is
+// to be opened. So: one picture, very few words, and both legible at the size a
+// store grid actually renders them, which is about half of the size below.
+//
+// The picture is the argument. A page seven screenfuls long, shown whole, is a
+// thing you cannot get from the screenshot key, and it does not need a sentence
+// explaining that it is unusual. The ribbon is a real render of
+// store/demo/report.html at the width the extension captures it, not a drawing
+// of a page.
+//
+// The shipped design draws nothing over that ribbon. An annotation at the scale
+// a 440 pixel tile reduces a page to is two or three pixels across, so any mark
+// large enough to read is larger than the product would ever draw, and a mark
+// that is not to scale is a claim about the output rather than a picture of it.
+// The `band` design below does carry one drawn box and arrow, and is the only
+// place in this file where a pixel is invented.
+//
+//   node tools/make-promo.mjs              # the chosen design, into store/promo
+//   node tools/make-promo.mjs --all <dir>  # every design, to compare
+//
 // Not byte reproducible, and deliberately not claimed to be. Chrome renders text
 // with the host's fonts and hinting, so the same source on another machine gives
 // a visually identical tile with different bytes. That is why there is no
@@ -17,10 +41,9 @@
 // rasteriser in this repository and are checked byte for byte. What this file
 // guarantees is that the design has a source, not that the PNG is a constant.
 //
-//   node tools/make-promo.mjs
-//
 // Set FPC_CHROME if Chrome is somewhere unusual.
 import { spawn } from 'node:child_process';
+import { createServer } from 'node:http';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -30,7 +53,13 @@ import { Cdp, until } from '../test/e2e/cdp.mjs';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..');
 const OUT = join(REPO, 'store', 'promo');
-const DEBUG_PORT = 9335; // not 9333: the e2e suite owns that one.
+const DEMO = join(REPO, 'store', 'demo');
+const DEBUG_PORT = 9335; // not 9333 or 9336: the e2e suite and make-shots own those.
+const DEMO_PORT = 8791;
+
+// What the extension captures the demo page at, so the ribbon has the proportions
+// of a real capture rather than of a browser window that happens to be open.
+const CAPTURE_WIDTH = 1265;
 
 const CHROME =
   process.env.FPC_CHROME ??
@@ -57,6 +86,7 @@ const INK = {
   muted: '#8FB3AA',
   line: 'rgba(47, 214, 184, 0.07)',
   chipEdge: 'rgba(143, 179, 170, 0.32)',
+  mark: '#ef4444',
 };
 
 const FACE =
@@ -64,11 +94,11 @@ const FACE =
 const MONO = 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace';
 
 /**
- * Shared chrome for both tiles: the ground, the faint grid, the mark and the
- * wordmark. The two differ only in scale and in how much they can say, so the
- * parts that must not drift between them live here once.
+ * Shared chrome for every tile: the ground, the faint grid and the type rules.
+ * The designs differ in what they say and how the ribbon is placed, not in the
+ * colour of the paper.
  */
-function shell({ width, height, pad, markSize, wordSize, grid, body }) {
+function shell({ width, height, grid, body, extra = '' }) {
   return `<!doctype html><meta charset="utf-8"><style>
   *{ margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: ${width}px; height: ${height}px; }
@@ -91,119 +121,195 @@ function shell({ width, height, pad, markSize, wordSize, grid, body }) {
       linear-gradient(to bottom, ${INK.line} 1px, transparent 1px);
     background-size: ${grid}px ${grid}px;
   }
-  .inner {
-    position: relative; height: 100%;
-    padding: ${pad}px;
-    display: flex; flex-direction: column; justify-content: space-between;
-    gap: ${Math.round(pad * 0.34)}px;
-  }
-  .brand {
-    display: flex; align-items: center; flex: 0 0 auto;
-    gap: ${Math.round(markSize * 0.34)}px;
-  }
-  .brand img { width: ${markSize}px; height: ${markSize}px; display: block; }
-  .brand span {
-    color: ${INK.cream};
-    font-size: ${wordSize}px;
-    font-weight: 700;
-    letter-spacing: -0.015em;
-  }
-  h1 {
-    color: ${INK.cream};
-    font-weight: 800;
-    letter-spacing: -0.032em;
-    text-wrap: balance;
-  }
-  h1 em { font-style: normal; color: ${INK.muted}; }
-  .chips { display: flex; flex-wrap: wrap; }
-  .chip {
-    font-family: ${MONO};
-    color: ${INK.muted};
-    border: 1px solid ${INK.chipEdge};
-    border-radius: 999px;
-    white-space: nowrap;
-  }
-  .chip b { color: ${INK.tealLight}; font-weight: 600; }
-  .mono { font-family: ${MONO}; }
-  .face { font-family: ${FACE}; }
-  </style><div class="grid"></div><div class="inner">${body}</div>`;
+  .brand { display: flex; align-items: center; }
+  .brand img { display: block; }
+  .brand span { color: ${INK.cream}; font-weight: 700; letter-spacing: -0.015em; }
+  h1 { color: ${INK.cream}; font-weight: 800; letter-spacing: -0.035em; text-wrap: balance; }
+  h1 em { font-style: normal; color: ${INK.tealLight}; }
+  .foot { color: ${INK.muted}; font-family: ${MONO}; }
+  /* The ribbon: a real capture of the demo page, shown whole and running off the
+     tile at both ends, because a page that fits inside the frame is a page that
+     did not need this extension. */
+  .ribbon { position: absolute; overflow: hidden; background: #fff;
+            box-shadow: 0 24px 60px -18px rgba(0,0,0,0.8); }
+  .ribbon img { display: block; width: 100%; }
+  /* The two marks. Drawn here, and the only invented pixels in the tile. */
+  .arrow { position: absolute; }
+  .box { position: absolute; border: 3px solid ${INK.mark};
+         background: rgba(234, 179, 8, 0.34); border-radius: 3px; }
+  ${extra}
+  </style><div class="grid"></div>${body}`;
 }
 
-const brand = (markSize) =>
-  `<div class="brand"><img src="data:image/png;base64,${MARK}" alt=""><span>OpenFullPage</span></div>`;
+const brandMark = (size, word) =>
+  `<div class="brand" style="gap:${Math.round(size * 0.34)}px">
+     <img src="data:image/png;base64,${MARK}" alt="" style="width:${size}px;height:${size}px">
+     <span style="font-size:${word}px">OpenFullPage</span>
+   </div>`;
+
+/** An arrow, drawn as SVG so it keeps its head at any size. */
+const arrow = (w, h, style) => `
+  <svg class="arrow" style="${style}" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" fill="none">
+    <path d="M${w - 6} ${h - 6} L10 10" stroke="${INK.mark}" stroke-width="5" stroke-linecap="round"/>
+    <path d="M6 6 L28 14 L14 28 Z" fill="${INK.mark}"/>
+  </svg>`;
 
 /**
- * The marquee, 1400x560. It has room for the argument, so it makes it: the
- * headline says what the product does and what it refuses, and the panel beside
- * it is the proof, a network log with nothing in it. That panel is the whole
- * pitch. Anyone can open DevTools and get the same empty list.
- */
-function marquee() {
-  const body = `
-  ${brand(52)}
-  <div style="display:flex; gap:56px; align-items:center; flex:0 1 auto; min-height:0;">
-    <div style="flex:1 1 0; min-width:0;">
-      <h1 style="font-size:54px; line-height:1.06;">
-        Screenshot the whole page.<br><em>Nothing leaves your computer.</em>
-      </h1>
-      <div class="chips" style="gap:12px; margin-top:28px;">
-        <span class="chip" style="font-size:16px; padding:10px 18px;">Full page capture</span>
-        <span class="chip" style="font-size:16px; padding:10px 18px;">Annotate and redact</span>
-        <span class="chip" style="font-size:16px; padding:10px 18px;"><b>0</b> network requests</span>
-      </div>
-    </div>
-    <div style="flex:0 0 420px;">
-      <div class="mono" style="border:1px solid ${INK.chipEdge}; border-radius:14px;
-                  overflow:hidden; background:rgba(6,18,15,0.72); font-size:14px;">
-        <div style="display:flex; align-items:center; gap:10px; padding:14px 18px;
-                    border-bottom:1px solid ${INK.chipEdge}; color:${INK.cream};">
-          <span style="width:9px; height:9px; border-radius:50%;
-                       background:${INK.tealLight}; display:inline-block;"></span>
-          Network
-        </div>
-        <div style="display:flex; gap:40px; padding:11px 18px; color:${INK.muted};
-                    border-bottom:1px solid ${INK.chipEdge};">
-          <span>Name</span><span>Status</span><span>Type</span><span>Size</span>
-        </div>
-        <div class="face" style="padding:38px 18px; text-align:center;
-                    color:${INK.muted}; font-size:15px; line-height:1.5;">
-          No requests.<br>The extension has nowhere to send anything.
-        </div>
-        <div style="padding:13px 18px; border-top:1px solid ${INK.chipEdge};
-                    color:${INK.muted};">
-          <b style="color:${INK.tealLight};">0</b> requests
-          &nbsp;&nbsp; <b style="color:${INK.tealLight};">0 B</b> transferred
-        </div>
-      </div>
-    </div>
-  </div>
-  <div class="mono" style="flex:0 0 auto; font-size:15px; color:${INK.muted};">
-    Free and open source, GPL-3.0
-  </div>`;
-  return shell({ width: 1400, height: 560, pad: 64, markSize: 52, wordSize: 26, grid: 70, body });
-}
-
-/**
- * The small tile, 440x280. It is shown at roughly a third of the marquee's width
- * and is the one that has to survive being scanned in a grid, so it carries one
- * idea and one proof and nothing else.
+ * Design one, "ribbon".
  *
- * The layout is a flex column with the footer pushed down by `margin-top:auto`
- * rather than positioned absolutely, which is the fix for the footer that used
- * to be cut in half: the text cannot leave the padded box, whatever the host's
- * fonts do to its measured height.
+ * The page runs off the top and the bottom of the tile and the words sit beside
+ * it. The claim is made by the picture: this is one screenshot, and it does not
+ * end where the screen does.
  */
-function smallTile() {
-  const body = `
-  ${brand(38)}
-  <h1 style="font-size:37px; line-height:1.1;">
-    The whole page.<br><em>Nothing sent anywhere.</em>
-  </h1>
-  <div class="chips" style="gap:9px;">
-    <span class="chip" style="font-size:13px; padding:8px 14px;"><b>0</b> network requests</span>
-    <span class="chip" style="font-size:13px; padding:8px 14px;">GPL-3.0</span>
-  </div>`;
-  return shell({ width: 440, height: 280, pad: 28, markSize: 38, wordSize: 19, grid: 44, body });
+const ribbonDesign = {
+  small: (shot) => shell({
+    width: 440, height: 280, grid: 44,
+    body: `
+      <div style="position:absolute; left:26px; top:22px;">${brandMark(30, 16)}</div>
+      <h1 style="position:absolute; left:26px; top:84px; width:240px; font-size:41px; line-height:0.98;">
+        The whole page.<br><em>One shot.</em>
+      </h1>
+      <div class="foot" style="position:absolute; left:26px; bottom:24px; font-size:12px;">
+        Free and open source
+      </div>
+      <div class="ribbon" style="right:34px; top:-18px; width:136px; height:330px;
+           border-radius:7px; transform:rotate(-3.5deg);">
+        <img src="data:image/png;base64,${shot}" alt="">
+      </div>`,
+  }),
+  marquee: (shot) => shell({
+    width: 1400, height: 560, grid: 70,
+    body: `
+      <div style="position:absolute; left:64px; top:52px;">${brandMark(48, 25)}</div>
+      <h1 style="position:absolute; left:64px; top:176px; width:660px; font-size:74px; line-height:0.98;">
+        The whole page.<br><em>One screenshot.</em>
+      </h1>
+      <p style="position:absolute; left:64px; top:378px; width:600px; color:${INK.muted};
+                font-size:21px; line-height:1.45;">
+        Capture a page of any length, mark it up, and save it. Nothing is uploaded,
+        because it has no way to upload anything.
+      </p>
+      <div class="foot" style="position:absolute; left:64px; bottom:44px; font-size:15px;">
+        Free and open source, GPL-3.0
+      </div>
+      <div class="ribbon" style="right:168px; top:-56px; width:286px; height:680px;
+           border-radius:12px; transform:rotate(-3.5deg);">
+        <img src="data:image/png;base64,${shot}" alt="">
+      </div>`,
+  }),
+};
+
+/**
+ * Design two, "figure".
+ *
+ * One number, as large as it will go. A page 4,886 pixels tall is a fact rather
+ * than a claim, and a number is the one thing that reads at any size.
+ */
+const figureDesign = {
+  small: (shot) => shell({
+    width: 440, height: 280, grid: 44,
+    body: `
+      <div style="position:absolute; left:26px; top:22px;">${brandMark(30, 16)}</div>
+      <div style="position:absolute; left:26px; top:86px;">
+        <div style="color:${INK.tealLight}; font-size:64px; font-weight:800;
+                    letter-spacing:-0.05em; line-height:0.9;">4,886px</div>
+        <h1 style="margin-top:10px; font-size:29px; line-height:1.04; width:250px;">
+          tall. One screenshot.
+        </h1>
+      </div>
+      <div class="foot" style="position:absolute; left:26px; bottom:24px; font-size:12px;">
+        Any length. No upload.
+      </div>
+      <div class="ribbon" style="right:30px; top:22px; width:112px; height:236px; border-radius:6px;">
+        <img src="data:image/png;base64,${shot}" alt="">
+      </div>`,
+  }),
+  marquee: (shot) => shell({
+    width: 1400, height: 560, grid: 70,
+    body: `
+      <div style="position:absolute; left:64px; top:52px;">${brandMark(48, 25)}</div>
+      <div style="position:absolute; left:64px; top:160px;">
+        <div style="color:${INK.tealLight}; font-size:132px; font-weight:800;
+                    letter-spacing:-0.05em; line-height:0.88;">4,886px</div>
+        <h1 style="margin-top:18px; font-size:58px; line-height:1.02; width:720px;">
+          tall, and still one screenshot.
+        </h1>
+      </div>
+      <div class="foot" style="position:absolute; left:64px; bottom:44px; font-size:15px;">
+        Capture, annotate, redact, save. Free and open source.
+      </div>
+      <div class="ribbon" style="right:120px; top:46px; width:250px; height:468px; border-radius:10px;">
+        <img src="data:image/png;base64,${shot}" alt="">
+      </div>`,
+  }),
+};
+
+/**
+ * Design three, "band".
+ *
+ * The words on a teal band across the picture, the way a thumbnail that has to
+ * survive being shrunk usually solves it. The loudest of the three, and the one
+ * that keeps the most of its meaning at a third of this size.
+ */
+const bandDesign = {
+  small: (shot) => shell({
+    width: 440, height: 280, grid: 44,
+    extra: `.band { position:absolute; left:0; right:0; background:${INK.ground};
+                   border-top:2px solid ${INK.tealLight}; }`,
+    body: `
+      <div class="ribbon" style="left:0; right:0; top:0; width:440px; height:158px;
+           border-radius:0; transform:none;">
+        <img src="data:image/png;base64,${shot}" alt="" style="margin-top:-14px">
+      </div>
+      <div class="box" style="left:44px; top:40px; width:150px; height:44px; border-width:2px;"></div>
+      ${arrow(52, 52, 'left:236px; top:62px;')}
+      <div class="band" style="top:158px; bottom:0; padding:16px 26px;">
+        <h1 style="font-size:30px; line-height:1.02;">Screenshot the <em>whole page</em></h1>
+        <div class="foot" style="margin-top:8px; font-size:12px;">
+          Annotate, redact, save. Free.
+        </div>
+      </div>`,
+  }),
+  marquee: (shot) => shell({
+    width: 1400, height: 560, grid: 70,
+    extra: `.band { position:absolute; left:0; right:0; background:${INK.ground};
+                   border-top:2px solid ${INK.tealLight}; }`,
+    body: `
+      <div class="ribbon" style="left:0; right:0; top:0; width:1400px; height:340px;
+           border-radius:0; transform:none;">
+        <img src="data:image/png;base64,${shot}" alt="" style="margin-top:-40px">
+      </div>
+      <div class="box" style="left:150px; top:96px; width:330px; height:96px;"></div>
+      ${arrow(110, 110, 'left:640px; top:140px;')}
+      <div class="band" style="top:340px; bottom:0; padding:34px 64px;">
+        <div style="display:flex; align-items:center; gap:28px;">
+          ${brandMark(46, 24)}
+          <h1 style="font-size:52px; line-height:1.0;">Screenshot the <em>whole page</em></h1>
+        </div>
+        <div class="foot" style="margin-top:16px; font-size:16px;">
+          Capture any length, annotate it, redact it, save as PNG, JPEG, WebP or PDF. Free and open source.
+        </div>
+      </div>`,
+  }),
+};
+
+const DESIGNS = { ribbon: ribbonDesign, figure: figureDesign, band: bandDesign };
+
+/** The one that ships. Change this, do not edit a PNG. */
+const CHOSEN = 'ribbon';
+
+function serveDemo(port) {
+  const server = createServer((req, res) => {
+    const name = req.url === '/' ? '/report.html' : req.url.split('?')[0];
+    try {
+      const body = readFileSync(join(DEMO, name.replace(/\.\./g, '')));
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      res.end(body);
+    } catch {
+      res.writeHead(404).end('not found');
+    }
+  });
+  return new Promise((resolve) => server.listen(port, '127.0.0.1', () => resolve(server)));
 }
 
 async function launch() {
@@ -242,64 +348,94 @@ async function launch() {
   return { child, version };
 }
 
-async function shoot(cdp, session, { html, width, height, file, padding }) {
-  await cdp.send(
-    'Emulation.setDeviceMetricsOverride',
-    { width, height, deviceScaleFactor: 1, mobile: false },
-    session,
-  );
-  // setDocumentContent rather than a data: URL, because a data: URL of this size
-  // is a URL long enough that Chrome has opinions about it, and the base64 mark
-  // makes it that size on its own.
-  const { frameTree } = await cdp.send('Page.getFrameTree', {}, session);
-  await cdp.send('Page.setDocumentContent', { frameId: frameTree.frame.id, html }, session);
-  // One frame for layout, one for the fonts to settle. Without this the first
-  // tile of a run occasionally screenshots before the mark has decoded.
+/**
+ * The ribbon: the demo page, whole, at the width the extension captures it.
+ *
+ * Rendered here rather than read off disk so the tiles cannot drift from the
+ * page the screenshots are taken of. It is the same document, photographed
+ * twice for two purposes.
+ */
+async function renderRibbon(cdp, session) {
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${DEMO_PORT}/` }, session);
+  await until('the demo page', async () => {
+    const { result } = await cdp.send('Runtime.evaluate', {
+      expression: 'document.readyState === "complete" && !!document.querySelector(".kpis")',
+      returnByValue: true,
+    }, session);
+    return result.value ? true : null;
+  }, { timeoutMs: 15000 });
+
+  const { result } = await cdp.send('Runtime.evaluate', {
+    expression: 'document.documentElement.scrollHeight',
+    returnByValue: true,
+  }, session);
+  const height = result.value;
+
+  await cdp.send('Emulation.setDeviceMetricsOverride',
+    { width: CAPTURE_WIDTH, height, deviceScaleFactor: 1, mobile: false }, session);
   await cdp.send('Runtime.evaluate', {
     expression: 'new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))',
     awaitPromise: true,
   }, session);
+
+  const { data } = await cdp.send('Page.captureScreenshot', {
+    format: 'png',
+    clip: { x: 0, y: 0, width: CAPTURE_WIDTH, height, scale: 1 },
+    captureBeyondViewport: true,
+  }, session);
+  return data;
+}
+
+async function shoot(cdp, session, { html, width, height, file, dir }) {
+  await cdp.send('Emulation.setDeviceMetricsOverride',
+    { width, height, deviceScaleFactor: 1, mobile: false }, session);
+  // setDocumentContent rather than a data: URL, because a data: URL of this size
+  // is a URL long enough that Chrome has opinions about it, and the ribbon makes
+  // it that size on its own.
+  const { frameTree } = await cdp.send('Page.getFrameTree', {}, session);
+  await cdp.send('Page.setDocumentContent', { frameId: frameTree.frame.id, html }, session);
   await cdp.send('Runtime.evaluate', {
-    expression: 'document.fonts ? document.fonts.ready.then(() => true) : true',
+    expression: `(async () => {
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      await Promise.all([...document.images].map((i) => i.decode().catch(() => {})));
+      if (document.fonts) await document.fonts.ready;
+    })()`,
     awaitPromise: true,
   }, session);
 
+  // Every word has to be inside the tile. A headline clipped by the right edge is
+  // the defect this file was written to stop happening twice.
   const { result } = await cdp.send('Runtime.evaluate', {
     expression: `(() => {
-      const pad = ${JSON.stringify(String(padding))};
       const out = [];
-      for (const el of document.querySelectorAll('.inner *')) {
-        if (!el.textContent.trim() && el.tagName !== 'IMG') continue;
+      for (const el of document.querySelectorAll('h1, .foot, .brand span, div')) {
+        if (!el.textContent.trim() || el.children.length) continue;
         const r = el.getBoundingClientRect();
-        const over =
-          (r.top < ${padding} - 1 && 'above the top padding') ||
-          (r.bottom > ${height} - ${padding} + 1 && 'below the bottom padding') ||
-          (r.left < ${padding} - 1 && 'left of the padding') ||
-          (r.right > ${width} - ${padding} + 1 && 'right of the padding');
-        if (over) out.push(el.tagName.toLowerCase() + ' "' +
-          el.textContent.trim().slice(0, 40) + '" sits ' + over +
-          ' (top ' + Math.round(r.top) + ', bottom ' + Math.round(r.bottom) + ')');
+        if (r.left < -1 || r.top < -1 || r.right > ${width} + 1 || r.bottom > ${height} + 1) {
+          out.push('"' + el.textContent.trim().slice(0, 40) + '" is outside the tile');
+        }
       }
       return out.join('\\n');
     })()`,
     returnByValue: true,
   }, session);
-  if (result.value) {
-    throw new Error(`${file} would ship with content outside its padded box:\n${result.value}`);
-  }
+  if (result.value) throw new Error(`${file} would ship clipped:\n${result.value}`);
 
-  const { data } = await cdp.send(
-    'Page.captureScreenshot',
+  const { data } = await cdp.send('Page.captureScreenshot',
     { format: 'png', clip: { x: 0, y: 0, width, height, scale: 1 }, captureBeyondViewport: true },
-    session,
-  );
-  const out = join(OUT, file);
-  writeFileSync(out, Buffer.from(data, 'base64'));
-  return { out, bytes: Buffer.from(data, 'base64').length };
+    session);
+  const bytes = Buffer.from(data, 'base64');
+  writeFileSync(join(dir, file), bytes);
+  return bytes.length;
 }
 
 async function main() {
-  mkdirSync(OUT, { recursive: true });
+  const allAt = process.argv.indexOf('--all');
+  const dir = allAt > -1 ? process.argv[allAt + 1] : OUT;
+  if (allAt > -1 && !dir) throw new Error('--all needs a directory to write to');
+  mkdirSync(dir, { recursive: true });
+
+  const server = await serveDemo(DEMO_PORT);
   const { child, version } = await launch();
   const cdp = await Cdp.connect(version.webSocketDebuggerUrl);
   try {
@@ -312,16 +448,23 @@ async function main() {
     await cdp.send('Page.enable', {}, sessionId);
     await cdp.send('Runtime.enable', {}, sessionId);
 
-    for (const tile of [
-      { html: marquee(), width: 1400, height: 560, padding: 64, file: 'marquee-1400x560.png' },
-      { html: smallTile(), width: 440, height: 280, padding: 28, file: 'small-tile-440x280.png' },
-    ]) {
-      const { out, bytes } = await shoot(cdp, sessionId, tile);
-      console.log(`${out.replace(`${REPO}/`, '')}  ${tile.width}x${tile.height}, ${bytes} bytes`);
+    const shot = await renderRibbon(cdp, sessionId);
+
+    const wanted = allAt > -1 ? Object.keys(DESIGNS) : [CHOSEN];
+    for (const name of wanted) {
+      const design = DESIGNS[name];
+      const prefix = allAt > -1 ? `${name}-` : '';
+      for (const [kind, width, height] of [['small-tile-440x280', 440, 280], ['marquee-1400x560', 1400, 560]]) {
+        const html = kind.startsWith('small') ? design.small(shot) : design.marquee(shot);
+        const file = `${prefix}${kind}.png`;
+        const bytes = await shoot(cdp, sessionId, { html, width, height, file, dir });
+        console.log(`${join(dir, file).replace(`${REPO}/`, '')}  ${width}x${height}, ${bytes} bytes`);
+      }
     }
   } finally {
     cdp.close();
     child.kill('SIGKILL');
+    server.close();
   }
 }
 

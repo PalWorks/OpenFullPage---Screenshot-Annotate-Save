@@ -18,12 +18,14 @@ Operational procedures. Follow step by step.
 | `node test/e2e/run.mjs --nudge` | Sets the capture count to four so the one about to run is the fifth, and checks the rating nudge appears, is written down, offers no sentiment fork, and that "Don't ask again" is permanent. D59 |
 | `node test/e2e/run.mjs --remove` | Drives the fourth capture mode: hides the fixture's cookie bar, captures, then checks both that the element is absent from the picture and that the page was put back afterwards. D66 |
 | `node test/e2e/run.mjs --frozen` | Makes the worker's capture step serve the previous frame once, which is what `captureVisibleTab` does when the compositor presented no frame for the new scroll position. The stitched fixture must still carry every band once. D56 |
-| `node test/e2e/run.mjs --market --shots store/screenshots` | The five store screenshots at exactly 1280x800, drawn on the real product |
+| `node test/e2e/run.mjs --market --shots store/screenshots/raw` | Photographs the real product capturing `store/demo/report.html`, at exactly 1280x800. No network, no arguments: `--market` serves the demo page itself |
+| `node tools/make-shots.mjs` | Puts a headline over each raw photograph and writes the five screenshots the store shows |
 | `FPC_URLS=<url> node test/e2e/run.mjs ...` | Point any of the above at a page of your choosing rather than the fixture |
 | `node tools/preview-icons.mjs` | Contact sheet of the icon at 128, 48, 32 and 16, on both Chrome toolbars |
 | `node tools/make-icons.mjs --check` | Fails if the PNG icons no longer match their design source |
 | `node tools/make-icons.mjs` | Regenerate the icons from source |
-| `node tools/make-promo.mjs` | Redraw the two store promo tiles at 1400x560 and 440x280. Refuses to write a tile whose content sits outside its padded box |
+| `node tools/make-promo.mjs` | Redraw the two store promo tiles at 1400x560 and 440x280. Refuses to write a tile with a word outside it |
+| `node tools/make-promo.mjs --all <dir>` | Every tile design, side by side, for choosing between them. `CHOSEN` in that file decides which one ships |
 | `./tools/pack.sh` | Deterministic zip into `dist/openfullpage-<version>.zip` |
 | `cd tools/verify-crx && go build -o verify-crx .` | Build the install verifier |
 | `./verify-crx compare <installed dir> <repo root>` | Hash every file and exit non zero on any mismatch |
