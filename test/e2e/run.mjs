@@ -1345,10 +1345,18 @@ async function marketingShots(cdp, session, dir) {
   // 4. SAVING.
   //
   // The format menu encodes the real image to fill in the sizes, so what it
-  // says PNG, JPEG, WebP and PDF would weigh is what they weigh.
+  // says PNG, JPEG, WebP and PDF would weigh is what they weigh. Encoding a
+  // 4,886px page takes seconds, and a fixed pause photographed three of the
+  // four rows still reading an ellipsis, so this waits until every row has a
+  // number.
   await show(196);
   await evaluate(cdp, session, `document.getElementById('download').click()`);
-  await sleep(500);
+  await until('every format in the download menu to report a size', async () => {
+    const shown = JSON.parse(await evaluate(cdp, session, `JSON.stringify(
+      [...document.querySelectorAll('#formats [data-size]')].map((c) => c.textContent))`));
+    return shown.length && shown.every((v) => v !== '…') ? shown : null;
+  }, { timeoutMs: 90000, everyMs: 250 });
+  await sleep(200);
   await shoot(cdp, session, join(dir, 'shot-save.png'));
   await evaluate(cdp, session, `document.getElementById('download').click()`);
   await sleep(220);
