@@ -47,6 +47,11 @@ button (clicking it captures immediately), and no page can reach the extension
      mode == remove  ? pickForRemoval()  or picks things to leave out, which
                                       changes the height, so 2 runs again
         │
+  3b document does not scroll?        a web app one window tall: the content
+     findScroller()                   scrolls in a box. Mark the box; from here
+                                      on measurePage(), scrollAndSettle() and
+                                      repaintAt() work in the box's terms (D71)
+        │
   4  markSpecialElements()            tag fixed and sticky elements
      insertCSS(PREPARE_CSS)           unstick, pause animations, kill the caret
      expandSameOriginFrames()         lay same origin frames out at full height
@@ -54,6 +59,8 @@ button (clicking it captures immediately), and no page can reach the extension
         │
   5  waitForStableHeight()            preparation moved the page; let it settle
      measurePage() again              ONLY now is the page the shape we photograph
+     markOverlays()                   box only: tag what is laid over the box
+                                      rather than scrolling in it
         │
   6  planCapture(metrics, region)     tiles, width, height, origin, scales
         │
@@ -75,7 +82,7 @@ button (clicking it captures immediately), and no page can reach the extension
   9  openResultTab() ──▶ port         background tab when saving straight to a file
         post {type:'plan'}  {type:'tile'} x N  {type:'finish'}
         │
- 10  result tab: decode, crop the scrollbar gutter, draw each tile onto `base`
+ 10  result tab: decode, cut out the client box (tileSource), draw onto `base`
  11  createEditor(base) ──▶ the user annotates ──▶ export
      or, if directDownload: save the file and close this tab
 ```

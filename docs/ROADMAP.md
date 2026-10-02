@@ -67,6 +67,8 @@ Claude Code with gstack*. Shipped work carries the date it landed.
 | P1 | T11 | Version the port protocol | shipped 2026-09-10 | D53. Unblocks F10. Exercised by `--stale` |
 | P1 | T31 | What is fixed is asked again as the page is walked | shipped 2026-09-10 | D63. **Found in the field.** A header and a floating card that only turn fixed once you scroll were tagged before the walk, so they rode every screenful |
 | P1 | T30 | A screenful Chrome had already presented is photographed again | shipped 2026-09-10 | D56, L39. **Found in the field**, not by a test. A repeated screenful, and a lost one. Exercised by `--frozen` |
+| P1 | T33 | A page that scrolls inside a box is captured by walking the box | shipped 2026-10-02 | D71, L49 to L51. **Found in the field** on two chat sites, which captured one screenful. Exercised by `--scroller` |
+| P1 | T34 | An untouched result tab closes without asking | shipped 2026-10-02 | Chrome refuses the prompt there and logged each refusal as an extension error |
 | P1 | F1 | WebP export | shipped 2026-09-10 | D52. Output formats are described once now, not in three lists |
 | P1 | F21 | Export quality, and what each format costs | shipped 2026-09-10 | D54. The size readout is the feature; the slider is how you move it |
 | P1 | F2 | Pause playing media during the capture | shipped 2026-09-10 | L27, L28. Only what was playing, resumed first in the tidy-up |

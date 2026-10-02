@@ -1,0 +1,79 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Reversed Scroller Fixture</title>
+<style>
+  /* The shape of a chat application, reduced to what a capture can get wrong.
+     The document is exactly one window tall and never scrolls. A sidebar fills
+     the left. The conversation scrolls inside a box beside it, under a title bar
+     and a floating card that are positioned over the box rather than in it, and
+     ends in a composer that sticks to the bottom of the box.
+
+     The colours are read back out of the picture by verifyScroller() in
+     verify.mjs. Each one appears in exactly one place, so a duplicate, a missing
+     band, or a piece of the window that should have been cut away shows up as a
+     colour where it does not belong. */
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body { font: 16px/1.4 system-ui, sans-serif; display: flex; }
+  #sidebar { width: 240px; flex: none; background: #0f766e; }
+  #main { position: relative; flex: 1; min-width: 0; display: flex; }
+  /* Positioned against #main, which does not scroll, so it stays put while the
+     conversation runs underneath it. Shown once, at the top. */
+  #title {
+    position: absolute; top: 0; left: 0; right: 0; height: 48px; z-index: 5;
+    background: #7c3aed; color: #fff; display: flex; align-items: center;
+    padding: 0 20px; font-weight: 700;
+  }
+  /* Floating over the box, away from the column the bands are read in. It
+     covers content wherever it is, so it belongs in no screenful. */
+  #card {
+    position: absolute; top: 120px; right: 24px; width: 200px; height: 160px;
+    z-index: 5; background: #db2777;
+  }
+  /* A reversed column: the box opens at its newest message, and its scroll
+     offset runs from minus the range up to zero at the bottom. */
+  #thread { flex: 1; overflow-y: auto; display: flex; flex-direction: column-reverse; }
+  #content { flex: none; }
+  /* Inside the box in the markup, positioned against #main. A fade along the
+     bottom edge, the way a chat dims the text under its composer. */
+  #fade {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 40px; z-index: 4;
+    background: #ea580c; pointer-events: none;
+  }
+  .spacer { height: 48px; }
+  .row {
+    height: 100px; display: flex; align-items: center; padding: 0 20px;
+    font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums;
+  }
+  .row:nth-child(odd) { background: #f4f4f5; }
+  .row:nth-child(even) { background: #e4e4e7; }
+  #composer {
+    position: sticky; bottom: 0; height: 60px; z-index: 3;
+    background: #1d4ed8; color: #fff; display: flex; align-items: center; padding: 0 20px;
+  }
+</style>
+<div id="sidebar"></div>
+<div id="main">
+  <div id="title">TITLE BAR</div>
+  <div id="card"></div>
+  <div id="thread">
+    <div id="content">
+      <div class="spacer"></div>
+      <div id="rows"></div>
+      <div id="composer">COMPOSER</div>
+    </div>
+    <div id="fade"></div>
+  </div>
+</div>
+<script>
+  const rows = document.getElementById('rows');
+  for (let k = 1; k <= 30; k += 1) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.textContent = `Message ${k}`;
+    rows.appendChild(row);
+  }
+  // Somewhere in the middle, so the test can prove the reader gets the box back
+  // where they left it rather than at the top.
+  document.getElementById('thread').scrollTop = -777;
+</script>

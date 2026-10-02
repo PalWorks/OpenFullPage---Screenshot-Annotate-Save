@@ -264,6 +264,82 @@ export function verifyIframes(path, { deepFrames = false } = {}) {
   return { problems, notes };
 }
 
+const SIDEBAR = [0x0f, 0x76, 0x6e];
+const TITLE = [0x7c, 0x3a, 0xed];
+const CARD = [0xdb, 0x27, 0x77];
+const FADE = [0xea, 0x58, 0x0c];
+const COMPOSER = [0x1d, 0x4e, 0xd8];
+
+/**
+ * The scroller fixtures: a page one window tall whose conversation scrolls in
+ * a box beside a sidebar. Settles that the box was walked rather than the
+ * window, that only the box is in the picture, and that what is laid over the
+ * box appears where it belongs and nowhere else.
+ */
+export function verifyScroller(path) {
+  const img = decodePng(readFileSync(path));
+  const problems = [];
+  const notes = [];
+
+  notes.push(`image ${img.width}x${img.height}`);
+
+  // 1. The whole conversation: a 48px spacer, 30 bands and the composer.
+  if (img.height !== 3108) {
+    problems.push(`expected the box's 3108px of content, got ${img.height}px (one screenful is 800)`);
+  }
+
+  // 2. The box and nothing else. The window is 1280 wide and the sidebar 240.
+  if (img.width > 1040) problems.push(`the picture is ${img.width}px wide, wider than the box`);
+  if (bandsOf(img, SIDEBAR, 1).length > 0) problems.push('the sidebar was stitched into the picture');
+  else notes.push('only the box is in the picture, the sidebar is cut away');
+
+  // 3. The title bar once, at the very top.
+  const titles = bandsOf(img, TITLE);
+  if (titles.length !== 1 || titles[0][0] !== 0 || titles[0][1] < 44 || titles[0][1] > 50) {
+    problems.push(`the title bar laid over the box appears at ${JSON.stringify(titles)}, expected once at 0..47`);
+  } else {
+    notes.push(`title bar once at ${titles[0][0]}..${titles[0][1]}`);
+  }
+
+  // 4. What floats over the box covers content wherever it is, so it is in no
+  //    screenful at all.
+  const cards = bandsOf(img, CARD, img.width - 130);
+  if (cards.length) problems.push(`the floating card is in the picture at ${JSON.stringify(cards)}`);
+  const fades = bandsOf(img, FADE);
+  if (fades.length) problems.push(`the bottom fade is in the picture at ${JSON.stringify(fades)}`);
+  if (!cards.length && !fades.length) notes.push('the floating card and the bottom fade are in no screenful');
+
+  // 5. Every band exactly where it belongs.
+  let wrong = 0;
+  for (let k = 0; k < 30; k += 1) {
+    const expected = k % 2 === 0 ? ODD : EVEN;
+    const top = 48 + k * 100;
+    for (const y of [top + 8, top + 50, top + 92]) {
+      if (y >= img.height || !near(img.pixel(4, y), expected)) {
+        problems.push(
+          `band ${k + 1} wrong at y=${y}: got ${y < img.height ? img.pixel(4, y) : 'nothing'}, expected ${expected} `
+            + '(a screenful was duplicated, dropped or misaligned)',
+        );
+        wrong += 1;
+        break;
+      }
+    }
+    if (wrong > 3) break;
+  }
+  if (!wrong) notes.push('all 30 bands correct and in order');
+
+  // 6. The composer sticks to the bottom of the box on screen. In the picture it
+  //    belongs once, at the end of the conversation.
+  const composers = bandsOf(img, COMPOSER);
+  if (composers.length !== 1 || composers[0][0] < 3044 || composers[0][0] > 3052) {
+    problems.push(`the composer appears at ${JSON.stringify(composers)}, expected once at 3048..3107`);
+  } else {
+    notes.push(`composer once at ${composers[0][0]}..${composers[0][1]}`);
+  }
+
+  return { problems, notes };
+}
+
 /** Nearest-neighbour thumbnail, so a human can glance at a very tall capture. */
 export function thumbnail(path, out, targetWidth = 300) {
   const img = decodePng(readFileSync(path));

@@ -72,6 +72,8 @@ implements them twice. Every one has tests.
 | **F6** | Zoom, as a slider plus Fit width, Fit height and 100%, and an overview pane that says where in a long capture you are. The pane is a schematic of a page, not a picture of the capture | `src/ui/result.*`, D58, L17 |
 | **F44** | Every colour popover carries an opacity slider, and the five of them are built from one description rather than written out five times. The Frame block's two switches are gone: a frame is off when it has no colour, a plate is off at nought per cent | `src/lib/edit.js`, `src/ui/result.*`, D57 |
 | **T30** | A screenful that repeats the one before it is photographed again. `captureVisibleTab` hands back the last frame the compositor presented, and a prepared page produces frames only when it scrolls | `src/content/prepare.js`, `src/background.js`, `--frozen`, D56, L39 |
+| **T33** | A page one window tall whose content scrolls in a box, which is how chat applications are built, is captured by walking the box. Reversed boxes are handled, overlays on the box appear once or not at all, and only the box is in the picture. Found in the field on two chat sites, where the capture was one screenful | `src/content/measure.js`, `src/content/prepare.js`, `src/lib/plan.js`, `--scroller`, D71, L49 to L51 |
+| **T34** | A result tab nobody has touched no longer asks before closing. Chrome refuses that prompt and logged every refusal as an error against the extension | `src/ui/result.js`, L10 |
 
 **Release 1.7.0 is complete.** T1, T2, T3, T10, T11, T19, T20, F1, F2, F21, F26 and
 T30 have all shipped.

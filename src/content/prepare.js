@@ -18,12 +18,13 @@ export const PREPARE_CSS = `
     caret-color: transparent !important;
   }
   [data-fpc-sticky] { position: static !important; }
+  [data-fpc-float] { visibility: hidden !important; }
 `;
 
 /** Inserted only after the first tile: keeps the header in the screenshot once,
  *  then stops it repeating down the page. */
 export const HIDE_FIXED_CSS = `
-  [data-fpc-fixed] { visibility: hidden !important; }
+  [data-fpc-fixed], [data-fpc-overlay] { visibility: hidden !important; }
 `;
 
 /**
@@ -143,6 +144,93 @@ export async function remarkFixed() {
 }
 
 /**
+ * Mark what is laid over the scrolling box rather than scrolling inside it.
+ *
+ * On a page that scrolls inside a box (see findScroller), the window never
+ * moves, so anything positioned over the box stays put while the content runs
+ * underneath it, exactly like a fixed element on an ordinary page. The fixed
+ * ones are already handled. These are the ones that are not fixed and still do
+ * not move: an absolutely positioned title bar beside the box, a floating card
+ * in its corner, a fade along its bottom edge that is positioned against
+ * something outside the box even though it sits inside it in the markup. Left
+ * alone they ride every screenful and cover the conversation at every seam.
+ *
+ * An absolutely positioned element moves with the content only when the
+ * element it is positioned against lies inside the box, or is the box itself.
+ * That is asked of each one directly, by walking up to the box and looking for
+ * whatever makes an element a containing block, rather than by scrolling to see
+ * what moves.
+ *
+ * Two kinds, two marks. A bar along the top edge is the page's own heading and
+ * belongs in the picture once, so it is treated like a fixed header: shown in
+ * the first screenful and hidden after (`data-fpc-overlay`). Anything else, a
+ * floating card or a bottom fade, would cover content in whichever screenful it
+ * appeared in and is hidden for the whole walk (`data-fpc-float`).
+ *
+ * An element that covers the whole box is passed over: that is a backdrop or a
+ * layout layer painted behind the content, and hiding it would change the
+ * background of every screenful after the first.
+ *
+ * @returns {{overlays:number, floats:number}}
+ */
+export function markOverlays() {
+  const report = { overlays: 0, floats: 0 };
+  const scroller = document.querySelector('[data-fpc-scroller]');
+  if (!scroller) return report;
+
+  const outer = scroller.getBoundingClientRect();
+  const box = {
+    left: outer.left + scroller.clientLeft,
+    top: outer.top + scroller.clientTop,
+    right: outer.left + scroller.clientLeft + scroller.clientWidth,
+    bottom: outer.top + scroller.clientTop + scroller.clientHeight,
+  };
+
+  const containsBlocks = (style) =>
+    style.position !== 'static'
+    || style.transform !== 'none'
+    || style.perspective !== 'none'
+    || style.filter !== 'none'
+    || /transform|perspective|filter/.test(style.willChange)
+    || /paint|layout|strict|content/.test(style.contain);
+
+  // True when the element is positioned against something that scrolls.
+  const rides = (el) => {
+    for (let node = el.parentElement; node; node = node.parentElement) {
+      if (containsBlocks(getComputedStyle(node))) return true;
+      if (node === scroller) return false;
+    }
+    return false;
+  };
+
+  for (const el of document.querySelectorAll('body *')) {
+    if (el === scroller || el.contains(scroller)) continue;
+    if (el.closest('[data-fpc-overlay], [data-fpc-float], [data-fpc-fixed], [data-fpc-hidden]')) continue;
+
+    const style = getComputedStyle(el);
+    if (style.position !== 'absolute' || style.visibility !== 'visible') continue;
+    if (scroller.contains(el) && rides(el)) continue;
+
+    const r = el.getBoundingClientRect();
+    const w = Math.min(r.right, box.right) - Math.max(r.left, box.left);
+    const h = Math.min(r.bottom, box.bottom) - Math.max(r.top, box.top);
+    if (w <= 0 || h <= 0) continue;
+    if (r.left <= box.left && r.top <= box.top && r.right >= box.right && r.bottom >= box.bottom) continue;
+
+    const heading = r.top - box.top <= 8 && r.height <= (box.bottom - box.top) / 4;
+    if (heading) {
+      el.setAttribute('data-fpc-overlay', '');
+      report.overlays += 1;
+    } else {
+      el.setAttribute('data-fpc-float', '');
+      report.floats += 1;
+    }
+  }
+
+  return report;
+}
+
+/**
  * Pause anything that is playing, and remember only what we paused.
  *
  * A full page walk takes seconds, sometimes tens of them. A video playing
@@ -205,7 +293,17 @@ export function resumeMedia() {
  * was being walked, which is normal on feeds and live blogs.
  */
 export async function scrollAndSettle(x, y, budgetMs) {
-  window.scrollTo(x, y);
+  // On a page that scrolls inside a box, the box is what moves, and the
+  // position asked for is measured from the top of its content. A reversed box
+  // counts upward from a negative offset, so the request is translated into
+  // that count. See findScroller() in measure.js.
+  const scroller = document.querySelector('[data-fpc-scroller]');
+  const least = () =>
+    scroller && scroller.getAttribute('data-fpc-scroller') === 'reverse'
+      ? -(scroller.scrollHeight - scroller.clientHeight)
+      : 0;
+  if (scroller) scroller.scrollTop = least() + y;
+  else window.scrollTo(x, y);
 
   const startedAt = Date.now();
   const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -264,6 +362,15 @@ export async function scrollAndSettle(x, y, budgetMs) {
   await nextFrame();
   await nextFrame();
 
+  if (scroller) {
+    return {
+      x: 0,
+      y: scroller.scrollTop - least(),
+      waited: Date.now() - startedAt,
+      fullHeight: scroller.scrollHeight,
+    };
+  }
+
   return {
     x: window.scrollX,
     y: window.scrollY,
@@ -307,16 +414,28 @@ export async function repaintAt(x, y) {
       setTimeout(finish, 60);
     });
 
+  // The box, when the page scrolls inside one, exactly as in scrollAndSettle.
+  const scroller = document.querySelector('[data-fpc-scroller]');
+  const least = () =>
+    scroller && scroller.getAttribute('data-fpc-scroller') === 'reverse'
+      ? -(scroller.scrollHeight - scroller.clientHeight)
+      : 0;
+  const go = (to) => {
+    if (scroller) scroller.scrollTop = least() + to;
+    else window.scrollTo(x, to);
+  };
+
   // Away from the target, not past it: a page already at its last scroll
   // position cannot move further down, and asking it to would land back where
   // it started and produce nothing.
-  window.scrollTo(x, y > 0 ? y - 1 : y + 1);
+  go(y > 0 ? y - 1 : y + 1);
   await nextFrame();
   await nextFrame();
-  window.scrollTo(x, y);
+  go(y);
   await nextFrame();
   await nextFrame();
 
+  if (scroller) return { x: 0, y: scroller.scrollTop - least() };
   return { x: window.scrollX, y: window.scrollY };
 }
 
@@ -336,11 +455,16 @@ export async function repaintAt(x, y) {
  */
 export async function waitForStableHeight(budgetMs) {
   const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  // The box's content, when the page scrolls inside one: the document of such a
+  // page is one window tall whatever its content is doing.
+  const scroller = document.querySelector('[data-fpc-scroller]');
   const measure = () =>
-    Math.max(
-      document.documentElement ? document.documentElement.scrollHeight : 0,
-      document.body ? document.body.scrollHeight : 0,
-    );
+    scroller
+      ? scroller.scrollHeight
+      : Math.max(
+        document.documentElement ? document.documentElement.scrollHeight : 0,
+        document.body ? document.body.scrollHeight : 0,
+      );
 
   const startedAt = Date.now();
   let height = measure();
@@ -473,6 +597,18 @@ export function restorePage(x, y) {
   for (const frame of document.querySelectorAll('[data-fpc-frame]')) {
     frame.style.height = frame.getAttribute('data-fpc-frame');
     frame.removeAttribute('data-fpc-frame');
+  }
+  for (const el of document.querySelectorAll('[data-fpc-overlay], [data-fpc-float]')) {
+    el.removeAttribute('data-fpc-overlay');
+    el.removeAttribute('data-fpc-float');
+  }
+  // The box goes back to where the reader had it, which on a chat is usually
+  // the newest message rather than the top of the conversation.
+  for (const box of document.querySelectorAll('[data-fpc-scroller]')) {
+    const from = Number(box.getAttribute('data-fpc-scroller-from'));
+    box.removeAttribute('data-fpc-scroller');
+    box.removeAttribute('data-fpc-scroller-from');
+    if (Number.isFinite(from)) box.scrollTop = from;
   }
   window.scrollTo(x, y);
 }

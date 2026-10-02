@@ -17,6 +17,7 @@ import { refuseCapture,
   exportSize,
   fitsInViewport,
   planCapture,
+  tileSource,
 } from '../src/lib/plan.js';
 
 const page = (over = {}) => ({
@@ -305,4 +306,40 @@ test('an ordinary page is not refused', () => {
   assert.equal(refuseCapture('file:///Users/someone/page.html'), null);
   // A site that merely mentions the closed scheme in its path is a real page.
   assert.equal(refuseCapture('https://example.com/blog/chrome://tricks'), null);
+});
+
+// A page that scrolls inside a box. The window never moves, so every screenful
+// holds the same sidebar and title bar, and only the box may be cut out of it.
+
+test('an ordinary page is cut from the top left corner, without its scrollbar', () => {
+  const src = tileSource({ viewportWidth: 1265, viewportHeight: 800 }, 1, 1280, 800);
+  assert.deepEqual(src, { sx: 0, sy: 0, sw: 1265, sh: 800 });
+});
+
+test('a box beside a sidebar is cut from where it sits on screen', () => {
+  // The measured shape of a chat: a 341px sidebar, the conversation box filling
+  // the rest of a 1910 by 950 window.
+  const src = tileSource({ viewportWidth: 1569, viewportHeight: 950, clipX: 341, clipY: 0 }, 1, 1910, 950);
+  assert.deepEqual(src, { sx: 341, sy: 0, sw: 1569, sh: 950 });
+});
+
+test('the cut scales with the display, so a retina screenful keeps its box', () => {
+  const src = tileSource({ viewportWidth: 1604, viewportHeight: 900, clipX: 296, clipY: 50 }, 2, 3820, 1900);
+  assert.deepEqual(src, { sx: 592, sy: 100, sw: 3208, sh: 1800 });
+});
+
+test('a box that ends past the bitmap edge is shortened, never read beyond it', () => {
+  const src = tileSource({ viewportWidth: 1000, viewportHeight: 800, clipX: 300.6, clipY: 0 }, 1, 1280, 800);
+  assert.equal(src.sx, 301);
+  assert.equal(src.sx + src.sw, 1280);
+  assert.equal(src.sh, 800);
+});
+
+test('a box is planned like a page: its content is the height, its visible area the screenful', () => {
+  // What measurePage reports for the box, fed to the same planner.
+  const plan = planCapture(page({ fullWidth: 1569, viewportWidth: 1569, fullHeight: 11584, viewportHeight: 950 }));
+  assert.equal(plan.width, 1569);
+  assert.equal(plan.height, 11584);
+  assert.equal(plan.tiles.length, Math.ceil(11584 / 950));
+  assert.ok(plan.tiles.every((t) => t.x === 0));
 });

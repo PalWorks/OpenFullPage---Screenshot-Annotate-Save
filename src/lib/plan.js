@@ -134,6 +134,38 @@ export function planCapture(m, options = {}) {
   };
 }
 
+/**
+ * The part of a captured screenful that belongs in the picture, in captured
+ * pixels.
+ *
+ * On an ordinary page that is the client box from the top left corner: the
+ * bitmap also holds the scrollbar, which must not be stitched in. On a page
+ * whose content scrolls inside a box (a chat that keeps its conversation in a
+ * panel beside a sidebar), the window never scrolls at all, so every screenful
+ * holds the same sidebar and title bar around a different stretch of the
+ * conversation. Only the box changes from one screenful to the next, so only
+ * the box is cut out, starting wherever it sits on screen.
+ *
+ * Clamped to the bitmap, because a box that ends a fraction of a pixel past the
+ * window edge must shorten the source rather than ask drawImage for pixels that
+ * do not exist.
+ *
+ * @param {{viewportWidth:number, viewportHeight:number, clipX?:number, clipY?:number}} plan
+ *   the box in CSS pixels, relative to the window
+ * @param {number} captureScale captured pixels per CSS pixel
+ * @param {number} bitmapWidth
+ * @param {number} bitmapHeight
+ * @returns {{sx:number, sy:number, sw:number, sh:number}}
+ */
+export function tileSource(plan, captureScale, bitmapWidth, bitmapHeight) {
+  const scale = captureScale > 0 ? captureScale : 1;
+  const sx = Math.min(Math.max(0, Math.round((plan.clipX || 0) * scale)), bitmapWidth - 1);
+  const sy = Math.min(Math.max(0, Math.round((plan.clipY || 0) * scale)), bitmapHeight - 1);
+  const sw = Math.max(1, Math.min(Math.round(plan.viewportWidth * scale), bitmapWidth - sx));
+  const sh = Math.max(1, Math.min(Math.round(plan.viewportHeight * scale), bitmapHeight - sy));
+  return { sx, sy, sw, sh };
+}
+
 /** True when the page already fits on screen and needs no scrolling or prep. */
 export function fitsInViewport(m) {
   return m.fullHeight <= m.viewportHeight && m.fullWidth <= m.viewportWidth;

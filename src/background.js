@@ -28,6 +28,7 @@ import {
   HIDE_PICKED_CSS,
   PREPARE_CSS,
   expandSameOriginFrames,
+  markOverlays,
   markSpecialElements,
   pauseMedia,
   remarkFixed,
@@ -43,7 +44,7 @@ import { DEEP_FRAMES, loadSettings } from './lib/settings.js';
 import { clearProgress, showFailure, showProgress } from './lib/badge.js';
 import { sealed, speaksOurProtocol } from './lib/protocol.js';
 import { planCapture, refuseCapture } from './lib/plan.js';
-import { measurePage } from './content/measure.js';
+import { findScroller, measurePage } from './content/measure.js';
 import { pickElement, pickForRemoval } from './content/pick.js';
 
 // captureVisibleTab is quota-limited to a couple of calls per second. Start
@@ -96,6 +97,13 @@ const LAYOUT_SETTLE_MS = 2000;
 // Past this a frame is bigger than any canvas can hold; growing it just makes
 // the capture slower before it is truncated anyway.
 const MAX_FRAME_HEIGHT = 20000;
+
+// How much taller than the window a document may be and still count as one that
+// does not scroll. A web app laid out to fill the window is often a few pixels
+// over, from a border or a rounding, and the content that matters is in a box
+// inside it. A tenth of a screenful is far more than any such slack and far less
+// than a page with anything below the fold.
+const NO_SCROLL_SLACK = 0.1;
 
 let running = false;
 
@@ -438,6 +446,20 @@ async function runCapture(tab, mode, settings) {
     // on the path that prepares the page, replans when it grows, and hides
     // fixed elements after the first screenful.
     const wholePage = mode === 'full' || mode === 'remove';
+
+    // A page that does not scroll may still have a page's worth of content: in a
+    // box that scrolls inside it, the way a chat keeps its conversation beside a
+    // sidebar. Then the box is walked instead of the window, and measurePage
+    // reports the box from here on. See findScroller() in content/measure.js.
+    let boxed = false;
+    if (wholePage && metrics.fullHeight <= metrics.viewportHeight * (1 + NO_SCROLL_SLACK)) {
+      const scroller = await inPage(tabId, findScroller);
+      if (scroller && scroller.found) {
+        boxed = true;
+        metrics = await inPage(tabId, measurePage);
+      }
+    }
+
     if (wholePage && metrics.fullHeight > metrics.viewportHeight) {
       // Order matters: unsticking headers changes the document height, so the
       // page must be prepared before it is measured for real.
@@ -459,6 +481,11 @@ async function runCapture(tab, mode, settings) {
       report(0, 'Preparing the page');
       await inPage(tabId, waitForStableHeight, [LAYOUT_SETTLE_MS]);
       metrics = await inPage(tabId, measurePage);
+
+      // What sits over the box rather than scrolling in it, asked only now that
+      // the layout has stopped moving. The marks take effect through the
+      // stylesheets already in: one at once, one after the first screenful.
+      if (boxed) await inPage(tabId, markOverlays);
     }
 
     if (mode === 'visible') {
@@ -570,6 +597,10 @@ async function runCapture(tab, mode, settings) {
       originY: plan.originY,
       outputScale: plan.outputScale,
       innerWidth: metrics.innerWidth,
+      // Where on screen each screenful is cut from. Zero on an ordinary page;
+      // the box's position on a page that scrolls inside one.
+      clipX: metrics.clipX ?? 0,
+      clipY: metrics.clipY ?? 0,
       viewportWidth: metrics.viewportWidth,
       viewportHeight: metrics.viewportHeight,
       settings,

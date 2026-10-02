@@ -24,6 +24,14 @@ row and column clamp against the document edge, so they differ).
 pixels. Full page mode uses the whole document. Visible area mode uses the current
 viewport. Element mode uses the box of the element the user picked.
 
+**Box.** On a page laid out to be exactly one window tall, the element its content
+actually scrolls in: the conversation panel of a chat, beside a sidebar. Found by
+`findScroller()` and marked `data-fpc-scroller`. When there is one, the walk scrolls
+the box instead of the window, positions are measured from the top of the box's
+content, and each screenful is cut out at the box's place on screen (`clipX`,
+`clipY`, `tileSource()`). A **reversed** box (`flex-direction: column-reverse`)
+counts its scroll offset from minus its range up to zero at the bottom. D71.
+
 **Plan.** The output of `planCapture()` in `src/lib/plan.js`: the tile list, the
 output dimensions, the origin, the two scales, and whether the result had to be
 truncated. Everything the walk and the stitcher need, computed before either runs.
@@ -80,6 +88,12 @@ until a script makes them fixed on the first scroll, and those rode every screen
 `remarkFixed()` asks the question again after each scroll and before each
 photograph, and lifts marks as well as applying them: something that has stopped
 being fixed has rejoined the flow and belongs in the picture where it now sits. D63.
+
+**Overlays on a box.** On a boxed page the window never moves, so an absolutely
+positioned title bar or card over the box stays put while the content runs under it.
+`markOverlays()` tags one along the top edge `data-fpc-overlay` (first screenful
+only, like a fixed header) and anything else `data-fpc-float` (hidden throughout).
+D71.
 
 **Settling.** Waiting for the page to stop changing height, and for the images
 actually in shot to finish loading, rather than sleeping a fixed amount. A page with

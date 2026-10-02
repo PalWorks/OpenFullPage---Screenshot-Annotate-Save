@@ -2125,3 +2125,59 @@ working agreement on toolbar changes.
 reordered. The e2e suite checks the placement, that picking the tool does not open
 the popover, that the slider and field agree, that the drawn disc matches, and that
 one undo reverses a whole drag.
+
+## D71: A page that scrolls inside a box is captured by walking the box
+
+**Date.** 2026-10-02T21:45:25+05:30.
+
+**Context.** Chat applications, and many other web apps, are laid out to be
+exactly one window tall. The document never scrolls; the conversation scrolls in a
+box beside a sidebar. Measured on two chat sites in a real signed in browser, both
+reported a document of 950 pixels in a 950 pixel window, with the conversation in
+a box holding 11,584 and 5,152 pixels. The capture compared the document with the
+window, found nothing to scroll, and delivered one screenful.
+
+One of the two boxes is a reversed column (`flex-direction: column-reverse`), the
+usual layout for a chat that opens at its newest message. Its scroll offset runs
+from minus the range up to zero at the bottom, and assigning any positive offset is
+silently ignored, so a walk that only knew the ordinary direction would have stayed
+on the last screenful while believing it had moved.
+
+**Decision.** When the document is no more than a tenth of a screenful taller than
+the window, `findScroller()` looks for the largest box on screen that scrolls
+vertically and has more content than it shows, at least two fifths of the window
+wide and half of it tall, sitting wholly inside the window. If there is one, it is
+marked with `data-fpc-scroller` (with `reverse` as its value for a reversed column)
+and the capture walks it instead of the window:
+
+- `measurePage()` reports the box: its visible area as the screenful, its content
+  as the page, and `clipX`, `clipY` for where it sits on screen.
+- `scrollAndSettle()` and `repaintAt()` set the box's offset, translating a
+  position measured from the top of the content into whatever the box counts in.
+- The stitcher cuts each screenful out at the box's position (`tileSource()` in
+  `src/lib/plan.js`), so the sidebar and title bar around it are not repeated.
+- `restorePage()` puts the box back where the reader had it.
+
+The picture is the box's content only. That is a choice: stretching the page to
+full height so the existing window walk would work was rejected, because these
+layouts are built to fill the window exactly and react to being resized, which
+makes the result depend on each site's scripts.
+
+**Overlays.** On such a page the window never moves, so anything positioned over
+the box stays put while the content runs under it, the way a fixed element does on
+an ordinary page. One of the two sites draws its title bar and a floating card
+with `position: absolute`, which the fixed handling never reached; the other has a
+fade along the bottom of the box that sits inside the box in the markup but is
+positioned against an element outside it. `markOverlays()` finds absolutely
+positioned elements that overlap the box and are not positioned against anything
+inside it (it walks up to the box looking for a containing block). A bar along the
+top edge is marked `data-fpc-overlay` and treated like a fixed header: in the first
+screenful, hidden after. Anything else is marked `data-fpc-float` and hidden for the
+whole walk, because it covers content wherever it appears. An element covering the
+whole box is left alone as a backdrop.
+
+**Consequences.** No permission, network access or dependency changes. An ordinary
+long page never reaches `findScroller()`, so its capture is unchanged. Covered by
+`node test/e2e/run.mjs --scroller` against two fixtures, one counting each way, and
+by unit tests of `tileSource()`. Known edges are L49 to L51.
+

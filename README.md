@@ -92,6 +92,7 @@ What this proves and does not prove is written out honestly in that document. In
 - **Sticky and fixed headers appear once**, at the top, instead of repeating down every screenful. This is the thing that makes naive full page capture unusable on GitHub, Amazon and most documentation sites.
 - **Lazy loaded content** below the fold is loaded and given time to settle before its screenful is taken.
 - **Retina displays and browser zoom** are handled by deriving the scale from the captured bitmap rather than assuming it.
+- **Web apps that scroll inside a box**, such as chat applications, are captured in full. The page itself is one window tall there, so the box holding the conversation is walked instead and only it is kept in the picture.
 - **Same origin iframes are expanded to their full height** before capture, so their content is not left behind their own scrollbar.
 - **Rate limiting.** Chrome throttles `captureVisibleTab`; the extension backs off and retries rather than failing.
 - **Scrollbars are cropped out** rather than stitched into the image.
@@ -200,7 +201,7 @@ Shortcuts are remappable at `chrome://extensions/shortcuts`.
 
 ### What happens when you press the button
 
-1. The page is measured, and content below the fold is loaded.
+1. The page is measured, and content below the fold is loaded. If the page is one window tall with its content in a scrolling box, as chat applications are, that box is measured and walked instead.
 2. Sticky elements are returned to normal flow so they appear once. Fixed elements are kept in the first screenful and hidden after it.
 3. Same origin frames are laid out at full height, so their content is captured rather than left behind their own scrollbar.
 4. Each screenful is captured. The toolbar icon fills and the badge counts up.
@@ -461,7 +462,7 @@ Two layers, no framework.
 
 ```bash
 ./tools/check.sh                 # everything CI runs: pack, unit tests, icons, verifier
-node --test 'test/**/*.test.js'  # 267 unit tests, including the security invariants
+node --test 'test/**/*.test.js'  # 272 unit tests, including the security invariants
 node tools/make-icons.mjs --check
 node test/e2e/run.mjs            # real Chrome, drives a capture over CDP
 ```
@@ -475,6 +476,7 @@ node test/e2e/run.mjs             # local fixture only, no network
 node test/e2e/run.mjs --edit      # drive the editor with real mouse events
 node test/e2e/run.mjs --sites     # also GitHub, Amazon and MDN
 node test/e2e/run.mjs --iframes   # same origin and cross origin frames
+node test/e2e/run.mjs --scroller  # a page that scrolls inside a box
 node test/e2e/run.mjs --stop      # press Finish now mid capture
 node test/e2e/run.mjs --direct    # save straight to a file, no editor
 node test/e2e/run.mjs --progress  # watch the progress panel through a capture

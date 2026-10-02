@@ -61,8 +61,8 @@ fifteen.
 | `src/ui/editor.js` | Canvas rendering and pointer input for the editor | DOMAIN, DECISIONS |
 | `src/ui/options.js` | Settings page, the optional permission toggle | ADVANCED-ACCESS |
 | `src/ui/progress.js` | The capture progress popup. Whether Chrome opens it is checked by `--headed --popup` | TESTING |
-| `src/content/measure.js` | Page metrics, injected | DOMAIN |
-| `src/content/prepare.js` | Sticky and fixed handling, scrolling, lazy loading, frames | ARCHITECTURE, DOMAIN |
+| `src/content/measure.js` | Page metrics, injected, and finding the box a one window tall web app scrolls in | DOMAIN, DECISIONS D71 |
+| `src/content/prepare.js` | Sticky and fixed handling, overlays on a box, scrolling the window or the box, lazy loading, frames | ARCHITECTURE, DOMAIN |
 | `src/lib/open.js` | What may be opened from disk, and what to say when it may not | DOMAIN |
 | `src/content/pick.js` | The two pickers: point at one element to capture, or point at several to leave out | DOMAIN, DECISIONS D66 |
 | `test/invariants.test.js` | The security invariants. The heart of the project | AGENTS |

@@ -8,6 +8,28 @@ deterministic, no timestamps, no host details, so this hash is reproducible from
 a clean checkout with `./tools/pack.sh`, not merely checkable against one download. See
 [docs/VERIFYING-YOUR-INSTALL.md](docs/VERIFYING-YOUR-INSTALL.md).
 
+## [Unreleased]
+
+Updated 2026-10-02T23:54:15+05:30.
+
+### Fixed: chat applications captured only one screenful
+
+A page laid out to be exactly one window tall, with its content scrolling in a box
+beside a sidebar, was measured as one screenful and captured as one. Chat
+applications are built this way. The capture now finds the box, walks it instead
+of the window, and keeps only the box in the picture. Boxes that count their
+scroll offset in reverse, the usual layout for a chat that opens at its newest
+message, are handled. Title bars and floating cards positioned over the box appear
+once at the top or not at all, instead of covering the conversation at every seam.
+The box is put back where you left it. No new permission. D71.
+
+### Fixed: closing an untouched result tab logged an error
+
+The result tab asks before it is closed or reloaded with work unsaved. On a tab
+nobody had touched, Chrome refuses to show that prompt and recorded each refusal as
+an error against the extension, visible in `chrome://extensions`. An untouched tab
+now closes without asking, which is what Chrome did anyway, and nothing is logged.
+
 ## [1.10.1]: 2026-09-13
 
 One editor change, the step size below, and the store listing redone around it:

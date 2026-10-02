@@ -119,6 +119,8 @@ site by hand with the gstack browser after any change:
 - **A page that captures wrong** is nearly always one of: sticky elements that are
   not `position: sticky`, a scroll container that is not the window, lazy content
   slower than the settle budget, or a page that grows while being walked. All four
-  are described in [ARCHITECTURE.md](ARCHITECTURE.md).
+  are described in [ARCHITECTURE.md](ARCHITECTURE.md). A scroll container is
+  followed when the document itself does not scroll (D71); if the wrong box was
+  chosen, or none, check it against the rules in `findScroller()` and L49.
 - **Reproduce deterministically** with the fixtures in `test/e2e/fixture/` before
   trying to fix anything against a live site.

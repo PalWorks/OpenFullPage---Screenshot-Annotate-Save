@@ -30,6 +30,7 @@ gate is tested before the thing it gates.
 node test/e2e/run.mjs            # local fixture only, no network
 node test/e2e/run.mjs --sites    # also GitHub, Amazon and MDN
 node test/e2e/run.mjs --iframes  # a page with same- and cross-origin frames
+node test/e2e/run.mjs --scroller # a page that scrolls inside a box, both directions
 node test/e2e/run.mjs --edit     # drive the editor with real mouse events
 node test/e2e/run.mjs --progress # watch the progress panel through a capture
 node test/e2e/run.mjs --stop     # press Finish now mid capture, on a tall fixture
@@ -91,6 +92,18 @@ decodes the PNG and asserts:
 
 Set `FPC_THUMB_DIR=/some/dir` to also write downscaled thumbnails of each capture,
 which is the quickest way to eyeball a very tall image.
+
+### The scroller fixtures
+
+`--scroller` captures `scroller.html` and `scroller-reverse.html`: a page one
+window tall with a sidebar, and a conversation of 30 bands in a box beside it under
+an absolutely positioned title bar and floating card, with a fade along its bottom
+and a sticky composer. The second counts its scroll offset in reverse, the way a
+chat that opens at its newest message does. `verifyScroller()` reads the picture
+back and requires the box's full 3108 pixels, no sidebar, the title bar once at the
+top, the card and fade nowhere, every band in order and the composer once at the
+end. The run also checks that the box is handed back where the fixture parked it
+and that no capture mark is left on the page. See D71.
 
 ### The iframe fixture
 

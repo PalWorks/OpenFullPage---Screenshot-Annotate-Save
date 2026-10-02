@@ -29,7 +29,7 @@ import { SHAPE_TOOLS } from '../../src/lib/edit.js';
 import { DOWNLOAD_FORMATS, extensionOf } from '../../src/lib/encode.js';
 import { TOOLBAR_BUTTONS } from '../../src/lib/settings.js';
 import { PAINTS } from '../../src/lib/edit.js';
-import { decodePng, thumbnail, verifyFixture, verifyIframes } from './verify.mjs';
+import { decodePng, thumbnail, verifyFixture, verifyIframes, verifyScroller } from './verify.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..', '..');
@@ -4263,6 +4263,10 @@ async function main() {
       ? [`http://127.0.0.1:${PORT}/tall.html`]
       : process.argv.includes('--iframes')
       ? [`http://127.0.0.1:${PORT}/iframes.html`]
+      // A page one window tall whose content scrolls in a box, counted both
+      // ways: from the top, and in a reversed column that opens at the bottom.
+      : process.argv.includes('--scroller')
+      ? [`http://127.0.0.1:${PORT}/scroller.html`, `http://127.0.0.1:${PORT}/scroller-reverse.html`]
       : process.argv.includes('--sites')
       ? [
           `http://127.0.0.1:${PORT}/`,
@@ -4346,6 +4350,15 @@ async function main() {
       // The picker lives in the captured page, so this mode is the only one
       // that needs to drive that page directly rather than through the driver.
       let pageSession = null;
+      const boxed = process.argv.includes('--scroller');
+      if (boxed) {
+        ({ sessionId: pageSession } = await cdp.send('Target.attachToTarget', {
+          targetId,
+          flatten: true,
+        }));
+        sessionNames.set(pageSession, 'captured page');
+        await cdp.send('Runtime.enable', {}, pageSession);
+      }
       if (removing) {
         await evaluate(cdp, driver, `chrome.storage.local.set({ extraModes: true })`);
         ({ sessionId: pageSession } = await cdp.send('Target.attachToTarget', {
@@ -4525,6 +4538,24 @@ async function main() {
       );
       process.stdout.write('\n');
 
+      // Nobody has touched this tab yet, so Chrome would refuse a leave-page
+      // prompt and log the refusal as an extension error. The guard must not ask.
+      if (state.ready) {
+        const asked = await evaluate(cdp, result, `(() => {
+          const event = new Event('beforeunload', { cancelable: true });
+          window.dispatchEvent(event);
+          return JSON.stringify({ active: navigator.userActivation.hasBeenActive, asked: event.defaultPrevented });
+        })()`).then(JSON.parse);
+        if (asked.active) {
+          console.log('  note the result tab already had a gesture, so the untouched case was not checked');
+        } else if (asked.asked) {
+          console.log('  FAIL an untouched result tab asks before closing, which Chrome refuses and logs as an error');
+          process.exitCode = 1;
+        } else {
+          console.log('  ok   an untouched result tab closes without asking, so nothing is logged');
+        }
+      }
+
       // --stale: the worker in this run claims a protocol this tab does not
       // speak, which is what an update landing mid-capture looks like. The tab
       // must say so. Without the check it waits on a progress bar that will
@@ -4548,7 +4579,7 @@ async function main() {
       // fixture is the only page here with something playing, and it counts
       // what was done to it: checking only that it plays at the end would pass
       // on a build that never paused it.
-      if (url.includes(`:${PORT}/`) && !url.includes('iframes') && !url.includes('tall')) {
+      if (url.includes(`:${PORT}/`) && !url.includes('iframes') && !url.includes('tall') && !url.includes('scroller')) {
         const media = JSON.parse(await evaluate(cdp, driver, `(async () => {
           const [r] = await chrome.scripting.executeScript({
             // MAIN, not the isolated world an extension script normally gets:
@@ -4858,6 +4889,27 @@ async function main() {
       // least visible. Checked after the capture rather than instead of it,
       // because `restore()` runs from a `finally` and this is the only place
       // that can see whether it did.
+      // The box goes back where the reader left it. The fixture parks it part
+      // way down, so a box left at the top or the bottom is caught, and so is a
+      // mark left on anything.
+      if (boxed) {
+        console.log('\n  putting the box back:');
+        const left = await evaluate(cdp, pageSession, `JSON.stringify({
+          at: Math.round(document.getElementById('thread').scrollTop),
+          marked: document.querySelectorAll('[data-fpc-scroller], [data-fpc-scroller-from], [data-fpc-overlay], [data-fpc-float]').length,
+          title: getComputedStyle(document.getElementById('title')).visibility,
+        })`).then(JSON.parse);
+        const expected = url.includes('reverse') ? -777 : 777;
+        const problems = [];
+        if (left.at !== expected) problems.push(`the box was handed back at ${left.at}, the reader left it at ${expected}`);
+        else console.log(`  ok   the box is back at ${left.at}, where the reader left it`);
+        if (left.marked) problems.push(`${left.marked} capture marks were left on the page`);
+        else console.log('  ok   no capture marks were left on the page');
+        if (left.title !== 'visible') problems.push(`the title bar was left ${left.title}`);
+        for (const problem of problems) console.log(`  FAIL ${problem}`);
+        if (problems.length) process.exitCode = 1;
+      }
+
       if (process.argv.includes('--remove')) {
         console.log('\n  putting the page back:');
         const left = await evaluate(cdp, pageSession, `JSON.stringify({
@@ -4970,6 +5022,20 @@ async function main() {
             process.exitCode = 1;
           }
         }
+      }
+    } else if (process.argv.includes('--scroller')) {
+      for (const name of ['scroller-html', 'scroller-reverse-html']) {
+        const png = files.find((f) => f.endsWith(`-${name}.png`));
+        console.log(`\nverifying the capture of ${name.replace('-html', '.html')}:`);
+        if (!png) {
+          console.log(`  FAIL no PNG was saved for it: ${files.join(', ')}`);
+          process.exitCode = 1;
+          continue;
+        }
+        const { problems, notes } = verifyScroller(join(downloadDir, png));
+        for (const note of notes) console.log(`  ok   ${note}`);
+        for (const problem of problems) console.log(`  FAIL ${problem}`);
+        if (problems.length) process.exitCode = 1;
       }
     } else if (process.argv.includes('--iframes')) {
       const png = files.find((f) => f.endsWith('-iframes-html.png'));

@@ -15,6 +15,7 @@ import {
   applyFilename,
   captureBasename,
   exportSize,
+  tileSource,
 } from '../lib/plan.js';
 import { buildPdf, deflate, planPdfPages, rgbaToRgb } from '../lib/pdf.js';
 import {
@@ -186,12 +187,19 @@ let queue = Promise.resolve();
  * reload button is all it takes.
  *
  * So the tab asks. Chrome will only show its own wording, and only if the user
- * has interacted with the page, which by this point they have.
+ * has interacted with the page.
+ *
+ * A tab nobody has touched is not asked about at all. Chrome refuses the prompt
+ * for it anyway, and records every refusal as an error against the extension,
+ * so a result tab opened by a capture and closed unread (or closed by Chrome
+ * when the extension updates) filled the extension's error list with warnings
+ * about a dialog nobody could have seen.
  */
 const hasUnsavedWork = () => Boolean(editor) && editor.document.past.length !== savedAt;
 
 window.addEventListener('beforeunload', (event) => {
   if (!hasUnsavedWork()) return;
+  if (navigator.userActivation && !navigator.userActivation.hasBeenActive) return;
   event.preventDefault();
   // Older Chrome needs the assignment as well as preventDefault.
   event.returnValue = '';
@@ -311,9 +319,9 @@ async function drawTile({ dataUrl, x, y }) {
   if (!ctx) sizeCanvas(bitmap);
 
   // Crop each screenful to the client box: the captured bitmap also contains
-  // the scrollbar gutters, which would otherwise be stitched into the page.
-  const sw = Math.min(Math.round(plan.viewportWidth * captureScale), bitmap.width);
-  const sh = Math.min(Math.round(plan.viewportHeight * captureScale), bitmap.height);
+  // the scrollbar gutters, which would otherwise be stitched into the page. On
+  // a page that scrolls inside a box, the box is all that is kept.
+  const { sx, sy, sw, sh } = tileSource(plan, captureScale, bitmap.width, bitmap.height);
 
   // Placed relative to the captured region, which for the visible-area and
   // pick-an-element modes starts partway down the document.
@@ -328,7 +336,7 @@ async function drawTile({ dataUrl, x, y }) {
   const x1 = Math.round((left + plan.viewportWidth) * outputScale);
   const y1 = Math.round((top + plan.viewportHeight) * outputScale);
 
-  ctx.drawImage(bitmap, 0, 0, sw, sh, x0, y0, x1 - x0, y1 - y0);
+  ctx.drawImage(bitmap, sx, sy, sw, sh, x0, y0, x1 - x0, y1 - y0);
   bitmap.close();
 
   received += 1;
