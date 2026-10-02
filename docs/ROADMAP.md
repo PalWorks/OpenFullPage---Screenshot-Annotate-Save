@@ -102,6 +102,11 @@ the one that carries F10.
 under its own chevron (D70), and the store listing was redone. It carries no
 roadmap item, so F10 still opens the next minor version.
 
+**1.10.2 on 2026-10-03** is another patch: pages that scroll inside a box, which is how
+chat applications are built, are captured in full (T33, D71), and an untouched
+result tab closes without logging an error (T34). F10 still opens the next minor
+version.
+
 **What to pick up next: F10**, multi-part export for very long pages. It is the only
 item on this page that fixes something a user has actually hit, T11 has unblocked it,
 and it is the last thing standing between the product and an honest claim that it

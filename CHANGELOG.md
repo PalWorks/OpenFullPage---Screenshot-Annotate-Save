@@ -8,9 +8,15 @@ deterministic, no timestamps, no host details, so this hash is reproducible from
 a clean checkout with `./tools/pack.sh`, not merely checkable against one download. See
 [docs/VERIFYING-YOUR-INSTALL.md](docs/VERIFYING-YOUR-INSTALL.md).
 
-## [Unreleased]
+## [1.10.2]: 2026-10-03
 
-Updated 2026-10-02T23:54:15+05:30.
+Updated 2026-10-03T00:00:37+05:30.
+
+Two fixes found in the field. Chat applications, and other web apps laid out to be one
+window tall, are captured in full instead of as one screenful, and closing an
+untouched result tab no longer logs an error against the extension.
+
+`openfullpage-1.10.2.zip`. SHA-256 `05575f5bb00bac9e7815ef30e75d32504e8b1097de5afaaed9bd6da0d7860002`
 
 ### Fixed: chat applications captured only one screenful
 
