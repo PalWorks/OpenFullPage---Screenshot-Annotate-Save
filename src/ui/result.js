@@ -387,6 +387,16 @@ async function finish() {
     );
   }
 
+  // A page that is only a frame from another site came out one screenful, and
+  // without this the reader cannot tell that from a page that is one screenful.
+  if (plan.pageFrame) {
+    notes.push(
+      `This page is shown inside a frame from ${plan.pageFrame}, so only what was on ` +
+        'screen could be captured. To capture all of it, turn on "Capture inside ' +
+        'cross-origin frames" in OpenFullPage settings.',
+    );
+  }
+
   if (notes.length > 0) {
     ui.note.hidden = false;
     ui.note.textContent = notes.join(' ');

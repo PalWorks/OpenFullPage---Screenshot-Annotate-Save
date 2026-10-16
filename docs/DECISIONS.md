@@ -2181,3 +2181,45 @@ long page never reaches `findScroller()`, so its capture is unchanged. Covered b
 `node test/e2e/run.mjs --scroller` against two fixtures, one counting each way, and
 by unit tests of `tileSource()`. Known edges are L49 to L51.
 
+## D72: A page that is only a frame is captured by growing the frame
+
+**Date.** 2026-10-16T16:26:13+05:30.
+
+**Context.** A Google partner interest form (`services.google.com/fb/forms/...`)
+captured as one screenful. Measured in a real browser, the top document was 960
+pixels in a 960 pixel window with `overflow: hidden` on the root, and its only
+content was one absolutely positioned iframe, `height: 100vh`, served from
+`services--google--com.safenup.googleusercontent.com`. The form, 3,237 pixels of
+it, scrolled inside that frame's own document. `measurePage()` reported no
+scroll, `findScroller()` found no box (a frame is not a box that scrolls, seen
+from outside), and the frame expansion that would have helped only runs once the
+page is already known to scroll. With or without advanced access, the capture was
+one screenful.
+
+**Decision.** When the document does not scroll and no box was found,
+`findPageFrame()` looks for the largest iframe on screen that is at least two
+fifths of the window wide and half of it tall, the same bar `findScroller()` sets
+for a box. If there is one, it is grown before the walk is planned:
+
+- Same origin: `expandSameOriginFrames()`, which already existed. No permission.
+- Another origin, advanced access on: `reportFrameHeights()`, top frame first so
+  the listener is in place before any frame reports, then every frame.
+- Another origin, advanced access off: nothing can be read, so nothing is grown,
+  and the plan carries `pageFrame`, the frame's host. The result tab says the
+  page sits in a frame from that site and names the setting that captures it.
+
+The page is then given `waitForStableHeight()` and measured again, and the
+ordinary walk takes over. The top document scrolls even with `overflow: hidden`
+on its root, because only the reader is stopped from scrolling it, not a script.
+
+**Rejected.** Asking for the frame's site alone rather than `<all_urls>` would be a
+narrower grant, but it needs a new permission prompt in the flow and is a UI
+change; it is kept as a possible follow up. The `debugger` permission would see
+inside any frame, but it is broad, shows a warning bar on every capture, and is
+against rule 4.
+
+**Consequences.** No permission, network access or dependency changes. A page with
+a map or a video embedded in it scrolls, so it never reaches `findPageFrame()`. A
+capture that names `pageFrame` does not count as whole for the rating nudge.
+Covered by `node test/e2e/run.mjs --pageframe`, with and without `--deep`, against
+a same origin and a cross origin fixture. Known edges are L52 and L53.

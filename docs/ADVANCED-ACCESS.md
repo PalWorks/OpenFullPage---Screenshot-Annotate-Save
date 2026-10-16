@@ -13,6 +13,10 @@ Open them from **chrome://extensions → OpenFullPage → Extension options**.
 widgets, embedded documents, is captured in full, including whatever sits below
 that frame's own scrollbar.
 
+It also covers pages that are nothing but such a frame, filling the window, the
+way Google serves its forms. Without this setting those capture as one screenful,
+and the result tab says so.
+
 **What it costs.** The `webNavigation` permission and access to **every site you
 visit** (`<all_urls>`).
 

@@ -31,6 +31,7 @@ node test/e2e/run.mjs            # local fixture only, no network
 node test/e2e/run.mjs --sites    # also GitHub, Amazon and MDN
 node test/e2e/run.mjs --iframes  # a page with same- and cross-origin frames
 node test/e2e/run.mjs --scroller # a page that scrolls inside a box, both directions
+node test/e2e/run.mjs --pageframe # a page that is only a frame, same and cross origin
 node test/e2e/run.mjs --edit     # drive the editor with real mouse events
 node test/e2e/run.mjs --progress # watch the progress panel through a capture
 node test/e2e/run.mjs --stop     # press Finish now mid capture, on a tall fixture
@@ -104,6 +105,17 @@ back and requires the box's full 3108 pixels, no sidebar, the title bar once at 
 top, the card and fade nowhere, every band in order and the composer once at the
 end. The run also checks that the box is handed back where the fixture parked it
 and that no capture mark is left on the page. See D71.
+
+### The page frame fixtures
+
+`--pageframe` captures `pageframe-same.html` and `pageframe-cross.html`: a shell one
+window tall with `overflow: hidden` on its root, around one frame of `height: 100vh`
+holding 3000 pixels of blocks, served from this origin and from port 8788.
+`verifyPageFrame()` requires all 3000 pixels from the same origin frame. From the
+cross origin frame it requires all of them with `--deep`, and without it the
+screenful that was showing and a note in the result tab naming the frame's site and
+the setting. The run also checks that the frame is handed back at the window's
+height and the page at the top. See D72. Updated 2026-10-16T16:26:13+05:30.
 
 ### The iframe fixture
 

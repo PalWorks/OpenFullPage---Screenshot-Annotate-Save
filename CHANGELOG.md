@@ -8,6 +8,22 @@ deterministic, no timestamps, no host details, so this hash is reproducible from
 a clean checkout with `./tools/pack.sh`, not merely checkable against one download. See
 [docs/VERIFYING-YOUR-INSTALL.md](docs/VERIFYING-YOUR-INSTALL.md).
 
+## [Unreleased]
+
+Updated 2026-10-16T16:26:13+05:30.
+
+### Fixed: pages shown inside a full window frame captured only one screenful
+
+Some pages are a shell one window tall around a single frame that fills it, with
+the content scrolling inside the frame. Google serves its forms this way, from a
+separate sandbox domain. The capture saw a page that does not scroll and delivered
+one screenful. It now finds the frame and grows it to its content before deciding
+whether the page scrolls. A frame from the same site is captured in full with no
+new permission. A frame from another site is captured in full when "Capture inside
+cross-origin frames" is turned on; with it off, the result tab now says the page
+sits in a frame from that site and names the setting, instead of handing over one
+screenful without a word. D72.
+
 ## [1.10.2]: 2026-10-03
 
 Updated 2026-10-03T00:00:37+05:30.

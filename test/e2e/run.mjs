@@ -29,7 +29,7 @@ import { SHAPE_TOOLS } from '../../src/lib/edit.js';
 import { DOWNLOAD_FORMATS, extensionOf } from '../../src/lib/encode.js';
 import { TOOLBAR_BUTTONS } from '../../src/lib/settings.js';
 import { PAINTS } from '../../src/lib/edit.js';
-import { decodePng, thumbnail, verifyFixture, verifyIframes, verifyScroller } from './verify.mjs';
+import { decodePng, thumbnail, verifyFixture, verifyIframes, verifyPageFrame, verifyScroller } from './verify.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..', '..');
@@ -4267,6 +4267,10 @@ async function main() {
       // ways: from the top, and in a reversed column that opens at the bottom.
       : process.argv.includes('--scroller')
       ? [`http://127.0.0.1:${PORT}/scroller.html`, `http://127.0.0.1:${PORT}/scroller-reverse.html`]
+      // A shell one window tall around a frame that fills it, the frame from
+      // this origin and from another. The second needs --deep to come out whole.
+      : process.argv.includes('--pageframe')
+      ? [`http://127.0.0.1:${PORT}/pageframe-same.html`, `http://127.0.0.1:${PORT}/pageframe-cross.html`]
       : process.argv.includes('--sites')
       ? [
           `http://127.0.0.1:${PORT}/`,
@@ -4351,7 +4355,8 @@ async function main() {
       // that needs to drive that page directly rather than through the driver.
       let pageSession = null;
       const boxed = process.argv.includes('--scroller');
-      if (boxed) {
+      const framed = process.argv.includes('--pageframe');
+      if (boxed || framed) {
         ({ sessionId: pageSession } = await cdp.send('Target.attachToTarget', {
           targetId,
           flatten: true,
@@ -4538,6 +4543,26 @@ async function main() {
       );
       process.stdout.write('\n');
 
+      // A frame that could not be read must say so, and say what to turn on.
+      // A frame that could be read must not: the note is for a short image.
+      if (framed) {
+        console.log('\n  what the result tab says about the frame:');
+        const unread = url.includes('cross') && !deepFrames;
+        const says = /inside a frame from 127\.0\.0\.1:8788/.test(state.note) &&
+          /Capture inside cross-origin frames/.test(state.note);
+        if (unread && !says) {
+          console.log(`  FAIL a frame it could not read came out one screenful with no word why: "${state.note}"`);
+          process.exitCode = 1;
+        } else if (!unread && /inside a frame/.test(state.note)) {
+          console.log(`  FAIL a frame it read in full still says it could not: "${state.note}"`);
+          process.exitCode = 1;
+        } else {
+          console.log(unread
+            ? '  ok   it names the frame\'s site and the setting that captures it'
+            : '  ok   nothing is said, because nothing was missed');
+        }
+      }
+
       // Nobody has touched this tab yet, so Chrome would refuse a leave-page
       // prompt and log the refusal as an extension error. The guard must not ask.
       if (state.ready) {
@@ -4579,7 +4604,7 @@ async function main() {
       // fixture is the only page here with something playing, and it counts
       // what was done to it: checking only that it plays at the end would pass
       // on a build that never paused it.
-      if (url.includes(`:${PORT}/`) && !url.includes('iframes') && !url.includes('tall') && !url.includes('scroller')) {
+      if (url.includes(`:${PORT}/`) && !url.includes('iframes') && !url.includes('tall') && !url.includes('scroller') && !url.includes('pageframe')) {
         const media = JSON.parse(await evaluate(cdp, driver, `(async () => {
           const [r] = await chrome.scripting.executeScript({
             // MAIN, not the isolated world an extension script normally gets:
@@ -4910,6 +4935,25 @@ async function main() {
         if (problems.length) process.exitCode = 1;
       }
 
+      // The frame goes back to the size it was, and the page back to the top.
+      if (framed) {
+        console.log('\n  putting the frame back:');
+        const left = await evaluate(cdp, pageSession, `JSON.stringify({
+          height: Math.round(document.querySelector('iframe').getBoundingClientRect().height),
+          window: innerHeight,
+          y: scrollY,
+          marked: document.querySelectorAll('[data-fpc-frame]').length,
+        })`).then(JSON.parse);
+        const problems = [];
+        if (left.height !== left.window) problems.push(`the frame was left ${left.height}px tall in a ${left.window}px window`);
+        else console.log('  ok   the frame is back to the height of the window');
+        if (left.y !== 0) problems.push(`the page was left scrolled to ${left.y}`);
+        else console.log('  ok   the page is back at the top');
+        if (left.marked) problems.push(`${left.marked} capture marks were left on the page`);
+        for (const problem of problems) console.log(`  FAIL ${problem}`);
+        if (problems.length) process.exitCode = 1;
+      }
+
       if (process.argv.includes('--remove')) {
         console.log('\n  putting the page back:');
         const left = await evaluate(cdp, pageSession, `JSON.stringify({
@@ -5033,6 +5077,21 @@ async function main() {
           continue;
         }
         const { problems, notes } = verifyScroller(join(downloadDir, png));
+        for (const note of notes) console.log(`  ok   ${note}`);
+        for (const problem of problems) console.log(`  FAIL ${problem}`);
+        if (problems.length) process.exitCode = 1;
+      }
+    } else if (process.argv.includes('--pageframe')) {
+      for (const name of ['pageframe-same-html', 'pageframe-cross-html']) {
+        const png = files.find((f) => f.endsWith(`-${name}.png`));
+        console.log(`\nverifying the capture of ${name.replace('-html', '.html')}:`);
+        if (!png) {
+          console.log(`  FAIL no PNG was saved for it: ${files.join(', ')}`);
+          process.exitCode = 1;
+          continue;
+        }
+        const cross = name.includes('cross');
+        const { problems, notes } = verifyPageFrame(join(downloadDir, png), { cross, whole: !cross || deepFrames });
         for (const note of notes) console.log(`  ok   ${note}`);
         for (const problem of problems) console.log(`  FAIL ${problem}`);
         if (problems.length) process.exitCode = 1;

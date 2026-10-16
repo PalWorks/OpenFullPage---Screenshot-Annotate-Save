@@ -477,6 +477,7 @@ node test/e2e/run.mjs --edit      # drive the editor with real mouse events
 node test/e2e/run.mjs --sites     # also GitHub, Amazon and MDN
 node test/e2e/run.mjs --iframes   # same origin and cross origin frames
 node test/e2e/run.mjs --scroller  # a page that scrolls inside a box
+node test/e2e/run.mjs --pageframe # a page that is only a frame
 node test/e2e/run.mjs --stop      # press Finish now mid capture
 node test/e2e/run.mjs --direct    # save straight to a file, no editor
 node test/e2e/run.mjs --progress  # watch the progress panel through a capture

@@ -264,6 +264,33 @@ export function verifyIframes(path, { deepFrames = false } = {}) {
   return { problems, notes };
 }
 
+/**
+ * The page frame fixtures: a shell one window tall around a frame that fills
+ * it, holding 3000px of blocks. Whole means every block is in the picture; not
+ * whole means the screenful that was showing, and no more.
+ */
+export function verifyPageFrame(path, { cross = false, whole = true } = {}) {
+  const img = decodePng(readFileSync(path));
+  const problems = [];
+  const notes = [];
+
+  notes.push(`image ${img.width}x${img.height}`);
+  const rows = rowsOf(img, cross ? [CROSS_A, CROSS_B] : [FRAME_A, FRAME_B]);
+  if (rows === 0) {
+    problems.push('the frame did not render at all');
+  } else if (whole && rows < 2900) {
+    problems.push(`the frame contributed ${rows}px of its 3000, so its content was not walked`);
+  } else if (whole) {
+    notes.push(`the whole frame is in the picture (${rows}px of 3000)`);
+  } else if (rows >= 2900) {
+    problems.push(`a frame from another site came out whole (${rows}px) without advanced access`);
+  } else {
+    notes.push(`without advanced access, the screenful that was showing (${rows}px)`);
+  }
+
+  return { problems, notes };
+}
+
 const SIDEBAR = [0x0f, 0x76, 0x6e];
 const TITLE = [0x7c, 0x3a, 0xed];
 const CARD = [0xdb, 0x27, 0x77];

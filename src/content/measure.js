@@ -138,3 +138,62 @@ export function findScroller() {
     reversed,
   };
 }
+
+/**
+ * Find the frame a page is shown in, when the page itself does not scroll.
+ *
+ * Some pages are a shell one window tall around a single frame that fills it,
+ * and the content scrolls inside the frame's own document. Google serves its
+ * forms this way, from a sandbox domain. Measured from outside, such a page is
+ * one screenful, the frame is not a box that scrolls, and that is all a capture
+ * of it ever held.
+ *
+ * The frame chosen is the largest one on screen big enough to be the page
+ * rather than an embed in it: the same two fifths of the window's width and
+ * half its height that findScroller() asks of a box. Whether it can be read
+ * from here decides how it is grown, and the site it comes from is what the
+ * reader is told about when it cannot be grown at all.
+ *
+ * Called only when the document does not scroll and no box was found, so an
+ * ordinary page with a map or a video embedded in it never reaches this.
+ *
+ * @returns {{found:boolean, sameOrigin?:boolean, host?:string}}
+ */
+export function findPageFrame() {
+  const doc = document.documentElement;
+  const vw = doc.clientWidth;
+  const vh = doc.clientHeight;
+  let best = null;
+  let bestArea = 0;
+
+  for (const frame of document.querySelectorAll('iframe')) {
+    if (getComputedStyle(frame).visibility !== 'visible') continue;
+    const box = frame.getBoundingClientRect();
+    const width = Math.min(box.right, vw) - Math.max(box.left, 0);
+    const height = Math.min(box.bottom, vh) - Math.max(box.top, 0);
+    if (width < vw * 0.4 || height < vh * 0.5) continue;
+
+    const area = width * height;
+    if (area > bestArea) {
+      best = frame;
+      bestArea = area;
+    }
+  }
+
+  if (!best) return { found: false };
+
+  let sameOrigin = false;
+  try {
+    sameOrigin = Boolean(best.contentDocument);
+  } catch {
+    sameOrigin = false;
+  }
+  let host = '';
+  try {
+    host = new URL(best.src, location.href).host;
+  } catch {
+    host = '';
+  }
+
+  return { found: true, sameOrigin, host };
+}

@@ -44,7 +44,7 @@ import { DEEP_FRAMES, loadSettings } from './lib/settings.js';
 import { clearProgress, showFailure, showProgress } from './lib/badge.js';
 import { sealed, speaksOurProtocol } from './lib/protocol.js';
 import { planCapture, refuseCapture } from './lib/plan.js';
-import { findScroller, measurePage } from './content/measure.js';
+import { findPageFrame, findScroller, measurePage } from './content/measure.js';
 import { pickElement, pickForRemoval } from './content/pick.js';
 
 // captureVisibleTab is quota-limited to a couple of calls per second. Start
@@ -460,6 +460,35 @@ async function runCapture(tab, mode, settings) {
       }
     }
 
+    // Or the page may be nothing but a frame the size of the window, with the
+    // content scrolling inside the frame's own document. The frame is grown to
+    // its content here, before the decision below that the page does not
+    // scroll, because until it is grown that decision is always "it does not".
+    // A frame from another site can only say how tall it is with advanced
+    // access; without it the reader is told why the image is one screenful.
+    // See findPageFrame() in content/measure.js.
+    let pageFrame = null;
+    if (wholePage && !boxed && metrics.fullHeight <= metrics.viewportHeight * (1 + NO_SCROLL_SLACK)) {
+      const frame = await inPage(tabId, findPageFrame);
+      if (frame && frame.found) {
+        if (frame.sameOrigin) {
+          await inPage(tabId, expandSameOriginFrames, [MAX_FRAME_HEIGHT]);
+        } else if (await chrome.permissions.contains(DEEP_FRAMES)) {
+          // The top frame listens first, so the report cannot arrive before
+          // anyone is there to hear it.
+          await inPage(tabId, reportFrameHeights, [MAX_FRAME_HEIGHT]);
+          await inAllFrames(tabId, reportFrameHeights, [MAX_FRAME_HEIGHT]);
+          deepFrames = true;
+        } else {
+          pageFrame = frame.host || 'another site';
+        }
+        if (!pageFrame) {
+          await inPage(tabId, waitForStableHeight, [LAYOUT_SETTLE_MS]);
+          metrics = await inPage(tabId, measurePage);
+        }
+      }
+    }
+
     if (wholePage && metrics.fullHeight > metrics.viewportHeight) {
       // Order matters: unsticking headers changes the document height, so the
       // page must be prepared before it is measured for real.
@@ -591,6 +620,9 @@ async function runCapture(tab, mode, settings) {
       total: shots.length,
       truncated: plan.truncated,
       endedEarly,
+      // The site whose frame holds this page, when that frame could not be
+      // read. Null on every page the capture saw all of.
+      pageFrame,
       width: plan.width,
       height: plan.height,
       originX: plan.originX,

@@ -51,6 +51,9 @@ button (clicking it captures immediately), and no page can reach the extension
      findScroller()                   scrolls in a box. Mark the box; from here
                                       on measurePage(), scrollAndSettle() and
                                       repaintAt() work in the box's terms (D71)
+     no box either? findPageFrame()   a page that is only a frame: grow the
+                                      frame, same origin or opted in, then
+                                      measure again; otherwise say why (D72)
         │
   4  markSpecialElements()            tag fixed and sticky elements
      insertCSS(PREPARE_CSS)           unstick, pause animations, kill the caret

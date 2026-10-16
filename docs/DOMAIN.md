@@ -32,6 +32,12 @@ content, and each screenful is cut out at the box's place on screen (`clipX`,
 `clipY`, `tileSource()`). A **reversed** box (`flex-direction: column-reverse`)
 counts its scroll offset from minus its range up to zero at the bottom. D71.
 
+**Page frame.** On a page that does not scroll and has no box, an iframe big enough
+to be the page itself: the shell is one window tall and the content scrolls inside
+the frame. Found by `findPageFrame()` and grown to its content height before the
+walk. When it is from another site and advanced access is off, its host travels in
+the plan as `pageFrame` and the result tab says so. D72.
+
 **Plan.** The output of `planCapture()` in `src/lib/plan.js`: the tile list, the
 output dimensions, the origin, the two scales, and whether the result had to be
 truncated. Everything the walk and the stitcher need, computed before either runs.

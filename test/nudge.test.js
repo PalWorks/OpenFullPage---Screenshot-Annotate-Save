@@ -52,9 +52,10 @@ test('a capture that came out short is not the moment to ask', () => {
   assert.equal(shouldNudge(due, undefined), false);
 });
 
-test('whole means not truncated and not ended early', () => {
+test('whole means not truncated, not ended early, and not a frame left unread', () => {
   assert.equal(captureWasClean({}), true);
-  assert.equal(captureWasClean({ truncated: false, endedEarly: null }), true);
+  assert.equal(captureWasClean({ truncated: false, endedEarly: null, pageFrame: null }), true);
+  assert.equal(captureWasClean({ pageFrame: 'forms.example' }), false);
   assert.equal(captureWasClean({ truncated: true }), false);
   assert.equal(captureWasClean({ endedEarly: 'stopped' }), false);
   assert.equal(captureWasClean({ endedEarly: 'stalled' }), false);

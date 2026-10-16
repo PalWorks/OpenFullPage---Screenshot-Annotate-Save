@@ -55,7 +55,7 @@ export function shouldNudge(history, capture) {
  * showing the user.
  */
 export const captureWasClean = (plan) =>
-  plan?.truncated !== true && !plan?.endedEarly;
+  plan?.truncated !== true && !plan?.endedEarly && !plan?.pageFrame;
 
 /**
  * The reviews page for this extension, or null.
