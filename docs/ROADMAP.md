@@ -68,7 +68,7 @@ Claude Code with gstack*. Shipped work carries the date it landed.
 | P1 | T31 | What is fixed is asked again as the page is walked | shipped 2026-09-10 | D63. **Found in the field.** A header and a floating card that only turn fixed once you scroll were tagged before the walk, so they rode every screenful |
 | P1 | T30 | A screenful Chrome had already presented is photographed again | shipped 2026-09-10 | D56, L39. **Found in the field**, not by a test. A repeated screenful, and a lost one. Exercised by `--frozen` |
 | P1 | T33 | A page that scrolls inside a box is captured by walking the box | shipped 2026-10-02 | D71, L49 to L51. **Found in the field** on two chat sites, which captured one screenful. Exercised by `--scroller` |
-| P1 | T35 | A page that is only a frame is captured by growing the frame | built 2026-10-16, unreleased | D72, L52, L53. **Found in the field** on a Google form, which captured one screenful. Exercised by `--pageframe` |
+| P1 | T35 | A page that is only a frame is captured by growing the frame | shipped 2026-10-16 in 1.10.3 | D72, L52, L53. **Found in the field** on a Google form, which captured one screenful. Exercised by `--pageframe` |
 | P1 | T34 | An untouched result tab closes without asking | shipped 2026-10-02 | Chrome refuses the prompt there and logged each refusal as an extension error |
 | P1 | F1 | WebP export | shipped 2026-09-10 | D52. Output formats are described once now, not in three lists |
 | P1 | F21 | Export quality, and what each format costs | shipped 2026-09-10 | D54. The size readout is the feature; the slider is how you move it |
@@ -107,6 +107,10 @@ roadmap item, so F10 still opens the next minor version.
 chat applications are built, are captured in full (T33, D71), and an untouched
 result tab closes without logging an error (T34). F10 still opens the next minor
 version.
+
+**1.10.3 on 2026-10-16** is a patch: a page that is only a frame the size of the
+window, which is how Google serves its forms, is captured by growing the frame
+(T35, D72). F10 still opens the next minor version.
 
 **What to pick up next: F10**, multi-part export for very long pages. It is the only
 item on this page that fixes something a user has actually hit, T11 has unblocked it,

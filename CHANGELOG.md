@@ -8,9 +8,16 @@ deterministic, no timestamps, no host details, so this hash is reproducible from
 a clean checkout with `./tools/pack.sh`, not merely checkable against one download. See
 [docs/VERIFYING-YOUR-INSTALL.md](docs/VERIFYING-YOUR-INSTALL.md).
 
-## [Unreleased]
+## [1.10.3]: 2026-10-16
 
-Updated 2026-10-16T16:26:13+05:30.
+Updated 2026-10-16T16:32:23+05:30.
+
+One fix found in the field. A page shown inside a frame that fills the window, the
+way Google serves its forms, is captured in full instead of as one screenful, or,
+where Chrome will not let the frame be read, the result tab says why and what to
+turn on.
+
+`openfullpage-1.10.3.zip`. SHA-256 `6574409a6ef3c7000847661d7fbd233053e5fa0e3f810683968d0ac485144a05`
 
 ### Fixed: pages shown inside a full window frame captured only one screenful
 
